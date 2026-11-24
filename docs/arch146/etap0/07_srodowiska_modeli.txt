@@ -1,0 +1,173 @@
+### 2026-11-24T07:54:28Z pip freeze (.venv_candles / .venv_deep / .venv_kronos) - te same przypięte wersje co requirements/*-win.txt, koła Linux z PyPI
+## venv_candles: Python 3.13.18 numpy==2.3.5 pandas==2.2.3 scikit-learn==1.8.0 
+## venv_deep: Python 3.13.18 gymnasium==1.4.0 numpy==2.3.5 torch==2.14.1 
+## venv_kronos: Python 3.13.18 einops==0.8.1 huggingface-hub==0.33.1 numpy==2.3.5 pandas==2.2.3 safetensors==0.6.2 torch==2.14.1 
+### 2026-11-24T07:54:29Z gold_candles (29 testów referencyjnych + integracja) w .venv_candles - jak tools/run_tests.py run_candles
+test_analysis_rejects_future_at_snapshot (test_candles.CandleTests.test_analysis_rejects_future_at_snapshot) ... ok
+test_duplicate_bar_rejected (test_candles.CandleTests.test_duplicate_bar_rejected) ... ok
+test_epoch_is_utc_not_shifted (test_candles.CandleTests.test_epoch_is_utc_not_shifted) ... ok
+test_features_prefix_invariant (test_candles.CandleTests.test_features_prefix_invariant) ... ok
+test_forming_bar_excluded (test_candles.CandleTests.test_forming_bar_excluded) ... ok
+test_future_open_rejected (test_candles.CandleTests.test_future_open_rejected) ... ok
+test_labels_not_across_market_gap (test_candles.CandleTests.test_labels_not_across_market_gap) ... ok
+test_live_stale_data_blocks_forecast (test_candles.CandleTests.test_live_stale_data_blocks_forecast) ... ok
+test_long_wick_rejection_survives_old_body_filter (test_candles.CandleTests.test_long_wick_rejection_survives_old_body_filter) ... ok
+test_missing_m5_invalidates_m30_bucket (test_candles.CandleTests.test_missing_m5_invalidates_m30_bucket) ... ok
+test_mt5_adapter_pos_one_and_utc_without_shift (test_candles.CandleTests.test_mt5_adapter_pos_one_and_utc_without_shift) ... ok
+test_multibar_pattern_not_across_gap (test_candles.CandleTests.test_multibar_pattern_not_across_gap) ... ok
+test_naive_time_rejected (test_candles.CandleTests.test_naive_time_rejected) ... ok
+test_no_model_is_not_fake_probability_or_signal (test_candles.CandleTests.test_no_model_is_not_fake_probability_or_signal) ... ok
+test_ohlc_geometry_rejected (test_candles.CandleTests.test_ohlc_geometry_rejected) ... ok
+test_other_instrument_rejected (test_candles.CandleTests.test_other_instrument_rejected) ... ok
+test_partial_m30_never_in_context (test_candles.CandleTests.test_partial_m30_never_in_context) ... ok
+test_pattern_mirror_symmetry (test_candles.CandleTests.test_pattern_mirror_symmetry) ... ok
+test_serialization_unknowns_become_null (test_candles.CandleTests.test_serialization_unknowns_become_null) ... ok
+test_split_purges_label_horizon (test_candles.CandleTests.test_split_purges_label_horizon) ... ok
+test_unsorted_bar_rejected (test_candles.CandleTests.test_unsorted_bar_rejected) ... ok
+test_wilder_seed (test_candles.CandleTests.test_wilder_seed) ... ok
+test_calibration_labels_precede_holdout (test_candles.ResearchModelTests.test_calibration_labels_precede_holdout) ... ok
+test_contract_mismatch_rejected (test_candles.ResearchModelTests.test_contract_mismatch_rejected) ... ok
+test_json_model_roundtrip_without_pickle (test_candles.ResearchModelTests.test_json_model_roundtrip_without_pickle) ... ok
+test_m30_source_mismatch_rejected (test_candles.ResearchModelTests.test_m30_source_mismatch_rejected) ... ok
+test_model_does_not_unlock_strategy (test_candles.ResearchModelTests.test_model_does_not_unlock_strategy) ... ok
+test_model_future_relative_to_snapshot_abstains (test_candles.ResearchModelTests.test_model_future_relative_to_snapshot_abstains) ... ok
+test_three_horizons_native_export_and_probabilities (test_candles.ResearchModelTests.test_three_horizons_native_export_and_probabilities) ... ok
+[     0.0s] start: run 20261124T075437Z_980bdbd9_SYN, dane /tmp/mq_gc_rt_bd2maguj/hist, 11520 M5 / 1920 M30, tick 0.01
+[     0.1s] features: 11341 kompletnych wierszy cech z 11520 (warmup / luki odrzucone)
+[     0.1s] plan: zapisano plan PRZED treningiem: {'calibration_start': '2026-04-03T00:00:00+00:00', 'holdout_start': '2026-04-14T00:00:00+00:00'}
+[     0.2s] h1: fit 6739 / kalibracja 1995 / holdout 2585
+[     0.6s] h1: kwantyl q10
+[     0.8s] h1: kwantyl q50
+[     1.1s] h1: kwantyl q90
+[     1.3s] h1: REJECTED: Brier 0.6663 vs baseline 0.6661, logloss 1.0980 vs 1.0978, dni holdoutu 9
+[     1.4s] h3: fit 6729 / kalibracja 1989 / holdout 2581
+[     2.6s] h3: kwantyl q10
+[     2.8s] h3: kwantyl q50
+[     3.1s] h3: kwantyl q90
+[     3.4s] h3: REJECTED: Brier 0.6496 vs baseline 0.6452, logloss 1.0707 vs 1.0639, dni holdoutu 9
+[     3.5s] h6: fit 6714 / kalibracja 1980 / holdout 2575
+[     5.4s] h6: kwantyl q10
+[     5.7s] h6: kwantyl q50
+[     6.0s] h6: kwantyl q90
+[     6.2s] h6: REJECTED: Brier 0.6367 vs baseline 0.6285, logloss 1.0456 vs 1.0351, dni holdoutu 9
+[    11.8s] runtime: inference przez ścieżkę bota: 40/40 poprawnych, 0 warmup/brak, 139.5 ms / prognozę
+[    11.8s] registry: zapisano run 20261124T075437Z_980bdbd9_SYN: REJECTED
+[    11.8s] registry: NIE aktywowano (REJECTED, loader OK) – poprzedni aktywny model bez zmian; run dostępny do inspekcji
+[    11.8s] end: REJECTED; artefakty w /tmp/mq_gc_rt_bd2maguj/data/forecast/runs/20261124T075437Z_980bdbd9_SYN
+test_01_training_artifacts_plan_and_statuses (test_runtime.Runtime.test_01_training_artifacts_plan_and_statuses) ... ok
+test_02_plan_is_frozen_per_dataset (test_runtime.Runtime.test_02_plan_is_frozen_per_dataset) ... [     0.0s] start: run 20261124T075449Z_79b12a90_SYN, dane /tmp/mq_gc_rt_bd2maguj/hist_changed, 11520 M5 / 1920 M30, tick 0.01
+[     0.1s] features: 11341 kompletnych wierszy cech z 11520 (warmup / luki odrzucone)
+ok
+test_03_insufficient_data_is_reported_with_amounts (test_runtime.Runtime.test_03_insufficient_data_is_reported_with_amounts) ... [     0.0s] start: run 20261124T075449Z_2ba85c97_SYN, dane /tmp/mq_gc_rt_bd2maguj/hist_short, 1152 M5 / 192 M30, tick 0.01
+[     0.0s] features: 1015 kompletnych wierszy cech z 1152 (warmup / luki odrzucone)
+[     0.0s] plan: zapisano plan PRZED treningiem: {'calibration_start': '2026-03-04T00:00:00+00:00', 'holdout_start': '2026-03-05T00:00:00+00:00'}
+[     0.0s] end: INSUFFICIENT_DATA
+ok
+test_04_registry_refuses_synthetic_and_worker_reports_no_model (test_runtime.Runtime.test_04_registry_refuses_synthetic_and_worker_reports_no_model) ... ok
+test_05_shadow_forecast_contract_and_mismatches (test_runtime.Runtime.test_05_shadow_forecast_contract_and_mismatches) ... ok
+test_06_session_break_and_warmup (test_runtime.Runtime.test_06_session_break_and_warmup) ... ok
+test_07_bad_request_does_not_kill_the_worker (test_runtime.Runtime.test_07_bad_request_does_not_kill_the_worker) ... ok
+test_blocked_without_export (test_scalp_train.ScalpTrain.test_blocked_without_export) ... ok
+test_features_prefix_invariant_and_labels_skip_gaps (test_scalp_train.ScalpTrain.test_features_prefix_invariant_and_labels_skip_gaps) ... ok
+test_plan_before_fit_and_disjoint_periods (test_scalp_train.ScalpTrain.test_plan_before_fit_and_disjoint_periods) ... ok
+test_plan_reused_for_same_data (test_scalp_train.ScalpTrain.test_plan_reused_for_same_data) ... ok
+test_run_completes_with_statuses (test_scalp_train.ScalpTrain.test_run_completes_with_statuses) ... ok
+test_synthetic_never_active_and_guards (test_scalp_train.ScalpTrain.test_synthetic_never_active_and_guards) ... ok
+test_worker_path_and_checksum (test_scalp_train.ScalpTrain.test_worker_path_and_checksum) ... [BLAD] 20261124T075455Z_a2b669d5_SYN nie może być aktywny: NOT_REAL_USER_DATA
+Aktywny model scalp: 20261124T075455Z_a2b669d5_SYN
+Brak aktywnego modelu scalp (NO_MODEL).
+ok
+test_filter_trained_calibrated_and_loadable (test_scalp_train.SetupQualityFilter.test_filter_trained_calibrated_and_loadable) ... ok
+test_noise_feature_gives_no_filter (test_scalp_train.SetupQualityFilter.test_noise_feature_gives_no_filter) ... ok
+test_too_few_cycles_is_insufficient (test_scalp_train.SetupQualityFilter.test_too_few_cycles_is_insufficient) ... ok
+
+----------------------------------------------------------------------
+Ran 46 tests in 1028.468s
+
+OK
+### exit=0
+### 2026-11-24T08:11:39Z test_train_all z MQ_CANDLES_PYTHON=.venv_candles (główny .venv uruchamia, trening w .venv_candles)
+test_cancel_then_resume_does_not_repeat_finished_tasks (test_train_all.TestCancelResume.test_cancel_then_resume_does_not_repeat_finished_tasks) ... ok
+test_second_run_is_refused_while_one_is_in_progress (test_train_all.TestCancelResume.test_second_run_is_refused_while_one_is_in_progress) ... ok
+test_registered_btc_symbol_and_unregistered_rejected (test_train_all.TestGoldCandlesInstrumentConfig.test_registered_btc_symbol_and_unregistered_rejected) ... ok
+test_22_launcher_uses_the_same_mechanism (test_train_all.TestTrainAllCompat.test_22_launcher_uses_the_same_mechanism) ... ok
+test_both_instruments_end_to_end (test_train_all.TestTrainingRun.test_both_instruments_end_to_end) ... FAIL
+test_export_process_cannot_send_orders (test_train_all.TestUnits.test_export_process_cannot_send_orders) ... ok
+test_instrument_profiles_usd_usdt_and_lookalikes (test_train_all.TestUnits.test_instrument_profiles_usd_usdt_and_lookalikes) ... ok
+test_lab_pointer_activation_and_rollback (test_train_all.TestUnits.test_lab_pointer_activation_and_rollback) ... ok
+test_ml_router_separate_database_and_symbol_filter (test_train_all.TestUnits.test_ml_router_separate_database_and_symbol_filter) ... ok
+test_ram_gate_scales_instead_of_skipping (test_train_all.TestUnits.test_ram_gate_scales_instead_of_skipping) ... ok
+test_registry_paths_survive_moving_the_project_folder (test_train_all.TestUnits.test_registry_paths_survive_moving_the_project_folder) ... ok
+
+======================================================================
+FAIL: test_both_instruments_end_to_end (test_train_all.TestTrainingRun.test_both_instruments_end_to_end)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/user/1/tests/test_train_all.py", line 107, in test_both_instruments_end_to_end
+    self.assertRegex(line, r"XAUUSD: \d+/19 zadań ukończonych; BTC: \d+/19")                  # 1.25: + monte_carlo
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: Regex didn't match: 'XAUUSD: \\d+/19 zadań ukończonych; BTC: \\d+/19' not found in 'XAUUSD: 19/20 zadań ukończonych; BTC: 16/20 zadań ukończonych. 0 modeli dopuszczonych do SHADOW. Szczegóły w raporcie.'
+
+----------------------------------------------------------------------
+Ran 11 tests in 1100.196s
+
+FAILED (failures=1)
+### exit=1
+### 2026-11-24T08:30:00Z test_kronos_runtime w .venv_kronos (torch CPU, losowe wagi - bez oficjalnych wag: HF zablokowany przez proxy)
+test_01_vendored_namespace_and_license (test_kronos_runtime.TestKronosRuntime.test_01_vendored_namespace_and_license) ... ok
+test_02_manifest_tamper_and_fixture_guard (test_kronos_runtime.TestKronosRuntime.test_02_manifest_tamper_and_fixture_guard) ... ok
+test_03_engine_offline_load_predict_paths_and_errors (test_kronos_runtime.TestKronosRuntime.test_03_engine_offline_load_predict_paths_and_errors) ... Loading weights from local directory
+Loading weights from local directory
+ok
+test_04_incompatible_pair_is_refused (test_kronos_runtime.TestKronosRuntime.test_04_incompatible_pair_is_refused) ... Loading weights from local directory
+Loading weights from local directory
+ok
+test_05_worker_protocol (test_kronos_runtime.TestKronosRuntime.test_05_worker_protocol) ... /usr/local/lib/python3.13/unittest/case.py:606: ResourceWarning: unclosed file <_io.TextIOWrapper name=4 encoding='utf-8'>
+  if method() is not None:
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/usr/local/lib/python3.13/unittest/case.py:606: ResourceWarning: unclosed file <_io.TextIOWrapper name=5 encoding='utf-8'>
+  if method() is not None:
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+ok
+test_06_installer_download_checks_source_metadata (test_kronos_runtime.TestKronosRuntime.test_06_installer_download_checks_source_metadata) ... ok
+test_07_timing_at_published_kronos_small_size (test_kronos_runtime.TestKronosRuntime.test_07_timing_at_published_kronos_small_size)
+Random weights at the published size (24.7 M parameters): CPU time of one forecast, lookback 400, horizon 12. ... Loading weights from local directory
+Loading weights from local directory
+
+[timing] Kronos-small size, CPU 2 wątki: load 336.9 ms, prognoza H=12 z 400 świec 1854.1 ms (wall 1.86 s)
+ok
+test_official_pair_loads_parity_and_identity (test_kronos_runtime.TestOfficialWeights.test_official_pair_loads_parity_and_identity) ... skipped 'oficjalne wagi: ustaw MQ_KRONOS_WEIGHTS_DIR (po instalacji)'
+
+----------------------------------------------------------------------
+Ran 8 tests in 13.101s
+
+OK (skipped=1)
+### exit=0
+### 2026-11-24T08:30:21Z test_families_u4 (worker .venv_deep: SEQ_LSTM/SEQ_GRU/RL_PPO) z MQ_DEEP_PYTHON=.venv_deep
+test_health_and_lstm_gru_roundtrip (test_families_u4.TestDeepWorker.test_health_and_lstm_gru_roundtrip) ... ok
+test_ppo_trains_and_proposes (test_families_u4.TestDeepWorker.test_ppo_trains_and_proposes) ... ok
+test_microstructure_classifier_learns_imbalance (test_families_u4.TestPairsMicroNLP.test_microstructure_classifier_learns_imbalance) ... ok
+test_microstructure_measure_without_model_and_blocked_training (test_families_u4.TestPairsMicroNLP.test_microstructure_measure_without_model_and_blocked_training) ... ok
+test_nlp_corpus_dedup_train_predict (test_families_u4.TestPairsMicroNLP.test_nlp_corpus_dedup_train_predict) ... ok
+test_pair_cointegrated_vs_not_and_leg_conversion (test_families_u4.TestPairsMicroNLP.test_pair_cointegrated_vs_not_and_leg_conversion) ... ok
+test_statarb_needs_three_series (test_families_u4.TestPairsMicroNLP.test_statarb_needs_three_series) ... ok
+test_execution_next_open_costs_once_and_liquidation (test_families_u4.TestRLCore.test_execution_next_open_costs_once_and_liquidation) ... ok
+test_exposure_limit (test_families_u4.TestRLCore.test_exposure_limit) ... ok
+test_assist_hold_changes_setup_shadow_does_not (test_families_u4.TestRolesIntegrityReceivers.test_assist_hold_changes_setup_shadow_does_not) ... ok
+test_catalog_lists_all_15_plus_adapter (test_families_u4.TestRolesIntegrityReceivers.test_catalog_lists_all_15_plus_adapter) ... ok
+test_roles_assist_requires_approved_and_real (test_families_u4.TestRolesIntegrityReceivers.test_roles_assist_requires_approved_and_real) ... ok
+test_tampered_artifact_is_incompatible_and_rollback (test_families_u4.TestRolesIntegrityReceivers.test_tampered_artifact_is_incompatible_and_rollback) ... ok
+test_arima_recovers_ar_structure_and_roundtrip (test_families_u4.TestStatisticalFamilies.test_arima_recovers_ar_structure_and_roundtrip) ... ok
+test_breakout_channel_excludes_current_bar_and_no_lookahead (test_families_u4.TestStatisticalFamilies.test_breakout_channel_excludes_current_bar_and_no_lookahead) ... ok
+test_garch_scale_and_persistence (test_families_u4.TestStatisticalFamilies.test_garch_scale_and_persistence) ... ok
+test_kalman_level_slope_causal (test_families_u4.TestStatisticalFamilies.test_kalman_level_slope_causal) ... ok
+test_sarimax_calendar_exog_known_in_advance (test_families_u4.TestStatisticalFamilies.test_sarimax_calendar_exog_known_in_advance) ... ok
+test_sarimax_converges_on_h1_with_volatility_clustering (test_families_u4.TestStatisticalFamilies.test_sarimax_converges_on_h1_with_volatility_clustering)
+1.33 audit: raw H1 log returns (~1e-3) with GARCH-like volatility made every SARIMAX fit fail to converge (BLOCKED); ... ok
+
+----------------------------------------------------------------------
+Ran 19 tests in 48.730s
+
+OK
+### exit=0
+DONE

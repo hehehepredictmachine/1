@@ -1,0 +1,18 @@
+### 2026-11-24T08:22:29Z $ bash -c go version && go vet ./... && GOOS=windows go vet ./... && go test -count=1 ./... && PMW_IT_PYTHON=/home/user/venv/bin/python go test -count=1 -run TestEngineSupervisorIntegration -v ./...
+go version go1.24.7 linux/amd64
+ok  	pepemarketwizard/desktop	17.768s
+=== RUN   TestEngineSupervisorIntegration
+    desktop_test.go:318: silnik: STARTING uruchamianie silnika…
+    desktop_test.go:318: silnik: RUNNING 
+    desktop_test.go:330: silnik: EXTERNAL silnik działał już wcześniej – podłączono bez uruchamiania drugiej kopii
+    desktop_test.go:318: silnik: CRASHED nieoczekiwane zakończenie (signal: killed); ponowne uruchomienie za 2 s
+    desktop_test.go:318: silnik: STARTING uruchamianie silnika…
+    desktop_test.go:318: silnik: RUNNING 
+    desktop_test.go:318: silnik: ponowne uruchomienie na żądanie panelu
+    desktop_test.go:318: silnik: STARTING uruchamianie silnika…
+    desktop_test.go:318: silnik: RUNNING 
+    desktop_test.go:318: silnik: STOPPED 
+--- PASS: TestEngineSupervisorIntegration (9.41s)
+PASS
+ok  	pepemarketwizard/desktop	9.416s
+### exit=0 2026-11-24T08:23:02Z

@@ -1,0 +1,23 @@
+### 2026-11-24T08:22:25Z $ /home/user/venv/bin/python -m masterquo doctor
+[OK  ] Python: 3.13.18 64-bit (/home/user/venv/bin/python)
+[UWAGA] System: Linux-6.18.44-fc-v819-x86_64-with-glibc2.39
+[OK  ] Pakiet fastapi: 0.141.1
+[OK  ] Pakiet uvicorn: 0.53.0
+[OK  ] Pakiet pydantic: 2.13.5
+[OK  ] Pakiet anthropic: 1.7.0
+[OK  ] Pakiet numpy: 2.5.3
+[OK  ] Pakiet websockets: 17.1
+[OK  ] Pakiet scipy: 1.18.1
+[OK  ] Pakiet sklearn: 1.9.1
+[OK  ] Pakiet xgboost: 3.4.1
+[OK  ] Pakiet joblib: 1.6.0
+[OK  ] ML: Decision Tree + XGBoost (test działania): trening i predykcja na danych testowych OK (to nie jest model handlowy)
+[OK  ] Symbol brokera (config): XAUUSD-
+[OK  ] Frontend (frontend/dist): /home/user/1/frontend/dist/index.html
+[UWAGA] Pakiet MetaTrader5: No module named 'MetaTrader5' (działa tylko na Windows)
+[UWAGA] Klucz Anthropic: źródło: MISSING (wartość nie jest wyświetlana)
+[UWAGA] Model Claude (ANTHROPIC_MODEL): nie ustawiono – wybierz w monitorze (Ustawienia → Agent)
+
+Raport zapisano: /tmp/claude-0/-home-user-1/faeab58a-3892-539a-94b1-90536dda312a/scratchpad/bl_data.07fk/logs/diagnostyka_20261124T082227Z.json
+WYNIK: BRAK BŁĘDÓW KRYTYCZNYCH
+### exit=0 2026-11-24T08:22:28Z

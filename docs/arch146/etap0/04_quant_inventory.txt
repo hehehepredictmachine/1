@@ -1,0 +1,3 @@
+### 2026-11-24T08:22:28Z $ /home/user/venv/bin/python -m masterquo quant inventory
+[QUANT] inwentaryzacja: 91 komponentów, sklasyfikowano 91, z adapterem 51, NOT_APPLICABLE uzasadnione 33, brakujące 0; operacyjnie gotowe 0; zwalidowane 0 -> /home/user/1/docs/quant
+### exit=0 2026-11-24T08:22:29Z
