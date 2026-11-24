@@ -226,7 +226,14 @@ class ExecutionConfig(_Strict):
     # 1.39 (user decision): the bot STARTS in this mode on every launch (None = restore the last stored mode). With live_autobind, AUTO_LIVE
     # binds itself to the account the terminal reports as REAL when no account is confirmed yet (instead of typing "LIVE <login>"); a
     # DIFFERENT account later still blocks sending until re-confirmed. STOP, risk limits, spread, dedup and reconciliation stay active.
-    start_mode: OperatingMode | None = "AUTO_LIVE"
+    # arch146 D1 (decision (b), owner's principle 1): the start condition in runtime.py is never true (the MT5 factory is always set
+    # before it), so start_mode is NOT applied - the engine starts in the stored execution.mode. Deliberately left as is (applying it
+    # would start in AUTO_LIVE and bind a REAL account); the value is kept for config compatibility and the mode status reports
+    # start_mode_effective = NOT_APPLIED with the reason (execution/modes.py).
+    start_mode: OperatingMode | None = Field("AUTO_LIVE", description=(
+        "NIE jest stosowany przy starcie (arch146 D1): silnik startuje w ostatnio zapisanym trybie execution.mode; warunek startu w "
+        "runtime.py jest nieaktywny i celowo zostaje bez zmian. Wartość zachowana dla zgodności config.json; stan widoczny w statusie "
+        "trybu (start_mode_effective = NOT_APPLIED)."))
     live_autobind: bool = True
     # 1.20 (decision O1): ONE execution path opens new entries per instrument - ACTIVE (S01-S12) or SH (SCALPING/HEDGING);
     # the other path only analyses (as SIGNALS). Missing/UNSET = neither opens new entries until the user chooses. Open

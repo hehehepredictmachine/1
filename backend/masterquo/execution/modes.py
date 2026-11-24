@@ -60,6 +60,7 @@ class ModeManager:
         self.kill_reason: str | None = None
         self.license_ok = None                            # 1.44.0: () -> bool z licensing.gate (wersja klienta); None = bez licencji
         self.changed_at = iso(utcnow())
+        self.start_mode_applied: str | None = None        # arch146 D1: set only if apply_start_mode ran (status, read only)
 
     def apply_start_mode(self) -> str | None:
         """1.39 (user decision): start in execution.start_mode on every launch (real terminal only - the runtime does not call this on the
@@ -73,6 +74,7 @@ class ModeManager:
                 self.mode = sm
                 if sm not in ORDER_MODES:
                     self.bound_account = None
+            self.start_mode_applied = sm
         self.log.warn("MODE", "START_MODE", f"Start w trybie {LABEL_PL.get(sm, sm)} (execution.start_mode)"
                       + (" – rachunek REAL zostanie powiązany automatycznie (live_autobind)" if sm == "AUTO_LIVE" else ""))
         self._persist_and_publish("start_mode")
@@ -93,7 +95,18 @@ class ModeManager:
                     "changed_at": self.changed_at, "strategy_mode": cfg.active.strategy_mode, "ml_mode": cfg.ml.mode,
                     "instrument": cfg.assets.active, "primary_path": prim, "primary_path_label": PATH_LABEL[prim],
                     "primary_paths": {k: cfg.execution.primary_path.get(k, "UNSET") for k in ("XAUUSD", "BTC")},
-                    "mode_note": cfg.execution.mode_note}
+                    "mode_note": cfg.execution.mode_note, **self._start_mode_status(cfg)}
+
+    def _start_mode_status(self, cfg) -> dict:
+        """arch146 D1 (S1, description only): whether execution.start_mode took effect at this start. The runtime's start condition is
+        never true (decision D1: left as is), so the stored execution.mode is what the engine starts in - said here instead of implied."""
+        sm = getattr(cfg.execution, "start_mode", None)
+        if self.start_mode_applied:
+            return {"start_mode_configured": sm, "start_mode_effective": "APPLIED", "start_mode_reason": None}
+        why = ("execution.start_mode nie jest ustawiony" if not sm else
+               f"execution.start_mode = {sm} nie jest stosowany przy starcie (warunek w runtime.py nieaktywny, celowo bez zmian – arch146 D1)")
+        return {"start_mode_configured": sm, "start_mode_effective": "NOT_APPLIED",
+                "start_mode_reason": why + "; silnik startuje w ostatnio zapisanym trybie execution.mode."}
 
     def primary_path(self, instrument: str | None = None) -> str:
         cfg = self.cfg_store.get()

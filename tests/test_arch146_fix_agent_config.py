@@ -12,6 +12,7 @@ import asyncio
 import json
 import unittest
 from types import SimpleNamespace
+from unittest import mock
 
 import _env  # noqa: F401
 from _env import TempData
@@ -20,6 +21,9 @@ OLD_SAVED_PRICES = {   # cennik zapisany w config.json przez 1.45/1.46 (przed D1
     "claude-fable-5-1": [10.0, 50.0], "claude-opus-5-5": [4.0, 20.0], "claude-opus-5": [5.0, 25.0],
     "claude-sonnet-5-5": [2.0, 10.0], "claude-sonnet-5": [2.0, 10.0], "claude-haiku-5-5": [0.10, 0.50],
 }
+# klucze statusu trybu sprzed D1 - D1 tylko DOPISUJE pola, żadne istniejące nie znika ani nie zmienia znaczenia
+OLD_STATUS_KEYS = {"mode", "mode_label", "auto_trading", "bound_account", "kill_switch", "kill_reason", "changed_at", "strategy_mode",
+                   "ml_mode", "instrument", "primary_path", "primary_path_label", "primary_paths", "mode_note"}
 
 
 class _NoKey:
@@ -133,6 +137,92 @@ class TestAgentFable52Pricing(unittest.TestCase):
         from masterquo.agent import service as AS
         from masterquo.config import AgentConfig
         self.assertFalse(AS.FALLBACK_MODELS - set(AgentConfig().price_per_mtok))
+
+
+class TestStartModeNotApplied(unittest.TestCase):
+    """D1 wariant opisowy (S1): start_mode opisany jako niestosowany + jawny stan w statusie; zachowanie startu bez zmian."""
+
+    def setUp(self):
+        self.td = TempData()
+
+    def tearDown(self):
+        self.td.close()
+
+    def _runtime(self, **kw):
+        import mq_venv
+        from masterquo import runtime as R
+        from masterquo.execution.modes import ModeManager
+        from masterquo.upgrade import migrate as UM
+        with mock.patch.object(mq_venv, "repair_all", return_value={}), mock.patch.object(UM, "before", return_value=None), \
+                mock.patch.object(ModeManager, "apply_start_mode", autospec=True, side_effect=ModeManager.apply_start_mode) as spy:
+            rt = R.Runtime(demo=False, **kw)
+        return rt, spy
+
+    def _fake_factory(self):
+        from masterquo.mt5.fake import FakeMT5
+        return lambda: FakeMT5(symbol="XAUUSD-", seed=3)
+
+    def test_config_field_unchanged_and_described(self):
+        from masterquo.config import ExecutionConfig
+        ex = ExecutionConfig()
+        self.assertEqual((ex.start_mode, ex.live_autobind), ("AUTO_LIVE", True))   # wartości domyślne bez zmian
+        desc = ExecutionConfig.model_fields["start_mode"].description or ""
+        self.assertIn("NIE jest stosowany", desc)
+        self.assertIn("execution.mode", desc)
+
+    def test_runtime_on_fakemt5_start_mode_identical(self):
+        rt, spy = self._runtime(mt5_factory=self._fake_factory())
+        self.assertEqual(spy.call_count, 0)                                     # apply_start_mode nie jest wołane
+        self.assertEqual(rt.cfg.get().execution.start_mode, "AUTO_LIVE")
+        self.assertEqual((rt.modes.mode, rt.cfg.get().execution.mode), ("PAPER", "PAPER"))   # tryb = zapisany (domyślny PAPER)
+        self.assertIsNone(rt.modes.bound_account)
+        self.assertIsNone(rt.cfg.get().execution.bound_account)
+        st = rt.modes.status()
+        self.assertTrue(OLD_STATUS_KEYS <= set(st))
+        self.assertEqual((st["mode"], st["bound_account"], st["mode_note"]), ("PAPER", None, None))
+        self.assertEqual(st["start_mode_configured"], "AUTO_LIVE")
+        self.assertEqual(st["start_mode_effective"], "NOT_APPLIED")
+        self.assertIn("execution.start_mode", st["start_mode_reason"])
+        self.assertIn("execution.mode", st["start_mode_reason"])
+
+    def test_runtime_production_factory_start_mode_identical(self):
+        # ścieżka produkcyjna (fabryka MetaTrader5 podstawiana w runtime) - konstruktor nie łączy się z terminalem
+        rt, spy = self._runtime()
+        self.assertEqual(spy.call_count, 0)
+        self.assertEqual(rt.modes.mode, "PAPER")
+        self.assertEqual(rt.modes.status()["start_mode_effective"], "NOT_APPLIED")
+
+    def test_runtime_keeps_stored_mode(self):
+        _write_config(self.td, {"execution": {"mode": "SIGNALS"}})
+        rt, spy = self._runtime(mt5_factory=self._fake_factory())
+        self.assertEqual(spy.call_count, 0)
+        self.assertEqual((rt.modes.mode, rt.cfg.get().execution.mode, rt.cfg.get().execution.start_mode), ("SIGNALS", "SIGNALS", "AUTO_LIVE"))
+        st = rt.modes.status()
+        self.assertEqual((st["mode"], st["start_mode_effective"]), ("SIGNALS", "NOT_APPLIED"))
+
+    def test_status_reason_without_configured_start_mode(self):
+        from masterquo.config import ConfigStore
+        from masterquo.db.database import Database
+        from masterquo.execution.modes import ModeManager
+        cfg = ConfigStore()
+        cfg.update({"execution": {"start_mode": None}})
+        mm = ModeManager(cfg, Database(), _Bus(), _Log(), account_provider=lambda: (None, None, False))
+        st = mm.status()
+        self.assertEqual((st["start_mode_configured"], st["start_mode_effective"], st["mode"]), (None, "NOT_APPLIED", "PAPER"))
+        self.assertIn("execution.mode", st["start_mode_reason"])
+
+    def test_status_is_honest_if_start_mode_is_ever_applied(self):
+        # wywołanie jawne (jak w test_live_start) - status nie może wtedy dalej twierdzić NOT_APPLIED
+        from masterquo.config import ConfigStore
+        from masterquo.db.database import Database
+        from masterquo.execution.modes import ModeManager
+        cfg = ConfigStore()
+        cfg.update({"execution": {"start_mode": "SIGNALS"}})
+        mm = ModeManager(cfg, Database(), _Bus(), _Log(), account_provider=lambda: (None, None, False))
+        self.assertEqual(mm.status()["start_mode_effective"], "NOT_APPLIED")
+        self.assertEqual(mm.apply_start_mode(), "SIGNALS")
+        st = mm.status()
+        self.assertEqual((st["mode"], st["start_mode_effective"], st["start_mode_reason"]), ("SIGNALS", "APPLIED", None))
 
 
 if __name__ == "__main__":
