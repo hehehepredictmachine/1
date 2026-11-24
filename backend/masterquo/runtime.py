@@ -47,6 +47,11 @@ class Runtime:
                 _UM.before()
             except Exception:  # noqa: BLE001 - never blocks the start; the after-report shows the missing step
                 log.exception("upgrade 1.41 before-step failed")
+            try:                                            # 1.46 arch (I0120): copy of every settings file once per app version
+                from .upgrade import migrate as _UM
+                _UM.snapshot_before()
+            except Exception:                               # a copy never blocks the start
+                log.exception("settings snapshot before the update failed")
         try:                                                # 1.42.2: program folder moved -> model venvs re-pointed to this Python
             import mq_venv
             base = getattr(sys, "_base_executable", None) or sys.executable

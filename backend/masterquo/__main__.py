@@ -31,11 +31,11 @@ def _rt_dir() -> Path:
 
 
 def _port() -> int:
-    try:
-        from .config import ConfigStore
-        return ConfigStore().get().server.port
-    except Exception:
-        return 8765
+    """1.46 arch (I0094): read-only. 1.45 built ConfigStore() here - a migration / missing file WROTE config.json (and a .bak) before
+    cmd_serve took the instance lock (and from `stop` / `profile`, i.e. from a second process while the bot runs). The running bot's
+    Runtime still migrates and writes the file, after the lock. Never raises (paths.DEFAULT_PORT)."""
+    from .config import server_port
+    return server_port()
 
 
 def _health(port: int, timeout: float = 1.5) -> dict | None:
@@ -160,9 +160,7 @@ def _port_busy(port: int) -> bool:
 _LOCK_HANDLE = None
 
 
-def _single_instance_lock():
-    global _LOCK_HANDLE
-    f = open(_rt_dir() / "instance.lock", "a+b")
+def _try_lock(f) -> bool:
     try:
         if os.name == "nt":
             import msvcrt
@@ -171,11 +169,43 @@ def _single_instance_lock():
         else:
             import fcntl
             fcntl.flock(f.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        return True
     except OSError:
-        f.close()
-        return None
-    _LOCK_HANDLE = f
-    return f
+        return False
+
+
+def _single_instance_lock(retries: int = 3, wait: float = 0.1):
+    """1.46 arch (I0094): a few short retries - a CLI probe (_instance_lock_busy) holds the lock for microseconds and must never make a
+    server starting at that moment exit with 'Inna instancja'. A real second instance still holds it -> None, as before."""
+    global _LOCK_HANDLE
+    f = open(_rt_dir() / "instance.lock", "a+b")
+    for i in range(max(1, retries)):
+        if _try_lock(f):
+            _LOCK_HANDLE = f
+            return f
+        if i + 1 < retries:
+            time.sleep(wait)
+    f.close()
+    return None
+
+
+def _instance_lock_busy() -> bool:
+    """1.46 arch (I0094): True when another process holds runtime/instance.lock, i.e. a server is starting or running in this data folder.
+    The probe lock is released at once (see _single_instance_lock)."""
+    try:
+        with open(_rt_dir() / "instance.lock", "a+b") as f:
+            if not _try_lock(f):
+                return True
+            if os.name == "nt":
+                import msvcrt
+                f.seek(0)
+                msvcrt.locking(f.fileno(), msvcrt.LK_UNLCK, 1)
+            else:
+                import fcntl
+                fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+            return False
+    except OSError:
+        return False
 
 
 def cmd_stop(args) -> int:
@@ -205,7 +235,10 @@ def cmd_stop(args) -> int:
 
 
 def _load_dotenv() -> None:
-    """Optional <root>/.env with ANTHROPIC_API_KEY / ANTHROPIC_MODEL / MASTERQUO_DATA_DIR (never packaged)."""
+    """Optional <root>/.env (never packaged). Only secrets_store.DOTENV_VARS are taken (ANTHROPIC_API_KEY, ANTHROPIC_MODEL,
+    MASTERQUO_DATA_DIR, FRED_API_KEY, TELEGRAM_BOT_TOKEN - 1.46 arch I0118: one list, the same as before); a variable already set in the
+    environment wins."""
+    from .secrets_store import DOTENV_VARS
     f = paths.ROOT_DIR / ".env"
     if not f.exists():
         return
@@ -214,18 +247,26 @@ def _load_dotenv() -> None:
         if not line or line.startswith("#") or "=" not in line:
             continue
         k, v = (x.strip() for x in line.split("=", 1))
-        if k in ("ANTHROPIC_API_KEY", "ANTHROPIC_MODEL", "MASTERQUO_DATA_DIR", "FRED_API_KEY", "TELEGRAM_BOT_TOKEN") and v and not os.environ.get(k):
+        if k in DOTENV_VARS and v and not os.environ.get(k):
             os.environ[k] = v.strip('"')
 
 
 def cmd_profile(name: str) -> int:
-    """Rollback helper. Run with the server stopped (a running server keeps its own copy of the config)."""
-    from .config import ConfigStore
-    store = ConfigStore()
+    """Rollback helper. Run with the server stopped (a running server keeps its own copy of the config).
+
+    1.46 arch (I0094): refuses (exit 3) while the bot answers on its port or holds the instance lock - 1.45 wrote config.json anyway, the
+    running bot ignored the change and its next settings save overwrote it with its own copy. `show` only reads (never writes the file)."""
+    from .config import ConfigStore, peek
     if name == "show":
-        a = store.get().active
+        a = peek().active
         print(f"Profil: {a.profile}, wybór strategii: {a.strategy_mode}{' ' + a.manual_strategy_id if a.manual_strategy_id else ''}")
         return 0
+    h = _health(_port())
+    if (h and h.get("app") in (APP_NAME, "MasterQUO AI")) or _instance_lock_busy():
+        print("[Apollo23] Program działa – zmiana profilu z wiersza poleceń zostałaby nadpisana przez działający program. "
+              "Zatrzymaj program (04_STOP_MASTERQUO.bat) albo zmień profil w Ustawieniach monitora.", file=sys.stderr)
+        return 3
+    store = ConfigStore()
     store.update({"active": {"profile": name}})
     print(f"[OK] Profil wykrywania: {name}. Tryb wykonywania zleceń i limity bez zmian. Uruchom 03_START_MASTERQUO.bat.")
     return 0

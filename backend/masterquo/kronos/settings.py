@@ -118,6 +118,11 @@ def find_python(s: KronosSettings) -> str | None:
 
 
 class SettingsStore:
+    """kronos/settings.json - policy OWNER_CACHED (masterquo/settings_store.py): read once, kept in memory by the running bot (rt.kronos.
+    settings); other code inside the bot uses that instance, other processes must not write the file while the bot runs."""
+
+    policy = "OWNER_CACHED"          # = settings_store.OWNER_CACHED (1.46 arch I0097)
+
     def __init__(self, path: Path | None = None):
         self.path = path or (kronos_dir() / "settings.json")
         self._lock = threading.Lock()

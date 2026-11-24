@@ -382,7 +382,12 @@ def register(app, rt) -> None:
     @app.get("/api/v1/models/dt-ranker/status")
     def dtr_status():
         return {"schema": DT.SCHEMA, "feature_schema": DT.FEATURE_SCHEMA, "mode": DT.DEFAULT_POLICY["mode"], "ready": _ranker["bundle"] is not None,
-                "manifest": _ranker["manifest"], "note": "osobna rodzina; legacy DECISION_TREE / XGBOOST / selektor bez zmian"}
+                "manifest": _ranker["manifest"], "note": "osobna rodzina; legacy DECISION_TREE / XGBOOST / selektor bez zmian",
+                # 1.46 arch (I0338/I0339/I0340): an honest description - the application has no training job, no artifact store and no
+                # candidate source for this ranker (no specification), so /rank always answers FALLBACK_BASELINE / MODEL_NOT_READY
+                "training_path": "NOT_IMPLEMENTED",
+                "training_note": "Aplikacja nie trenuje tego rankera i nie ma rejestru jego artefaktów ani źródła kandydatów bota (brak "
+                                 "specyfikacji); /api/v1/models/dt-ranker/rank zawsze zwraca FALLBACK_BASELINE (MODEL_NOT_READY), tryb SHADOW."}
 
     @app.post("/api/v1/models/dt-ranker/rank")
     def dtr_rank(body: dict = Body(...)):

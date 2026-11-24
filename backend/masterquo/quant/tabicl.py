@@ -83,7 +83,12 @@ def find_python() -> str | None:
     return None
 
 
-_INST_CACHE: dict = {}
+_INST_CACHE: dict = {}     # process cache (TTL max_age_s) of installed(); reset_install_cache() is the hook (1.46 arch I0104)
+
+
+def reset_install_cache() -> None:
+    """Forget the cached installation state (tests; after an install / removal of the TabICL environment)."""
+    _INST_CACHE.clear()
 
 
 def installed(max_age_s: float = 300.0) -> dict:

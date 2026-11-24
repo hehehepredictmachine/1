@@ -134,7 +134,8 @@ def present(d: dict, sig: dict | None, *, symbol: str, digits: int, execution_mo
             "trigger": sig.get("trigger") or (cl.get("trigger") or {}).get("description"), "invalidation": {"level": inv.get("level"), "rule": inv.get("rule") or "zamknięcie świecy za poziomem unieważnienia"},
             "block_reasons": blocks, "quote": {"bid": q.get("bid"), "ask": q.get("ask"), "age_seconds": q.get("age_seconds")},
             "quality": sig.get("quality"), "probability_win": sig.get("probability_win"),
-            "ai": {"status": ai.get("status"), "verdict": ai.get("verdict"), "explanation": ai.get("explanation")},
+            "ai": {"status": ai.get("status"), "verdict": ai.get("verdict"), "explanation": ai.get("explanation"),
+                   "note": (ai.get("user_question") or {}).get("note")},      # I0866: a user-question answer blocks despite the verdict
             "execution_note": None if (d.get("execution_permission") == "ALLOWED" or state not in ("BUY", "SELL")) else
             f"Tryb wykonania {execution_mode or '—'}: bot nie składa zlecenia automatycznie – to sygnał do decyzji."}
 

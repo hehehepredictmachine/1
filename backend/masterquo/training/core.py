@@ -417,7 +417,12 @@ def bot_python() -> str:
     return sys.executable
 
 
-_CANDLES_OK: dict = {}
+_CANDLES_OK: dict = {}     # process cache: interpreter -> import probe result; reset_candles_cache() is the hook (1.46 arch I0104)
+
+
+def reset_candles_cache() -> None:
+    """Forget the import probes (tests; the installer clears it itself after an installation)."""
+    _CANDLES_OK.clear()
 
 
 def candles_healthy(py: str) -> bool:

@@ -143,6 +143,7 @@ class Governor:
     def __init__(self, cfg_store, log_=None, *, memory=sysres.memory, proc_mem=_proc_mem, clock=time.monotonic):
         self.cfg_store, self.applog, self._memory, self._proc_mem, self.clock = cfg_store, log_, memory, proc_mem, clock
         self._lock = threading.RLock()
+        self._cpu = sysres.CpuSampler()              # 1.46 arch (I0104): own CPU window (the API snapshot no longer moves it)
         self.sources: dict[str, dict] = {}          # name -> {"pid": callable, "kind": heavy|light|training|bot, "release": callable|None, "idle": callable}
         self.peaks: dict[str, float] = {}
         self.timings: dict[str, list[float]] = {}
@@ -468,7 +469,7 @@ class Governor:
         return {"version": "PMW-GOV-1", **snap, "profile_pl": PROFILE_PL.get(self.profile_name()), "settings": p, "effective_profile": eff,
                 "effective_profile_pl": PROFILE_PL.get(eff),
                 "profiles": {k: {"label": PROFILE_PL[k], "settings": v} for k, v in profiles().items()} | {"AUTO": {"label": PROFILE_PL["AUTO"]}, "MANUAL": {"label": PROFILE_PL["MANUAL"]}},
-                "cpu_pct": sysres.cpu_percent(), "cpu_count": _cores(),
+                "cpu_pct": self._cpu.percent(), "cpu_count": _cores(),
                 "inference": {k: self._pct(v) for k, v in self.timings.items()}, "load": {k: self._pct(v) for k, v in self.loads.items()},
                 "heavy_slot": {"parallelism": p["heavy_parallelism"], "holder": self._slot_holder}, "counters": dict(self.counters),
                 "training": dict(self.training), "events": self.events[-20:],
