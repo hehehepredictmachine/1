@@ -36,7 +36,11 @@ def _fx_parent(ctx, side_needed: str | None = None):
     if not exp:
         return None
     sym = ctx.get("symbol")
-    own = [e for e in exp if e.get("symbol") == sym] or exp
+    # 1.46 (I0762): only the context symbol's own positions - a position on another symbol was taken as the parent and judged on the
+    # candles of the chart symbol (and the default volume step); without one the planner reports NO_EXPOSURE
+    own = [e for e in exp if e.get("symbol") == sym]
+    if not own:
+        return None
     if side_needed:
         own = [e for e in own if e["side"] == side_needed] or own
     return own[0]

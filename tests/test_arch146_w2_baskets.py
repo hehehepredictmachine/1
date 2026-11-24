@@ -216,6 +216,55 @@ class TestSetupScoreInformationalOnly(_Svc):
         self.assertEqual(sig[0]["scores"]["setup_score"], sc[expected]["setup_score"])
 
 
+# ======================================================================================================================== I0762
+def _fx_ctx(F, H, exposure, symbol="XAUUSD", **kw):
+    spec = {sym: {"trade_contract_size": 100, "volume_step": 0.01, "volume_min": 0.01, "spread_price": 0.2, "spread_median_price": 0.05}
+            for sym in ("XAUUSD", "EURUSD")}
+    return {"strategy": {"exit_policy_or_expiry_policy": "x"}, "p": {"ratio": 0.5, "timeout_bars": 6, "max_layers": 1, "pct": 0.95, "lookback": 200,
+                                                                        "partner": "XAGUSD"},
+            "F": F, "htf": H, "symbol": symbol, "exposure": exposure, "account": {"margin_mode": "HEDGING", "currency": "USD"}, "spec": spec,
+            "events": [{"t": time.time() + 60, "currency": "EUR", "title": "CPI"}, {"t": time.time() + 60, "currency": "XAU", "title": "x"}],
+            "now": time.time(), "bars": {}, **kw}
+
+
+def _shock_bars(n=260, end_t=1.79e9, extra=0):
+    bars = [{"t": end_t - (n - 1 - k) * 60, "o": 100.0, "h": 100.5, "l": 99.5, "c": 100.0, "tv": 1.0} for k in range(n)]
+    for j in range(extra + 1):                                                          # last bar(s): huge bearish range (shock against LONG)
+        bars[-1 - j] = {**bars[-1 - j], "o": 100.0, "h": 101.0, "l": 89.0, "c": 90.0 - (extra - j)}
+    return bars
+
+
+class TestFxParentOwnSymbolOnly(unittest.TestCase):
+    def _state(self, fn, ctx):
+        from masterquo.baskets.rules import Unavailable
+        try:
+            return fn(ctx)["state"]
+        except Unavailable as exc:
+            return f"UNAVAILABLE: {exc}"
+
+    def test_position_on_another_symbol_is_no_exposure(self):
+        from masterquo.baskets import detectors as D
+        from masterquo.baskets import hedge as HG
+        F = D.build(_shock_bars(), 0.01)
+        H = D.build(_walk(300, end_t=1.79e9, step=3600), 0.01)
+        other = [{"leg": "PRIMARY", "symbol": "EURUSD", "side": "LONG", "volume": 1.0, "id": "P2", "entry": 1.0}]
+        ctx = _fx_ctx(F, H, other)
+        self.assertIsNone(HG._fx_parent(ctx))
+        for fn in (HG.structural_choch, HG.range_profit, HG.vol_shock, HG.session_transition, HG.mtf_countermove, HG.event_shield, HG.beta_pair,
+                   HG.pair_relative):
+            self.assertEqual(self._state(fn, ctx), "NO_EXPOSURE", fn.__name__)
+
+    def test_own_symbol_position_is_still_the_parent(self):
+        from masterquo.baskets import detectors as D
+        from masterquo.baskets import hedge as HG
+        F = D.build(_shock_bars(), 0.01)
+        exp = [{"leg": "PRIMARY", "symbol": "EURUSD", "side": "LONG", "volume": 1.0, "id": "P2"},
+               {"leg": "PRIMARY", "symbol": "XAUUSD", "side": "LONG", "volume": 1.0, "id": "P1"}]
+        ctx = _fx_ctx(F, None, exp)
+        self.assertEqual(HG._fx_parent(ctx)["id"], "P1")
+        self.assertEqual(HG.vol_shock(ctx)["state"], "HEDGE_PLAN")                     # trigger fires on the bot's own symbol as before
+
+
 # ======================================================================================================================== I0769
 class TestBasketPendingLimitSameCycle(_Svc):
     def test_two_events_in_one_cycle_respect_max_pending_intents(self):
