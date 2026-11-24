@@ -118,11 +118,13 @@ def build(rt, inst: str) -> dict:
                      "state": state, "state_pl": C.STATES[state], "reason": pr.get("reason"), "probe_status": pr["status"], "group": it["group"],
                      "roles": it["roles"], "source": "sh/models.REGISTRY"})
     seen = {r["id"] for r in rows}
+    from ..quant import ids as I
+    seen_canon = {I.resolve(r["id"]) for r in rows} - {None}          # 1.46 arch: join MM modules to SH rows by canonical id, not by 'mm_'
     try:
         from ..mm import inventory as MI
         for m in MI.MODULES:
             rid = "mm_" + m["id"]
-            if rid in seen or m["id"] in ("fusion_board",):
+            if rid in seen or m["id"] in ("fusion_board",) or (I.resolve(m["id"]) or I.resolve("mm:" + m["id"])) in seen_canon:
                 continue
             blocked = m.get("blocked")
             rows.append({"id": rid, "name": m["name"], "category": CAT_FROM_MM.get(m.get("category"), "INFRA"), "location": ", ".join(m.get("files") or []) or "—",

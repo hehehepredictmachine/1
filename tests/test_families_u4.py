@@ -11,10 +11,12 @@ from pathlib import Path
 
 import numpy as np
 
-import _env  # noqa: F401
+import _env
 
-SP = Path("/tmp/claude-0/-home-user-1/8bce07ae-728e-58d9-ad38-3f74986983fd/scratchpad")
-DEEP_PY = os.environ.get("MQ_DEEP_PYTHON") or str(SP / "venv_kronos" / "bin" / "python")
+# 1.46 arch: the deep interpreter is found like the bot finds it (MQ_DEEP_PYTHON, then <program>/.venv_deep) - was a hard-coded scratchpad
+# path of an old development session (never present on another machine, so the deep tests were silently skipped everywhere else)
+DEEP_PY = os.environ.get("MQ_DEEP_PYTHON") or next((str(p) for p in (_env.ROOT / ".venv_deep" / "Scripts" / "python.exe",
+                                                                     _env.ROOT / ".venv_deep" / "bin" / "python") if p.is_file()), "")
 T0 = 1_772_409_600  # 2026-03-02 00:00 UTC
 
 

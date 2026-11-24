@@ -11,6 +11,8 @@
   but `latest`, the PMW-PRED-2 record (result.forecast_id) and the listeners carried the new id that is in no table. Now the same as TSFM
   (1.46): an identical re-forecast takes the stored id (SAME_AS_RECORDED), a different one is marked REFORECAST_NOT_RECORDED. Forecast
   values, direction and publication order are unchanged.
+* Model catalog of the panel (/api/v1/models/catalog, diagnoza rejestry_modeli W): the MM module rows were joined to the SH rows by the
+  'mm_' prefix, so breakout appeared twice - mm_breakout READY and mm_breakout_zones DISABLED. Rows are now joined by canonical id.
 """
 from __future__ import annotations
 
@@ -153,6 +155,27 @@ class TestKronosReforecastId(unittest.TestCase):
         self.assertEqual(diff["ledger"]["recorded_forecast_id"], "KR-1")
         self.assertEqual((diff["pred_close_h"], diff["direction"]), (2649.0, "FLAT"))   # the forecast itself is untouched
         self.assertEqual(first["ledger"]["status"], "RECORDED")
+
+
+class TestCatalogOneRowPerProducer(unittest.TestCase):
+    def setUp(self):
+        from _env import TempData
+        self.td = TempData()
+
+    def tearDown(self):
+        self.td.close()
+
+    def test_no_producer_appears_twice(self):
+        from collections import Counter
+
+        from masterquo.modelhub import catalog as CAT
+        from masterquo.quant import ids as I
+        rows = CAT.build(None, "XAUUSD")["items"]
+        canon = [I.resolve(r["id"]) or I.resolve("mm:" + r["id"].removeprefix("mm_")) or r["id"] for r in rows]
+        dup = {k: [r["id"] for r, c in zip(rows, canon) if c == k] for k, n in Counter(canon).items() if n > 1}
+        self.assertEqual(dup, {})                                              # 1.46.0: mm:breakout_zones -> mm_breakout + mm_breakout_zones
+        by = {r["id"]: r for r in rows}
+        self.assertEqual(by["mm_breakout"]["source"], "sh/models.REGISTRY")    # the SH row (live state) stays, ids unchanged
 
 
 if __name__ == "__main__":
