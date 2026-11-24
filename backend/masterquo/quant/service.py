@@ -863,7 +863,10 @@ def train_from_ledger(ledger: QuantLedger, inst: str, task_hash: str | None = No
         rs.sort(key=lambda r: (r["decision_ts"], r["row_id"]))        # one group = many tasks: one time order for the blocks
         spec = rs[0]["spec"]
         members = sorted({r.get("task_hash") for r in rs if r.get("task_hash")})
-        seen = (M.pointer(inst).get("seen_tests") or {}).get(th, [])
+        # review (I0528): the TEST blocks seen by models of the member tasks (per task_hash, before the groups) count too - a group whose
+        # TEST overlaps one of them is not a fresh test ("test once")
+        st = M.pointer(inst).get("seen_tests") or {}
+        seen = list(st.get(th, [])) + [ids for m in members for ids in st.get(m, [])]
         log(f"[QUANT] {inst} grupa {th} ({spec.get('event_id')}): {len(rs)} wierszy z {len(members)} zadań (task_hash)")
         res = M.train(rs, task={"task_hash": th, "task_group": th, "train_key": "TASK_GROUP", "event_id": spec.get("event_id"),
                                 "member_tasks": len(members)}, crit=crit, seen_tests=seen, feature_version=F.CURRENT)

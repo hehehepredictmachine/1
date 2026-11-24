@@ -736,6 +736,31 @@ class TestTaskGroupTraining(unittest.TestCase):
         self.assertEqual(a["status"], "READY", a.get("reason"))
         self.assertEqual(a["task_group"], g)
 
+    def test_member_task_test_blocks_count_as_seen(self):
+        """Review (I0528 a): a TEST block a member task_hash model already used is not fresh for the group (test once)."""
+        from masterquo.quant import metamodel as M
+        from masterquo.quant import service as SV
+        led = self.ledger(900)
+        rows = led.training_rows("XAUUSD")
+        member = rows[-1]["task_hash"]
+        M.record_test("XAUUSD", member, [r["row_id"] for r in rows if r["task_hash"] == member])
+        r = SV.train_from_ledger(led, "XAUUSD", log=lambda *_: None)[0]
+        self.assertNotEqual(r["status"], "VALIDATED_SHADOW", r)
+        self.assertIn("test_block_fresh", r["failed_gates"])
+
+    def test_counts_computes_the_group_once_per_task(self):
+        """Review (I0528 b): counts() (every NOT_TRAINED assessment) hashes the group of a task once, not on every call."""
+        from masterquo.quant import events as QE
+        led = self.ledger(300)
+        n_tasks = len(led.counts("XAUUSD")["tasks"])
+        self.assertGreater(n_tasks, 90)
+        with mock.patch.object(QE, "task_group_of", wraps=QE.task_group_of) as tg:
+            c = led.counts("XAUUSD")
+        self.assertEqual(tg.call_count, 0)
+        self.assertEqual(len(c["groups"]), 1)
+        self.assertEqual(c["groups"][0]["task_group"], self.spec(1998.0).task_group())
+        self.assertTrue(all(t["task_group"] == self.spec(1998.0).task_group() for t in c["tasks"]))
+
     def test_qfence_exit_path_needs_the_old_keys_rolled_back(self):
         """Review (QFENCE/I0528): a new group model (key G…) does not replace a legacy artifact stored under its task_hash - the fence
         holds every entry until each old key is rolled back out of `active` (repeated while its history has versions), as the note says."""
