@@ -7,7 +7,8 @@
   rollback  --instrument XAUUSD --family F
 At the role ASSIST activate / rollback accept only a target that passes the ASSIST gate (APPROVED, REAL data) - otherwise ASSIST_GATE
 (set the role SHADOW first).
-Exit codes: 0 ok, 2 bad arguments, 3 nothing trained / blocked / refused."""
+Exit codes: 0 ok, 2 bad arguments (unknown --family, activate without --run, use without a valid --use), 3 nothing trained /
+blocked / refused."""
 from __future__ import annotations
 
 import argparse
@@ -62,6 +63,17 @@ def main(argv=None) -> int:
                           "failed": [k for k, v in out.items() if v["state"] == "FAILED"]}, ensure_ascii=False))
         return 0 if done else 3
     from . import base as B
+    # bad arguments -> 2 before anything runs (activate without --run ended in a TypeError traceback, use without / with a wrong --use
+    # in REFUSED USE_INVALID:None with 3)
+    if a.family not in registry():
+        print("FAMILY_UNKNOWN – --family wymagane: " + ", ".join(registry()), file=sys.stderr)
+        return 2
+    if a.cmd == "activate" and not a.run:
+        print("--run wymagane (identyfikator artefaktu rodziny)", file=sys.stderr)
+        return 2
+    if a.cmd == "use" and a.use not in B.USE:
+        print(f"--use wymagane: {'|'.join(B.USE)} (podano {a.use})", file=sys.stderr)
+        return 2
     try:
         if a.cmd == "activate":
             r = svc.activate(a.family, a.instrument, a.run)
@@ -69,8 +81,11 @@ def main(argv=None) -> int:
             r = svc.set_use(a.family, a.instrument, a.use)
         else:
             r = svc.rollback(a.family, a.instrument)
-    except KeyError as exc:                                      # FAMILY_UNKNOWN (also a missing --family)
-        print(str(exc).strip("'") + " – --family wymagane: " + ", ".join(registry()), file=sys.stderr)
+    except KeyError as exc:
+        code = str(exc.args[0]) if exc.args else ""
+        if code not in ("FAMILY_UNKNOWN", "FAMILY_OR_INSTRUMENT_INVALID"):
+            raise                                                # an internal KeyError is a bug, not "unknown family"
+        print(code + " – --family wymagane: " + ", ".join(registry()), file=sys.stderr)
         return 2
     except ValueError as exc:
         # 1.46 D5: a refusal (ASSIST gate on activate / rollback, set_use) is an answer, not a traceback

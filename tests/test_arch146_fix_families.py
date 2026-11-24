@@ -20,7 +20,7 @@ import os
 import shutil
 import tempfile
 import unittest
-from contextlib import redirect_stdout
+from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
@@ -157,6 +157,39 @@ class TestFamiliesServiceAssistGate(_StoreCase):
             self.assertTrue(s.activate(FID, INST, "SYN")["ok"])                   # SHADOW first -> the activation goes through
         self.assertEqual(self.store.state(FID, INST)["active"], "SYN")
 
+    def test_activate_race_role_set_to_assist_meanwhile(self):
+        """The pre-check passes at SHADOW; the role turns ASSIST during the load / sample check - set_active still refuses (no write)."""
+        self.run_("GOOD", "APPROVED", "REAL_USER_DATA")
+        self.run_("SYN", "APPROVED", "SYNTHETIC_TEST")
+        self.store.set_active(FID, INST, "GOOD", "t")                             # SHADOW: activate's pre-check lets SYN through
+        s = self.svc()
+
+        def meanwhile(*_a, **_k):
+            self.store.set_use(FID, INST, "ASSIST")                               # GOOD passes the gate in set_use
+            return {"ok": True, "checked": False}
+
+        with mock.patch.object(s.fams[FID], "load", return_value={}), mock.patch.object(s, "_sample_check", side_effect=meanwhile):
+            before_use = self.store.state(FID, INST)["use"]
+            r = s.activate(FID, INST, "SYN")
+        self.assertEqual(before_use, "SHADOW")
+        self.assertFalse(r["ok"], r)
+        self.assertEqual(r["status"], "ASSIST_GATE")
+        st = self.store.state(FID, INST)
+        self.assertEqual((st["active"], st["use"]), ("GOOD", "ASSIST"))
+
+    def test_status_schema_has_assist_gate_violation_in_every_branch(self):
+        s = self.svc()
+        for fid in ("TH_RF", "SEQ_GRU_EVENT", FID):
+            st = s.status(fid, INST)
+            self.assertIn("assist_gate_violation", st, fid)
+            self.assertIsNone(st["assist_gate_violation"], fid)
+        with mock.patch.object(s, "status", side_effect=RuntimeError("boom")):
+            cat = s.catalog(INST)
+        self.assertTrue(cat)
+        for it in cat:
+            self.assertEqual(it["status"]["implementation"], "ERROR")
+            self.assertIn("assist_gate_violation", it["status"], it["id"])
+
     def test_rollback_raises_value_error(self):
         self.run_("GOOD", "APPROVED", "REAL_USER_DATA")
         self.assist_on("GOOD")
@@ -176,6 +209,45 @@ class TestFamiliesServiceAssistGate(_StoreCase):
         self.assertFalse(r["ok"])
         self.assertEqual(r["status"], "ASSIST_GATE")
         self.assertEqual(self.store.state(FID, INST)["active"], "GOOD")
+
+
+class TestFamiliesCliArguments(_StoreCase):
+    """Review of D5: exit code 2 only for bad arguments (missing / bad --use, activate without --run, unknown family); any other
+    KeyError is not reported as FAMILY_UNKNOWN."""
+
+    def cli(self, *argv):
+        from masterquo.modelhub.families import cli
+        out, err = io.StringIO(), io.StringIO()
+        with mock.patch.dict(os.environ, {"PMW_FAMILIES_DIR": self.td}), redirect_stdout(out), redirect_stderr(err):
+            rc = cli.main(list(argv))
+        return rc, out.getvalue(), err.getvalue()
+
+    def test_use_missing_or_bad_value_is_exit_2(self):
+        self.run_("GOOD", "APPROVED", "REAL_USER_DATA")
+        self.store.set_active(FID, INST, "GOOD", "t")
+        before = self.state_bytes()
+        for extra in ((), ("--use", "MAYBE")):
+            rc, out, err = self.cli("use", "--instrument", INST, "--family", FID, *extra)
+            self.assertEqual(rc, 2, (extra, out, err))
+            self.assertIn("--use", err)
+        self.assertEqual(self.state_bytes(), before)
+        rc, out, _ = self.cli("use", "--instrument", INST, "--family", FID, "--use", "shadow")
+        self.assertEqual(rc, 0, out)                                              # valid value (upper-cased) unchanged
+
+    def test_activate_without_run_is_exit_2(self):
+        rc, out, err = self.cli("activate", "--instrument", INST, "--family", FID)
+        self.assertEqual(rc, 2, (out, err))
+        self.assertIn("--run", err)
+
+    def test_unknown_family_is_exit_2(self):
+        for cmd in ("activate", "use", "rollback"):
+            rc, _, err = self.cli(cmd, "--instrument", INST, "--family", "NOPE", "--run", "R", "--use", "OFF")
+            self.assertEqual(rc, 2, cmd)
+            self.assertIn("FAMILY_UNKNOWN", err)
+
+    def test_internal_key_error_is_not_family_unknown(self):
+        with mock.patch.object(self.B.Store, "rollback", side_effect=KeyError("action")), self.assertRaises(KeyError):
+            self.cli("rollback", "--instrument", INST, "--family", FID)
 
 
 class TestFamiliesLegacyAssistSyntheticKeepsHold(_StoreCase):

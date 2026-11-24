@@ -53,10 +53,12 @@ class FamilyService:
         impl, why = f.implementation()
         if fid in ("TH_RF", "TH_XGB", "TH_SVM"):
             th = f.trainhub_state(inst)
-            return {"implementation": impl, "implementation_reason": why, "artifact": th["artifact"], "use": th["use"], "trainhub": th}
+            return {"implementation": impl, "implementation_reason": why, "artifact": th["artifact"], "use": th["use"], "trainhub": th,
+                    "assist_gate_violation": None}                     # trainhub owns the role (no family gate here)
         if fid == "SEQ_GRU_EVENT":
             ev = f.status_from_mm(inst)
-            return {"implementation": "AVAILABLE", "artifact": ev["artifact"], "use": "SHADOW" if ev.get("version") else "OFF", "mm": ev}
+            return {"implementation": "AVAILABLE", "artifact": ev["artifact"], "use": "SHADOW" if ev.get("version") else "OFF", "mm": ev,
+                    "assist_gate_violation": None}
         st = self.store.state(fid, inst)
         runs = self.store.runs(fid, inst)
         active = next((r for r in runs if r["run_id"] == st.get("active")), None)
@@ -85,7 +87,8 @@ class FamilyService:
             try:
                 st = self.status(fid, inst)
             except Exception as exc:  # noqa: BLE001
-                st = {"implementation": "ERROR", "implementation_reason": str(exc)[:200], "artifact": "NOT_TRAINED", "use": "OFF"}
+                st = {"implementation": "ERROR", "implementation_reason": str(exc)[:200], "artifact": "NOT_TRAINED", "use": "OFF",
+                      "assist_gate_violation": None}
             out.append({**f.capabilities(), "status": st, "data_requirements": f.data_requirements()})
         return out
 
