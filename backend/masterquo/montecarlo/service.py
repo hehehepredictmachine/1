@@ -43,6 +43,10 @@ class MonteCarloService:
     def stop(self) -> None:
         self._pool.shutdown(wait=False, cancel_futures=True)
 
+    def context(self) -> tuple[str, float]:
+        """1.46 arch (I0089): (active instrument, point) - public name of _ctx (read by the validation-report route)."""
+        return self._ctx()
+
     def _ctx(self):
         """(instrument, point). 1.46 w2 (I0681): point = symbol_info.point or trade_tick_size, else None (UNKNOWN) - it was guessed as
         0.01 (bridge without symbol_info: symbol not selected yet while M1 bars are already buffered), and the bars' spread in POINTS

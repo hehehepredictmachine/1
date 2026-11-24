@@ -21,7 +21,7 @@ import urllib.request
 import webbrowser
 from pathlib import Path
 
-from . import paths
+from . import localapi, paths
 
 
 def _rt_dir() -> Path:
@@ -30,20 +30,14 @@ def _rt_dir() -> Path:
     return d
 
 
-def _port() -> int:
-    """1.46 arch (I0094): read-only. 1.45 built ConfigStore() here - a migration / missing file WROTE config.json (and a .bak) before
-    cmd_serve took the instance lock (and from `stop` / `profile`, i.e. from a second process while the bot runs). The running bot's
-    Runtime still migrates and writes the file, after the lock. Never raises (paths.DEFAULT_PORT)."""
-    from .config import server_port
-    return server_port()
+# 1.46 arch (I0080): the local-API client helpers live in the leaf masterquo/localapi.py (other modules import them from there, not from
+# this entry point); the old names stay as aliases with the former defaults (here: health timeout 1.5 s). I0094: localapi.port() reads
+# config.json read-only (config.server_port) - no migration write / .bak before the instance lock.
+_port = localapi.port
 
 
 def _health(port: int, timeout: float = 1.5) -> dict | None:
-    try:
-        with urllib.request.urlopen(urllib.request.Request(f"http://127.0.0.1:{port}/api/v1/health", headers={"Host": f"127.0.0.1:{port}"}), timeout=timeout) as r:
-            return json.loads(r.read().decode())
-    except (urllib.error.URLError, OSError, ValueError):
-        return None
+    return localapi.health(port, timeout)
 
 
 def _setup_logging() -> None:
@@ -447,8 +441,7 @@ def cmd_import_iv(path: str) -> int:
     if not p.is_file():
         print(f"[BŁĄD] Brak pliku: {p}")
         return 2
-    db = Database()
-    db.migrate()
+    db = Database()                     # 1.46 arch (I0096): Database.__init__ migrates (the second db.migrate() here was redundant)
     rep = iv_import.store(db, iv_import.parse_text(p.read_text(encoding="utf-8"), "json" if p.suffix.lower() == ".json" else "csv"), imported_by="CLI")
     print(f"[IV] wierszy {rep['rows']}: przyjęto {rep['accepted']}, już zapisane {rep['already_stored']}, odrzucono {len(rep['rejected'])}")
     for r in rep["rejected"][:50]:

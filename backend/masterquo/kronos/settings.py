@@ -7,7 +7,6 @@ which demands a positive walk-forward report on real (non-synthetic) data and an
 from __future__ import annotations
 
 import json
-import os
 import threading
 from pathlib import Path
 from typing import Literal
@@ -108,9 +107,9 @@ def default_weights_dir() -> Path:
 
 
 def python_candidates(s: KronosSettings) -> list[str]:
-    root = paths.ROOT_DIR
-    return [c for c in (os.environ.get("MQ_KRONOS_PYTHON"), s.python_path, str(root / ".venv_kronos" / "Scripts" / "python.exe"),
-                        str(root / ".venv_kronos" / "bin" / "python")) if c]
+    # 1.46 arch (I0117): one lookup for every model environment (same order as before)
+    from .. import runtimes
+    return runtimes.python_candidates("kronos", s.python_path)
 
 
 def find_python(s: KronosSettings) -> str | None:

@@ -469,25 +469,33 @@ export default function ChartPanel({ tf, index, opts, onFullscreen, fullscreen, 
       ...(pf.layers.OB ? (ov.order_blocks || []).slice(-3) : []).map((ob: any) => ({ from: TT(ob.confirmed_at) as number, low: ob.low, high: ob.high, color: String(t.ob),
         border: withAlpha(String(t.ob), 0.5), label: pf.labels ? "OB?" : "" })),
     ] : []);
-    paintVol(d.volatility, o.showVol !== false, TT);
+    // 1.46 arch (I0109): the S12 walls come from the SAME snapshot S12 uses (d.walls_snapshot = rt.walls.last); drawn here unless the
+    // structure layer (showPatterns) already draws that snapshot
+    paintVol(d.volatility, o.showVol !== false, TT, o.showPatterns ? null : d.walls_snapshot);
     if (isNewData || !initialized.current) restoreView(prevTimes, prevLogical, newTimes);
     else if (prevLogical) ts.setVisibleLogicalRange(prevLogical);
   };
 
   /** Daily volatility levels (backend engine/volzones.py): IV wall zones + reference price lines. Never changes the scale. */
-  const paintVol = (v: any, show: boolean, TT: (iso: string) => Time) => {
+  const paintVol = (v: any, show: boolean, TT: (iso: string) => Time, s12?: any) => {
     const ser = candles.current;
     if (!ser) return;
     const t = tkRef.current;
     volLines.current.forEach((p) => ser.removePriceLine(p));
     volLines.current = [];
     if (!show || !v || v.status !== "OK") { volZones.current?.setZones([]); return; }
-    volZones.current?.setZones((v.zones || []).map((z: any) => {
+    // 1.46 arch (I0109): S12 walls of the strategy's own snapshot (rt.walls.last), signed with its snapshot_id
+    const s12zones = s12 && s12.status === "OK" ? (s12.walls || []).map((x: any) => {
+      const col = String(x.side === "UPPER" ? t.ivWallUp : t.ivWallDown);
+      return { from: s12.anchor_time ? (TT(s12.anchor_time) as number) : 0, low: x.low, high: x.high, color: col, border: withAlpha(col, 0.9),
+        label: `S12 wall ${x.side === "UPPER" ? "+" : "−"}${x.k}σ · ${String(s12.snapshot_id || "").slice(0, 12)}` };
+    }) : [];
+    volZones.current?.setZones([...(v.zones || []).map((z: any) => {
       const col = String(z.side === "UP" ? t.ivWallUp : t.ivWallDown);
       // 1.46 arch (I0602): panel sigma bands (model pricing, cfg.volatility) - not the S12 walls (snapshot /api/v1/walls, cfg.walls)
       return { from: z.from_utc ? (TT(z.from_utc) as number) : 0, low: z.low, high: z.high, color: col, border: withAlpha(col, 0.7),
         label: `${z.label} · σ panelu (wycena modelowa, nie S12)` };
-    }));
+    }), ...s12zones]);
     const style: Record<string, [string, LineStyle, number]> = {
       DAILY_OPEN: ["dailyOpen", LineStyle.Solid, 1], EXPECTED_HIGH: ["expectedHL", LineStyle.Dashed, 2], EXPECTED_LOW: ["expectedHL", LineStyle.Dashed, 2],
       STRADDLE_BE: ["straddleBe", LineStyle.Dotted, 1], PDH: ["pdhl", LineStyle.SparseDotted, 1], PDL: ["pdhl", LineStyle.SparseDotted, 1],
@@ -538,7 +546,7 @@ export default function ChartPanel({ tf, index, opts, onFullscreen, fullscreen, 
       for (const x of w.walls || []) {
         const col = String(x.side === "UPPER" ? t.ivWallUp : t.ivWallDown);
         zs.push({ from: TT(w.anchor_time) as number, low: x.low, high: x.high, color: col, border: withAlpha(col, 0.8),
-          label: `S12 ${src} wall ${x.side === "UPPER" ? "+" : "−"}${x.k}σ (v${w.snapshot_version ?? 1})` });
+          label: `S12 ${src} wall ${x.side === "UPPER" ? "+" : "−"}${x.k}σ (v${w.snapshot_version ?? 1} · ${String(w.snapshot_id || "").slice(0, 12)})` });
       }
     }
     const rg = st.range || {};

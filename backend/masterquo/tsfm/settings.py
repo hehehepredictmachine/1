@@ -15,7 +15,6 @@ quantile levels, neutral band rule, data freshness, queue size, weights folder.
 from __future__ import annotations
 
 import json
-import os
 import threading
 from datetime import UTC, datetime, timezone
 from pathlib import Path
@@ -154,10 +153,9 @@ def default_weights_root() -> Path:
 
 
 def python_candidates(mid: str, c: ModelCfg) -> list[str]:
-    root = paths.ROOT_DIR
-    venv = {"chronos2": ".venv_chronos2", "granite_ttm": ".venv_granite", "tirex2": ".venv_tirex2"}[mid]
-    return [x for x in (os.environ.get(f"MQ_{mid.upper()}_PYTHON"), c.python_path, str(root / venv / "Scripts" / "python.exe"),
-                        str(root / venv / "bin" / "python")) if x]
+    # 1.46 arch (I0117): one lookup (MQ_<MID>_PYTHON, python_path, .venv_X) - same order as before
+    from .. import runtimes
+    return runtimes.python_candidates(mid, c.python_path)
 
 
 def find_python(mid: str, c: ModelCfg) -> str | None:

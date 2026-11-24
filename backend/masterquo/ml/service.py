@@ -648,6 +648,10 @@ class MLService:
         self.log.info("ML", "PAUSE", "Trening: " + ("wstrzymany" if on else "wznowiony"))
         return self.status(compact=True)
 
+    def clear_prediction_cache(self) -> None:
+        """1.46 arch (I0089): drop cached predictions (after the registry was re-read by POST /api/v1/ml/reload)."""
+        self._pred_cache.clear()
+
     def rollback(self) -> dict:
         r = self.registry.rollback()
         self._pred_cache.clear()
@@ -768,6 +772,30 @@ class MLService:
         base = float(self.registry.champion.meta.get("base_rate") or 0.5)
         return round(self.cfg.assist_rank_weight * (pred["calibrated_probability"] - base) * 10, 2)
 
+    def assist_rank_scale(self) -> dict:
+        """1.46 arch (I0327, NEUTRAL variant - information only): how large the ASSIST rank bonus of rank_adjust can get compared with the
+        components of the selector's rank (stage bonus <= 8 pts) and its CONFLICT / switch margins. Nothing reads this for a decision:
+        rank_adjust, the selector, the conflict rule and the ML gate are unchanged (a cap would lift some conflicts = a new entry, S0)."""
+        from ..strategies.selector import STAGE_BONUS
+        w = float(self.cfg.assist_rank_weight)
+        champ = self.registry.champion
+        base = float((getattr(champ, "meta", None) or {}).get("base_rate") or 0.5) if champ is not None else 0.5
+        per_p = round(w * 10, 2)
+        max_bonus = round(per_p * max(base, 1.0 - base), 2)
+        stage_max = float(max(STAGE_BONUS.values()))
+        try:
+            act = self.cfg_store.get().active
+            margins = {"conflict_margin": float(act.conflict_margin), "min_switch_margin": float(act.min_switch_margin)}
+        except Exception:  # noqa: BLE001 - information only
+            margins = {"conflict_margin": None, "min_switch_margin": None}
+        applies = self.cfg.mode == "ASSIST" and champ is not None
+        dominates = max_bonus > stage_max
+        return {"applies": applies, "weight": w, "base_rate": base, "points_per_probability": per_p, "max_abs_bonus": max_bonus,
+                "stage_bonus_max": stage_max, **margins, "can_dominate": dominates,
+                "warning": "ML_ASSIST_BONUS_CAN_DOMINATE_RANK" if applies and dominates else None,
+                "note": "bonus ASSIST = waga × (p − base rate) × 10 punktów rankingu; może przestawić wybór setupu ponad premię etapu i "
+                        "margines konfliktu – tylko informacja (wzór, selektor i bramka ML bez zmian)"}
+
     def explain(self, setup_id: str, version: int) -> dict:
         from .models import explain_dt, explain_xgb
         b = self.registry.champion
@@ -858,6 +886,10 @@ class MLService:
                "last_label_run": self.last_label_run, "last_check": self.last_check, "synthetic": self.synthetic,
                "last_tick_age_s": last_q.get("age_seconds"), "ticks_buffered": len(self.ticks), "backfill": self.backfill_state,
                "note": "Model ocenia setupy strategii; nie generuje własnych sygnałów. Komentarz Claude nie jest etykietą."}
+        try:                                    # 1.46 arch (I0327): information only (neutral variant)
+            out["assist_rank_scale"] = self.assist_rank_scale()
+        except Exception as exc:  # noqa: BLE001 - the status never fails because of an informational field
+            out["assist_rank_scale"] = {"error": f"{type(exc).__name__}: {exc}"[:200]}
         if not compact:
             out["models"] = self.registry.models()
             out["events"] = self.registry.events()

@@ -389,6 +389,10 @@ class Governor:
         pick = lambda q: round(xs[min(len(xs) - 1, int(q * (len(xs) - 1) + 0.5))], 2)  # noqa: E731
         return {"n": len(xs), "p50_ms": pick(0.5), "p95_ms": pick(0.95), "max_ms": round(xs[-1], 2)}
 
+    def record_event(self, kind: str, msg: str) -> None:
+        """1.46 arch (I0089): public name of _event (the API recorded the resource-profile change through the private method)."""
+        self._event(kind, msg)
+
     def _event(self, kind: str, msg: str) -> None:
         self.events = (self.events + [{"at": time.time(), "kind": kind, "message": msg}])[-100:]
         if self.applog is not None and kind in ("LEVEL", "RELEASED", "TRAINING_REFUSED"):

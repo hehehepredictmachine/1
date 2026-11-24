@@ -76,11 +76,9 @@ def weights_root() -> Path:
 
 
 def find_python() -> str | None:
-    root = paths.ROOT_DIR
-    for x in (os.environ.get("MQ_TABICL_PYTHON"), str(root / ".venv_tabicl" / "Scripts" / "python.exe"), str(root / ".venv_tabicl" / "bin" / "python")):
-        if x and Path(x).is_file():
-            return x
-    return None
+    # 1.46 arch (I0117): MQ_TABICL_PYTHON -> .venv_tabicl (is_file), as before
+    from .. import runtimes
+    return runtimes.find_python("tabicl")
 
 
 _INST_CACHE: dict = {}     # process cache (TTL max_age_s) of installed(); reset_install_cache() is the hook (1.46 arch I0104)
@@ -477,6 +475,14 @@ class TabICLService:
 
     def settings(self) -> dict:
         return (self.q.settings.get().get("tabicl") or {})
+
+    def register_with(self, governor) -> None:
+        """1.46 arch (I0089/I0102): register the TabICL worker with the Memory Governor (heavy slot, idle release) - was a lambda on
+        worker.proc / jobs / worker.last_used in runtime._wire_governor. Same callables, evaluated lazily; never released while a job
+        waits in the queue."""
+        import time as _time
+        governor.register("tabicl", "heavy", lambda: self.worker.proc.pid if (self.worker.proc and self.worker.proc.poll() is None) else None,
+                          release=lambda: self.jobs.empty() and self.worker.kill(), idle=lambda: _time.monotonic() - self.worker.last_used)
 
     def active(self) -> bool:
         s = self.q.settings.get()
