@@ -161,7 +161,8 @@ class EngineService:
             legacy_out["errors"].append("LEGACY_ENGINE_XAUUSD_ONLY")
         elif dq["analysis_allowed"]:
             snap = build_snapshot(snapshot_id=sid, analysis_id=f"MQAI-{self.bus.boot_id}", as_of=as_of, symbol=sym, alias=alias,
-                                  closed_bars=closed, analysis_status="PASS_WITH_LIMITATIONS", reason_codes=dq["reason_codes"])
+                                  closed_bars=closed, analysis_status="PASS_WITH_LIMITATIONS", reason_codes=dq["reason_codes"],
+                                  costs_account_profile=cfg.costs.account_profile)
             legacy_out = self.legacy.run(snap, cfg.strategy.mode, cfg.strategy.structure_policy)
         else:
             legacy_out["errors"].append("ANALYSIS_NOT_ALLOWED_BY_DATA_GATE")

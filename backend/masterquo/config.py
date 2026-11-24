@@ -132,12 +132,13 @@ class RiskLimits(_Strict):
 
 class CostConfig(_Strict):
     # "Zero" is the declared account profile, not a proof of zero costs.
-    account_profile: str = "ZERO_DECLARED_COSTS_UNVERIFIED"
+    # 1.46 arch (I0124): a label only - reported as costs_account_profile in the legacy plan (the vendor contract keeps its own constant)
+    account_profile: str = Field("ZERO_DECLARED_COSTS_UNVERIFIED", description="INFORMATIONAL label of the declared cost profile")
     commission_mode: Literal["UNKNOWN", "CONFIGURED", "FROM_DEAL_HISTORY"] = "FROM_DEAL_HISTORY"
     commission_per_lot_per_side: float | None = Field(None, ge=0)
     slippage_stress_points: float | None = Field(20.0, ge=0)
     # Found in sources (M01 v4.2.1 §12): "spread do 40%" with no denominator. Not used.
-    spread_40pct_rule: Literal["REQUIRES_DEFINITION"] = "REQUIRES_DEFINITION"
+    spread_40pct_rule: Literal["REQUIRES_DEFINITION"] = Field("REQUIRES_DEFINITION", description="INVARIANT, not read (1.46 arch, I0124)")
 
 
 class AgentConfig(_Strict):
@@ -217,7 +218,7 @@ class ExecutionConfig(_Strict):
     # SIGNALS = "Analiza warunków" (no orders), PAPER = automatic simulation, AUTO_DEMO / AUTO_LIVE = automatic orders.
     mode: OperatingMode = "PAPER"
     bound_account: str | None = None      # account key confirmed for AUTO_DEMO / AUTO_LIVE (server:login)
-    allow_live_execution: bool = False    # legacy 1.x field, no longer required (kept for config compatibility)
+    allow_live_execution: bool = Field(False, description="legacy 1.x field, NOT READ (kept for config compatibility; 1.46 arch, I0124)")
     deviation_points: int = Field(20, ge=0, le=1000)
     order_timeout_seconds: float = Field(10.0, ge=2, le=60)
     paper_starting_balance: float = Field(10000.0, gt=0)
@@ -513,7 +514,7 @@ class HeatmapSource(_Strict):
 
 class LiquidityConfig(_Strict):
     """Session sweep boxes + liquidation heatmap (PMW-UPD-06) - OBSERVE only, never an execution gate."""
-    sessions_enabled: bool = True
+    sessions_enabled: bool = Field(True, description="INFORMATIONAL, not read: session boxes are always computed (1.46 arch, I0124)")
     scalp_profile: Literal["SCALP_OPENING_V1", "LAB_XAU_REFERENCE_V1", "LAB_BTC_REFERENCE_V1"] = "SCALP_OPENING_V1"
     sessions_base_tf: Literal["M1", "M5"] = "M1"
     poll_seconds: int = Field(30, ge=15, le=3600)
@@ -552,7 +553,8 @@ class AssetsConfig(_Strict):
     """1.14: the application works on exactly two canonical assets: XAUUSD and BTC (allowlist)."""
     active: CanonicalAsset = "XAUUSD"
     mappings: dict[str, AssetMapping] = Field(default_factory=_default_mappings)
-    max_joint_exposure_pct: float = Field(2.0, gt=0, le=50, description="simulated joint open risk XAUUSD+BTC, % of equity")
+    max_joint_exposure_pct: float = Field(2.0, gt=0, le=50, description="INFORMATIONAL, NOT ENFORCED (1.46 arch, I0108): simulated joint open "
+                                          "risk XAUUSD+BTC, % of equity - the enforced joint limit is risk.max_total_open_risk_pct")
 
     @field_validator("mappings")
     @classmethod
