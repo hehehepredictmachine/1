@@ -223,9 +223,8 @@ class ScalpService:
              f"NOT_VERIFIED – konto {acc_ccy}, kwotowanie {q_ccy}, brak trade_tick_value" if cross else "waluta konta = waluta kwotowania")
         eco = extra = None
         if fill is not None and cs > 0:
-            extra = 2 * commission_price(com or 0.0, cs, mpp) + 2 * cfg.scalp.slippage_ticks * tick
-            eco = st.economics(plan, fill, sp, extra, self.prof)
-            gate("koszt i RR (filtr geometrii)", eco["ok"], eco["reason"])
+            eco, extra, eco_ok, eco_detail = economics_gate(plan, fill, sp, com or 0.0, cs, mpp, cfg.scalp.slippage_ticks, tick, self.prof)
+            gate("koszt i RR (filtr geometrii)", eco_ok, eco_detail)
             sp_ok = sp <= cfg.scalp.max_spread_atr_m1 * plan["atr_m1"] and (cfg.scalp.max_spread_price is None or sp <= cfg.scalp.max_spread_price)
             gate("spread", sp_ok, f"{sp:.3f}")
         sz = None
@@ -677,6 +676,21 @@ def commission_price(com: float, contract_size: float, mpp: float | None) -> flo
     account currency, the value before 1.46 arch) and com / money_per_price (MT5 conversion): never a smaller cost than before."""
     old = com / contract_size if contract_size > 0 else 0.0
     return max(old, com / mpp) if mpp else old
+
+
+def economics_gate(plan: dict, fill: float, spread: float, com: float, contract_size: float, mpp: float | None, slippage_ticks: float,
+                   tick: float, prof: dict) -> tuple[dict, float, bool, str]:
+    """The live 'koszt i RR' gate: (economics at the account-currency cost, that cost, ok, detail).
+    1.46 arch (I0738, review): a higher cost alone is not monotonic in economics (risk = side + cost crosses 0 for an entry at / beyond the
+    SL), so the gate also requires the economics at the cost before 1.46 arch (2 x com / contract size + slippage, the same formula) -
+    by construction never a pass that the code before did not give. economics() itself rejects an execution price at / beyond the SL."""
+    extra = 2 * commission_price(com, contract_size, mpp) + 2 * slippage_ticks * tick
+    eco = st.economics(plan, fill, spread, extra, prof)
+    extra0 = 2 * com / contract_size + 2 * slippage_ticks * tick
+    eco0 = eco if extra0 == extra else st.economics(plan, fill, spread, extra0, prof)
+    ok = bool(eco["ok"] and eco0["ok"])
+    detail = eco["reason"] if ok or not eco["ok"] else f"{eco0['reason']} (koszt sprzed 1.46: prowizja / rozmiar kontraktu)"
+    return eco, extra, ok, detail
 
 
 def _read_json(p: Path, bad: list[str]):

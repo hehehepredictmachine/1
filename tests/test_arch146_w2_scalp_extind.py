@@ -482,7 +482,7 @@ def _scenario(context=False):
 class _ScalpService:
     """The fake bridge / config of tests/test_scalp_core.TestConfigAndService (scenario bars, no orders)."""
 
-    def __init__(self, live, m5, *, account=None, info=None, extra_m5=None):
+    def __init__(self, live, m5, *, account=None, info=None, extra_m5=None, quote=None, slippage_ticks=None):
         from masterquo.config import AppConfig
         from masterquo.db.database import Database
         from masterquo.scalp import service as mod
@@ -503,6 +503,8 @@ class _ScalpService:
                 return [dict(b, spread=10) for b in outer.m5][-limit:] if tf == "M5" else []
 
             def quote_status(self):
+                if quote is not None:
+                    return dict(quote, age_seconds=0.5)
                 return {"bid": outer.live[-1]["c"], "ask": outer.live[-1]["c"] + 0.1, "age_seconds": 0.5}
 
             def account_status(self):
@@ -523,6 +525,8 @@ class _ScalpService:
             def get(self):
                 c = AppConfig()
                 c.scalp.commission_per_lot_side = 3.5
+                if slippage_ticks is not None:
+                    c.scalp.slippage_ticks = slippage_ticks
                 return c
         self.svc = mod.ScalpService(Cfg(), Bridge(), Database(), Bus(), Log(), news=None)
 
@@ -649,6 +653,98 @@ class TestScalpSizeAccountCurrency(unittest.TestCase):
         self.assertIsNotNone(g)
         self.assertFalse(g["ok"])                                              # EUR account, USD quote, no tick value -> NOT_VERIFIED
         self.assertIn("NOT_VERIFIED", g["detail"])
+
+
+def _economics_before(plan, fill, spread, extra, prof) -> bool:
+    """scalp/strategy.economics()['ok'] at c8277f4 (before 1.46 arch) - the reference of 'never looser than before'."""
+    from masterquo.scalp.strategy import V
+    sgn = 1 if plan["direction"] == "BUY" else -1
+    gross1, g2 = sgn * (plan["tp1"] - fill), sgn * (plan["tp2"] - fill)
+    risk = sgn * (fill - plan["sl"]) + extra
+    f1 = V(prof, "exits", "tp1_fraction")
+    net_w = f1 * (gross1 - extra) + (1 - f1) * (g2 - extra)
+    cost_tp1 = (spread + extra) / (gross1 + spread) if gross1 + spread > 0 else None
+    rr = net_w / risk if risk > 0 else None
+    return bool(gross1 > 0 and g2 > 0 and risk > 0 and cost_tp1 is not None and cost_tp1 <= V(prof, "economics", "max_cost_to_tp1_gross")
+                and rr is not None and rr >= V(prof, "economics", "min_weighted_net_rr"))
+
+
+_EUR_SYMBOL = {"trade_tick_size": 0.01, "trade_tick_value": 0.92, "point": 0.01, "trade_contract_size": 100.0, "volume_min": 0.01,
+               "volume_step": 0.01, "volume_max": 50, "currency_base": "XAU", "currency_profit": "USD"}      # EUR account: 0.92 EUR / tick
+
+
+class TestScalpEconomicsNeverLooser(unittest.TestCase):
+    """I0738 (review): commission_price = max(com / contract, com / money_per_price) is a larger cost, but economics' risk = side + cost
+    crosses 0 for an execution price at / beyond the SL - a larger cost turned a BLOCKED entry beyond the stop into READY_SHADOW (EUR
+    account, fill = SL - 9 ticks). The SL must be on the right side of the execution price, and the live gate ANDs the economics at the
+    cost before 1.46 arch: never a READY_SHADOW (user signal, markets/signals.py on_scalp_setup) that the code before gave not."""
+
+    def setUp(self):
+        self.td = TempData()
+
+    def tearDown(self):
+        self.td.close()
+
+    def test_economics_entry_at_or_beyond_stop(self):
+        from masterquo.scalp import strategy as st
+        p = st.load_profile()
+        buy = {"direction": "BUY", "sl": 1996.22, "tp1": 2000.0, "tp2": 2002.98}
+        old_extra, new_extra = 2 * 3.5 / 100 + 2 * 0.01, 2 * 3.5 / 92 + 2 * 0.01       # 0.0900 / 0.0961 (EUR account, slippage 1 tick)
+        e = st.economics(buy, round(buy["sl"] - 0.09, 2), 0.1, new_extra, p)              # the review case: risk 0.00609 > 0 -> was OK
+        self.assertFalse(e["ok"])
+        self.assertIn("SL", e["reason"])
+        for ticks in (3, 1, 0):                                                           # the gap of the code before 1.46 arch closes too
+            for extra in (old_extra, new_extra):
+                self.assertFalse(st.economics(buy, round(buy["sl"] - ticks * 0.01, 2), 0.1, extra, p)["ok"], (ticks, extra))
+        sell = {"direction": "SELL", "sl": 2003.78, "tp1": 2000.0, "tp2": 1997.02}
+        self.assertFalse(st.economics(sell, round(sell["sl"] + 0.09, 2), 0.1, new_extra, p)["ok"])
+        self.assertTrue(st.economics(buy, 1997.9, 0.1, new_extra, p)["ok"])               # a normal entry is unchanged
+
+    def test_live_entry_beyond_stop_is_blocked(self):
+        S, st, p, bars, info = _scenario()
+        ret = next(k for k, b in enumerate(bars) if b["open_utc"] == info["retest_time"])
+        live = bars[:ret + 1]
+        now = datetime.fromtimestamp(st.ts(live[-1]["open_utc"]) + 61, UTC)
+        sl = S.run(p, bars)[1][0]["sl"]
+        ask = round(sl - 0.09, 2)                                                          # BUY fill = SL - 9 ticks
+        h = _ScalpService(live, S.m5_of(live), account={"equity": 10000.0, "margin_mode": "HEDGING", "currency": "EUR"}, info=_EUR_SYMBOL,
+                          quote={"bid": round(ask - 0.1, 2), "ask": ask}, slippage_ticks=1)
+        row = h.tick(now)[0]
+        self.assertEqual(row["plan"]["sl"], sl)
+        self.assertEqual(row["plan"]["fill_shadow"], ask)
+        g = _gate(row, "koszt i RR (filtr geometrii)")
+        self.assertFalse(g["ok"], g)
+        self.assertEqual(row["status"], "BLOCKED")
+
+    def test_gate_never_looser_than_before(self):
+        from masterquo.scalp import service as mod
+        from masterquo.scalp import strategy as st
+        p = st.load_profile()
+        plans = ({"direction": "BUY", "sl": 1996.22, "tp1": 2000.0, "tp2": 2002.98}, {"direction": "SELL", "sl": 2003.78, "tp1": 2000.0, "tp2": 1997.02})
+        n_ok = n_beyond = 0
+        for plan in plans:
+            sgn = 1 if plan["direction"] == "BUY" else -1
+            for k in range(-30, 400, 3):                                                   # fill from 30 ticks beyond the SL to past TP1
+                fill = round(plan["sl"] + sgn * k * 0.01, 2)
+                for sp in (0.05, 0.3):
+                    for com in (0.0, 3.5, 7.0):
+                        for slip in (0, 1, 2):
+                            old = 2 * com / 100.0 + 2 * slip * 0.01
+                            before = _economics_before(plan, fill, sp, old, p)
+                            old_size = st.size(sgn * (fill - plan["sl"]) + old, 100.0, 10000.0, p, 0.01, 0.01, 50)
+                            for mpp in (None, 50.0, 92.0, 100.0, 400.0):
+                                eco, extra, ok, _detail = mod.economics_gate(plan, fill, sp, com, 100.0, mpp, slip, 0.01, p)
+                                self.assertGreaterEqual(extra, old)
+                                if not ok:
+                                    continue
+                                n_ok += 1
+                                self.assertTrue(before, (plan["direction"], k, sp, com, slip, mpp))   # never a new pass
+                                new_size = st.size(eco["risk_per_unit"], 100.0, 10000.0, p, 0.01, 0.01, 50, money_per_price=mpp)
+                                self.assertLessEqual(new_size["lots"], old_size["lots"])            # never more lots
+                            if k <= 0:
+                                n_beyond += 1
+        self.assertGreater(n_ok, 100)
+        self.assertGreater(n_beyond, 0)
 
 
 class TestCandidateSpreadUnknown(unittest.TestCase):

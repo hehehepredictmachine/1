@@ -576,12 +576,17 @@ def economics(plan: dict, fill: float, spread: float, cost_extra: float, prof: d
     net_w = f1 * (gross1 - cost_extra) + (1 - f1) * (sgn * (ex2 - fill) - cost_extra)
     cost_total = spread + cost_extra
     gross_tp1_mid = gross1 + spread                                   # gross move to TP1 before costs
-    ok_side = gross1 > 0 and sgn * (ex2 - fill) > 0 and risk > 0
+    # 1.46 arch (I0738, review): the SL must lie on the right side of the execution price. risk = side + cost alone crossed 0 for an
+    # entry at / beyond the stop (a higher cost turned such a BLOCKED entry into OK with a huge RR). With the side > 0 and cost >= 0
+    # the result can only get stricter with a higher cost (cost/TP1 rises, (G - c) / (R + c) falls).
+    sl_side = sgn * (fill - sl_exit) > 0
+    ok_side = gross1 > 0 and sgn * (ex2 - fill) > 0 and sl_side and risk > 0
     out = {"gross_tp1": gross_tp1_mid, "cost_round_trip": cost_total, "risk_per_unit": risk, "weighted_net_rr": (net_w / risk) if risk > 0 else None,
-           "cost_to_tp1": (cost_total / gross_tp1_mid) if gross_tp1_mid > 0 else None, "targets_on_right_side": ok_side}
+           "cost_to_tp1": (cost_total / gross_tp1_mid) if gross_tp1_mid > 0 else None, "targets_on_right_side": ok_side, "sl_on_right_side": sl_side}
     out["ok"] = bool(ok_side and out["cost_to_tp1"] is not None and out["cost_to_tp1"] <= V(prof, "economics", "max_cost_to_tp1_gross")
                      and out["weighted_net_rr"] is not None and out["weighted_net_rr"] >= V(prof, "economics", "min_weighted_net_rr"))
-    out["reason"] = ("OK" if out["ok"] else "cele po złej stronie ceny wykonania" if not ok_side else
+    out["reason"] = ("OK" if out["ok"] else "SL po złej stronie ceny wykonania (wejście na stopie lub za nim)" if not sl_side else
+                     "cele po złej stronie ceny wykonania" if not ok_side else
                      f"koszt/TP1 {out['cost_to_tp1']:.2f} > {V(prof, 'economics', 'max_cost_to_tp1_gross')}" if (out["cost_to_tp1"] or 9) > V(prof, "economics", "max_cost_to_tp1_gross")
                      else f"ważony RR netto {out['weighted_net_rr']:.2f} < {V(prof, 'economics', 'min_weighted_net_rr')}")
     return out
