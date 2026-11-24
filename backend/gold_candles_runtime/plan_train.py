@@ -28,7 +28,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from .common import (RunLog, activate, code_fingerprint, forecast_dir, instrument, make_config, read_registry, sha256_file, use_instrument, versions,
+from .common import (RunLog, activate, auto_admissible, code_fingerprint, forecast_dir, instrument, make_config, read_registry, sha256_file, use_instrument, versions,
                      write_json_atomic, write_registry)
 
 MIN_ROWS = {"fit": 600, "calibration": 200, "holdout": 250}
@@ -327,7 +327,7 @@ def run(args) -> int:
                            "training_seconds": round(time.monotonic() - log.t0, 1)}
     write_registry(reg)
     log("registry", f"zapisano run {run_id}: {overall}")
-    if args.activate and args.data_kind == "REAL_USER_DATA" and len(models) == 3 and runtime.get("status") == "OK" and overall in ("TRAINED_SHADOW", "PARTIAL_VALIDATION"):
+    if args.activate and args.data_kind == "REAL_USER_DATA" and len(models) == 3 and runtime.get("status") == "OK" and auto_admissible(overall)[0]:
         activate(run_id, reason="po treningu: horyzonty z walidacją SHADOW, zgodność loadera")
         log("registry", f"aktywny model obserwacyjny SHADOW: {run_id}")     # 1.46: was logged in the elif branch (activation refused)
     elif args.activate:

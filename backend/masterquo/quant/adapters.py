@@ -303,7 +303,8 @@ class EventGRU:
         try:
             with self._lock:
                 if (inst, aid) not in self._loaded:
-                    st, man = MA.load(inst, "event_engine_dir3", aid)
+                    # 1.46 (I0023): the schema the training wrote is checked (was never passed: a reordered FEATURES loaded silently)
+                    st, man = MA.load(inst, "event_engine_dir3", aid, feature_schema=EV.FEATURE_SCHEMA)
                     m = EE.EventModel.from_state(st)
                     sc = EV.Scaler()
                     sc.med, sc.iqr = np.asarray(st["scaler_med"], float), np.asarray(st["scaler_iqr"], float)
@@ -376,7 +377,7 @@ def scalp_a(rt, inst: str) -> list[dict]:
     ans = sc.forecasts()
     if ans.get("status") != "SHADOW":
         return [_p(canonical_id=cid, instrument=inst, timeframe="M1", model_name=cid, task_type="CLASS_PROBABILITIES", task="SCALP_DIRECTION_H1M_M1",
-                   horizon_bars=1, unit="probability", state="BLOCKED_DATA" if ans.get("status") in ("WARMUP", "UNAVAILABLE") else "ERROR",
+                   horizon_bars=1, unit="probability", state="BLOCKED_DATA" if ans.get("status") in ("WARMUP", "UNAVAILABLE", "STALE_DATA") else "ERROR",
                    unavailable_reason=str(ans.get("reason") or ans.get("status"))[:200])]
     out = []
     run = _scalp_run(reg, ans.get("run_id"))
@@ -391,6 +392,9 @@ def scalp_a(rt, inst: str) -> list[dict]:
         res = {k: float(v) / tot for k, v in res.items()}
         out.append(_p(canonical_id=cid, instrument=inst, timeframe="M1", model_name=cid, model_version=ans.get("run_id"), task_type="CLASS_PROBABILITIES",
                       task=f"SCALP_DIRECTION_H{mins}_M1", horizon_bars=mins, unit="probability", state="READY", result=res, data_time=ans.get("feature_time_utc"),
+                      # 1.46 (I0754): the forecast exists only after the bar CLOSED (data_time = its open, BAR_OPEN semantics); an older worker
+                      # without bar_close_utc leaves available_at empty as before
+                      available_at=ans.get("bar_close_utc"),
                       source="forecast worker (.venv_candles)", calibration=_scalp_calibration(run, hz, mins),
                       extra={"analytic_role": "BASE_FORECAST", "normalisation": "zaokrąglenie 4 miejsc – jawna renormalizacja w tolerancji 2e-4"}))
     return out

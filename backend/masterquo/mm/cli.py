@@ -6,7 +6,9 @@
   mm buzoa-bench [--budget N]                        BUZOA vs PSO/DE/Random on the benchmark functions
   mm mathbench-export --out DIR                      float64 MLP weights / vectors / float32 ONNX + Python checks (copy to MQL5\\Files\\PMW_MathFidelity)
   mm export-fixtures --out DIR [--parity NATIVE]     frozen inputs + Python reference outputs for the MQL5 self-test (Kalman/GPR/HDC/breakout);
-                                                     with --parity compares PMW_MM_NATIVE.txt written by PMW_MM_SelfTest.mq5
+                                                     with --parity compares PMW_MM_NATIVE.txt written by PMW_MM_SelfTest.mq5;
+                                                     exit code 0 = NATIVE_PARITY_PASS, 3 = NATIVE_NOT_EXECUTED (no native file yet),
+                                                     1 = NATIVE_PARITY_FAIL / NATIVE_OUTPUT_INVALID
   mm rollback --instrument XAUUSD --model MODEL_ID   previous SHADOW artifact back (pointer only)
 """
 from __future__ import annotations
@@ -17,6 +19,7 @@ import sys
 from pathlib import Path
 
 INSTR = ("XAUUSD", "BTC")      # instrument ids of the allowlist (never an MT5 broker symbol); always explicit, no default
+PARITY_RC = {"NATIVE_PARITY_PASS": 0, "NATIVE_NOT_EXECUTED": 3}      # export-fixtures --parity; anything else (FAIL / INVALID) -> 1
 
 
 def main(argv: list[str]) -> int:
@@ -85,7 +88,8 @@ def main(argv: list[str]) -> int:
                 fixtures.export(Path(a.out))
             res = fixtures.parity(Path(a.parity), Path(a.out))
             print(json.dumps(res, indent=1))
-            return 0 if res["status"] in ("NATIVE_PARITY_PASS", "NATIVE_NOT_EXECUTED") else 1
+            # 1.46 (I0489): NATIVE_NOT_EXECUTED returned 0 like a pass - a script could not tell "parity checked" from "never run"
+            return PARITY_RC.get(res["status"], 1)
         print(json.dumps(fixtures.export(Path(a.out)), indent=1))
         return 0
     if a.cmd == "rollback":

@@ -41,8 +41,12 @@ class PPO(B.Family):
         if not res.get("ok"):
             raise B.Unavailable("ERROR", f"trening PPO: {res.get('error')}")
         vm = {"val_ppo_minus_flat": res["val_ppo_minus_flat"], "val_ppo_minus_momentum": res["val_ppo_minus_momentum"]}
+        # 1.46 (I0466): the deterministic inference sample of deep_runtime.rl.train (validation bars, FLAT) - checked on activation
+        # (service._sample_check); a worker without it keeps the previous manifest (no sample, activation checks loading only)
+        tail, probs = res.pop("sample_bars", None), res.pop("sample_probs", None)
+        sample = {"bars_tail": tail, "position": 0.0, "expected": probs, "tolerance": 1e-6} if tail and probs else {"expected": None, "tolerance": 0.0}
         return {"metrics": res, "validation": self.promotion(vm, {"val_ppo_minus_flat": (">", 0.0), "val_ppo_minus_momentum": (">", 0.0)}),
-                "sample": {"expected": None, "tolerance": 0.0}}
+                "sample": sample}
 
     def load(self, d):
         return {"dir": str(d), **json.loads((d / "rl_config.json").read_text(encoding="utf-8"))}

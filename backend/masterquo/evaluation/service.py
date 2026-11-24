@@ -22,6 +22,7 @@ from __future__ import annotations
 import json
 import logging
 import math
+import sqlite3
 import time
 from pathlib import Path
 
@@ -46,6 +47,19 @@ def label_policy(model_id: str | None) -> str:
     """w2 (I0031): which outcome definition a row of THIS ledger carries (view field, never stored): the binary plan approximation of
     evaluation/outcome.label (no BE, spread at the decision) of the evaluation engine version that assessed the row."""
     return "EVAL_BINARY_PLAN_APPROX/" + (str(model_id or "").split("/")[0] or E.VERSION)
+
+
+# 1.46 (I0039): report() read and JSON-decoded the WHOLE payload of every SETUP_ASSESSMENT row (the candidate with all its decision-time
+# features) on every call. SQLite extracts only what the report aggregates (model id, assessment, both regime definitions, the
+# candidate's instrument - w2 I0032 splits by instrument and engine version) as JSON
+# text; Python decodes them exactly as before (number literals are copied, not re-rendered). A payload with NaN / Infinity (json.dumps
+# writes them, standard JSON has no such literal) is decoded whole in Python, as is everything when JSON1 is missing.
+_NONSTD = "(instr(payload, 'NaN') > 0 OR instr(payload, 'Infinity') > 0)"
+_REPORT_SQL: str | None = (f"SELECT model_id, CASE WHEN {_NONSTD} THEN payload END AS raw, "
+                           f"CASE WHEN NOT {_NONSTD} THEN json_extract(payload, '$.assessment') END AS a, "
+                           f"CASE WHEN NOT {_NONSTD} THEN json_extract(payload, '$.candidate.market_regime.both') END AS both, "
+                           f"CASE WHEN NOT {_NONSTD} THEN json_extract(payload, '$.candidate.instrument') END AS inst, "
+                           "outcome FROM predictions WHERE kind='SETUP_ASSESSMENT'")
 
 
 def _default_dir() -> Path:
@@ -278,8 +292,9 @@ class EvaluationService:
 
     # ------------------------------------------------------------------ outputs
     def status(self) -> dict:
+        # 1.46 (I0039): COUNT(*) in SQLite - was len(pending()), i.e. SELECT * of every open row of the whole history on each status call
         return {"version": VERSION, "mode": "SHADOW", "contract": K.VERSION, "engine": E.VERSION, "counters": dict(self.counters),
-                "pending": len(self.ledger.pending()), "last_error": self.last_error, "ledger": str(self.ledger.path),
+                "pending": self.ledger.count_pending(), "last_error": self.last_error, "ledger": str(self.ledger.path),
                 "note": "ocena każdego setupu obu ścieżek; nie blokuje ani nie wysyła zleceń"}
 
     def assessments(self, engine: str | None = None, limit: int = 50) -> list[dict]:
@@ -303,20 +318,40 @@ class EvaluationService:
                         "zone_context": a.get("zone_context"), "outcome": json.loads(r["outcome"]) if r["outcome"] else None})
         return out
 
+    def _report_rows(self) -> list[tuple[str, dict, dict]]:
+        """(model_id, payload view {assessment, candidate: {instrument, market_regime: {both}}}, outcome) of every SETUP_ASSESSMENT row,
+        in the ledger order (as before) - only the parts report() aggregates are decoded (I0039)."""
+        rows = None
+        with self.ledger._lock:
+            if _REPORT_SQL:
+                try:
+                    rows = [tuple(r) for r in self.ledger.c.execute(_REPORT_SQL).fetchall()]
+                except sqlite3.OperationalError:              # SQLite without JSON1 / a payload its parser rejects: full decode below
+                    rows = None
+            if rows is None:
+                rows = [(r["model_id"], r["payload"], None, None, None, r["outcome"]) for r in self.ledger.c.execute(
+                    "SELECT model_id, payload, outcome FROM predictions WHERE kind='SETUP_ASSESSMENT'").fetchall()]
+        out = []
+        for mid, raw, a, both, inst, outcome in rows:
+            if raw is not None:
+                pl = json.loads(raw)
+                a, both, inst = pl["assessment"], (pl["candidate"].get("market_regime") or {}).get("both") or {}, pl["candidate"].get("instrument")
+            else:
+                a, both = json.loads(a), (json.loads(both) if both is not None else None) or {}
+            view = {"assessment": a, "candidate": {"instrument": inst, "market_regime": {"both": both}}}
+            out.append((mid, view, json.loads(outcome) if outcome else {}))
+        return out
+
     def report(self) -> dict:
         """Matured rows per engine x SHADOW decision: event rate, mean plan R (net), Brier where a probability existed.
         w2 (I0032): one ledger file holds every instrument and every evaluation-engine version - groups / outcome_distribution /
         assist_readiness count only the CURRENT engine (E.VERSION); assist_readiness is the ACTIVE instrument's (each entry names it),
         assist_readiness_by_instrument splits every instrument, rows of older engine versions are listed under `legacy` (counts only).
-        Before, readiness (O2: >= 200 matured per engine) summed XAUUSD, BTC and old engine versions together."""
-        with self.ledger._lock:
-            rows = [dict(r) for r in self.ledger.c.execute(
-                "SELECT model_id, payload, outcome FROM predictions WHERE kind='SETUP_ASSESSMENT'").fetchall()]
+        Before, readiness (O2: >= 200 matured per engine) summed XAUUSD, BTC and old engine versions together.
+        I0039: rows come from _report_rows (only the aggregated parts of the payload are decoded)."""
         regimes: dict = {}
         cur, legacy = [], {}
-        for r in rows:
-            pl = json.loads(r["payload"])
-            out = json.loads(r["outcome"]) if r["outcome"] else {}
+        for mid, pl, out in self._report_rows():
             both = (pl["candidate"].get("market_regime") or {}).get("both") or {}
             rg = regimes.setdefault((both.get("ACTIVE"), both.get("SH")), {"n": 0, "matured": 0, "r": []})
             rg["n"] += 1
@@ -324,10 +359,10 @@ class EvaluationService:
                 rg["matured"] += 1
                 if out.get("plan_r_net") is not None:                     # 1.46: unknown net R (unknown cost) is not averaged as a number
                     rg["r"].append(out["plan_r_net"])
-            if str(r["model_id"]).startswith(f"{E.VERSION}/"):
+            if str(mid).startswith(f"{E.VERSION}/"):
                 cur.append((pl, out))
             else:
-                lg = legacy.setdefault(str(r["model_id"]), {"n": 0, "matured": 0})
+                lg = legacy.setdefault(str(mid), {"n": 0, "matured": 0})
                 lg["n"] += 1
                 lg["matured"] += 1 if out.get("status") == "MATURED" else 0
         res, _, outcomes, matured = self._summary(cur)
