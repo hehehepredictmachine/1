@@ -1,21 +1,24 @@
-"""Model registry: list / activate / rollback / deactivate (atomic; only compatible REAL_USER_DATA models can be active)."""
+"""Model registry: list / activate / rollback / deactivate (atomic; only compatible REAL_USER_DATA models that were not REJECTED in validation
+can be made active - D20)."""
 from __future__ import annotations
 
 import argparse
 import sys
 import time
 
-from .common import use_instrument, activate, activatable, current_contract, read_registry, write_registry
+from .common import use_instrument, activate, activatable, admissible, current_contract, read_registry, write_registry
 
 
 def _check(e: dict) -> tuple[bool, str | None]:
     """1.46: list / rollback check the contract of the CURRENT code exactly like activate() and the worker (activatable(e) without a
-    contract skipped it: 'list' said 'może być aktywny' and 'rollback' switched to a model the worker shows as CONTRACT_MISMATCH)."""
+    contract skipped it: 'list' said 'może być aktywny' and 'rollback' switched to a model the worker shows as CONTRACT_MISMATCH).
+    D20: and the validation verdict like activate() - rollback no longer switches to a run REJECTED in validation."""
     try:
         cur = current_contract(e)
     except Exception as exc:  # noqa: BLE001 - e.g. an invalid tick size in an old entry: never activatable, never a traceback
         return False, f"CONTRACT_UNKNOWN:{type(exc).__name__}: {exc}"[:200]
-    return activatable(e, cur)
+    ok, why = activatable(e, cur)
+    return admissible(e) if ok else (ok, why)
 
 
 def main(argv=None) -> int:
@@ -36,6 +39,11 @@ def main(argv=None) -> int:
         return 2
     if args.cmd == "list":
         print(f"Aktywny: {reg.get('active') or 'brak'}")
+        act = reg["runs"].get(reg.get("active") or "")
+        if act and not admissible(act)[0]:
+            # D20: the worker keeps an already active run (activatable() only); its rejected horizons are not READY (adapter, D21)
+            print(f"[UWAGA] aktywny run {reg['active']} ma ocenę walidacji {act.get('overall_status') or 'brak'} – nie zostałby dziś aktywowany; "
+                  f"horyzonty odrzucone w walidacji nie są publikowane jako READY. Użyj 'rollback' albo 'deactivate'.")
         for rid, e in sorted(reg["runs"].items()):
             ok, why = _check(e)
             print(f"  {rid}  {e.get('data_kind')}  {e.get('overall_status')}  horyzonty {e.get('horizon_status')}  "
