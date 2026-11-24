@@ -26,7 +26,7 @@ from reportlab.platypus import (Image, KeepTogether, ListFlowable, ListItem, Pag
                                 TableStyle)
 
 ROOT = Path(__file__).resolve().parents[1]
-VERSION = "1.45.0"
+VERSION = "1.46.0"
 TAG = VERSION.replace(".", "_")
 # 1.46: user-visible product name (= masterquo.version.DISPLAY_NAME, desktop displayName - window title "Apollo23 <version>"). Identifiers
 # stay: PepeMarketWizardDesktop.exe, %LOCALAPPDATA%\PepeMarketWizard, folders inside the ZIP, PMW1 keys, the PDF file names.

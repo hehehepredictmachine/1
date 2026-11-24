@@ -7,7 +7,7 @@
   "RT_MANIFEST": {
     "#1": {
       "0409": {
-        "identity": {"name": "PepeMarketWizard.Desktop", "version": "1.45.0.0"},
+        "identity": {"name": "PepeMarketWizard.Desktop", "version": "1.46.0.0"},
         "description": "Apollo23",
         "minimum-os": "win10",
         "execution-level": "as invoker",
@@ -29,16 +29,16 @@
   "RT_VERSION": {
     "#1": {
       "0000": {
-        "fixed": {"file_version": "1.45.0.0", "product_version": "1.45.0.0"},
+        "fixed": {"file_version": "1.46.0.0", "product_version": "1.46.0.0"},
         "info": {
           "0409": {
             "CompanyName": "Apollo23",
             "FileDescription": "Apollo23 – aplikacja Windows",
-            "FileVersion": "1.45.0",
+            "FileVersion": "1.46.0",
             "InternalName": "PepeMarketWizardDesktop",
             "OriginalFilename": "PepeMarketWizardDesktop.exe",
             "ProductName": "Apollo23",
-            "ProductVersion": "1.45.0"
+            "ProductVersion": "1.46.0"
           }
         }
       }
