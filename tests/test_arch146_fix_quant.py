@@ -25,6 +25,23 @@ def iso(t: float) -> str:
     return datetime.fromtimestamp(t, UTC).isoformat()
 
 
+# ================================================================================================ D21 (quant/adapters.py:352 only)
+class TestScalpACalibrationD21(unittest.TestCase):
+    """scalp A records were UNCALIBRATED for every run, although the trainer stores a calibrator per horizon and the worker applies it."""
+
+    def test_calibration_status_follows_the_registry(self):
+        from masterquo.quant import adapters as A
+        reg = {"active": "R1", "runs": {"R1": {"models": {"1": {"selected": "LR", "calibrator": {"coef": [[0.1]]}}, "3": {"selected": "PRIOR"}}}}}
+        hz = {"1": {"p_down": 0.2, "p_flat": 0.3, "p_up": 0.5}, "3": {"p_down": 0.3, "p_flat": 0.4, "p_up": 0.3}}
+        sc = SimpleNamespace(registry=lambda: reg, forecasts=lambda: {"status": "SHADOW", "run_id": "R1", "feature_time_utc": iso(time.time() - 60),
+                                                                      "horizons": hz})
+        recs = {r["horizon"]["bars"]: r for r in A.scalp_a(SimpleNamespace(scalp=sc), "XAUUSD")}
+        self.assertEqual(recs[1]["state"], "READY")
+        self.assertEqual(recs[1]["calibration"]["status"], "CALIBRATED_DEV")
+        self.assertEqual(recs[3]["calibration"]["status"], "UNCALIBRATED")             # no calibrator stored for that horizon
+        self.assertEqual(recs[1]["result"], {"DOWN": 0.2, "FLAT": 0.3, "UP": 0.5})     # values untouched
+
+
 # ================================================================================================ D22
 def acc_one_segment(n_events: int, t0: float = 1_794_000_000.0, step: float = 60.0) -> dict:
     t = t0 + step * np.arange(n_events, dtype=float)

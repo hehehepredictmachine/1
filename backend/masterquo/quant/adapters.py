@@ -340,6 +340,7 @@ def scalp_a(rt, inst: str) -> list[dict]:
                    horizon_bars=1, unit="probability", state="BLOCKED_DATA" if ans.get("status") in ("WARMUP", "UNAVAILABLE") else "ERROR",
                    unavailable_reason=str(ans.get("reason") or ans.get("status"))[:200])]
     out = []
+    run = _scalp_run(reg, ans.get("run_id"))
     for hz, r in (ans.get("horizons") or {}).items():
         mins = int("".join(ch for ch in str(hz) if ch.isdigit()) or 1)
         res = {"DOWN": r.get("p_down"), "FLAT": r.get("p_flat"), "UP": r.get("p_up")}
@@ -351,9 +352,31 @@ def scalp_a(rt, inst: str) -> list[dict]:
         res = {k: float(v) / tot for k, v in res.items()}
         out.append(_p(canonical_id=cid, instrument=inst, timeframe="M1", model_name=cid, model_version=ans.get("run_id"), task_type="CLASS_PROBABILITIES",
                       task=f"SCALP_DIRECTION_H{mins}_M1", horizon_bars=mins, unit="probability", state="READY", result=res, data_time=ans.get("feature_time_utc"),
-                      source="forecast worker (.venv_candles)", calibration={"method": None, "status": "UNCALIBRATED"},
+                      source="forecast worker (.venv_candles)", calibration=_scalp_calibration(run, hz, mins),
                       extra={"analytic_role": "BASE_FORECAST", "normalisation": "zaokrąglenie 4 miejsc – jawna renormalizacja w tolerancji 2e-4"}))
     return out
+
+
+def _scalp_run(reg: dict, run_id) -> dict:
+    """Registry entry of the run that answered (forecast run_id), else of the active run; {} when unknown."""
+    runs = reg.get("runs") if isinstance(reg.get("runs"), dict) else {}
+    e = runs.get(run_id) if run_id else None
+    if not isinstance(e, dict):
+        e = runs.get(reg.get("active"))
+    return e if isinstance(e, dict) else {}
+
+
+def _scalp_calibration(run: dict, hz, mins: int) -> dict:
+    """1.46 (D21): the calibration of task A as the scalp registry records it. The trainer fits a multinomial calibrator on the calibration
+    period for the selected model of each horizon (gold_candles_runtime/scalp_train.py: spec['calibrator']) and the worker applies it
+    (scalp_infer.ScalpModel.predict) - the record said UNCALIBRATED for every run. A horizon without a stored calibrator (prior / none)
+    stays UNCALIBRATED. Metadata only: the Quant features do not read the calibration."""
+    models = run.get("models") if isinstance(run.get("models"), dict) else {}
+    spec = models.get(str(hz)) or models.get(str(mins))
+    if isinstance(spec, dict) and spec.get("calibrator"):
+        return {"method": "regresja logistyczna (multinomialna) na log-prawdopodobieństwach, okres kalibracji – rejestr scalp",
+                "status": "CALIBRATED_DEV"}
+    return {"method": None, "status": "UNCALIBRATED"}
 
 
 # ---------------------------------------------------------------------------------------------------------------- lab (read the lab loop state)
