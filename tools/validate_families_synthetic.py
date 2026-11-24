@@ -76,7 +76,8 @@ def corpus(tmp: Path):
     rows = []
     for i in range(600):
         k = i % 3
-        w = (pos, neu, neg)[k][i % 3] + f" item {i} " + " ".join(rng.choice(["today", "again", "now", "on fed"], 2))
+        # 1.46: phrase index independent of the class (was [i % 3] == k -> one phrase per class, a trivially separable corpus)
+        w = (pos, neu, neg)[k][(i // 3) % 3] + f" item {i} " + " ".join(rng.choice(["today", "again", "now", "on fed"], 2))
         rows.append({"text": w, "label": ("POSITIVE", "NEUTRAL", "NEGATIVE")[k], "first_seen_at": f"2026-01-{1 + i % 28:02d}T00:{i % 60:02d}:00Z"})
     p = tmp / "corpus.jsonl"
     p.write_text("\n".join(json.dumps(r) for r in rows), encoding="utf-8")

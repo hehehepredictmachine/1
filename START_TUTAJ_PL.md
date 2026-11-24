@@ -1,12 +1,26 @@
-# PepeMarketWizard – START TUTAJ
+# Apollo23 (dawniej PepeMarketWizard) – START TUTAJ
 
 > **1.13: nowa nazwa programu – PepeMarketWizard** (dawniej MasterQUO AI). Pliki startowe (`03_START_MASTERQUO.bat`, `04_STOP_MASTERQUO.bat`,
 > `masterquo_start.bat`), folder `data\` i wewnętrzny pakiet `masterquo` mają **dawne nazwy celowo** – Twoja konfiguracja, baza, klucze
 > i skróty działają bez zmian. „MasterQUO” pozostaje nazwą silnika strategii (S01–S12, specyfikacja MQ-SPEC).
 
+## Nowe w 1.45 – Apollo23: nowa nazwa, TraderLifeGame zamiast OTC, moduły workflow v3.2
+* **Apollo23** to nowa nazwa wyświetlana programu (menu, okno Windows, ekran startowy, licencja, Telegram). Identyfikatory wewnętrzne
+  są **bez zmian**: pakiet `masterquo`, zmienne `PMW_*`, folder danych `%LOCALAPPDATA%\PepeMarketWizard`, pliki `PepeMarketWizard.exe`
+  i `PepeMarketWizardDesktop.exe`, nazwy plików `.bat`, format licencji – konfiguracja, baza, klucze i skróty działają jak dotąd.
+* Menu po intro: **FOREX / CRYPTO / TraderLifeGame** – trzecia kula to **TraderLifeGame** (`#/trader-life-game`: postać, dziennik jako
+  adnotacje nad transakcjami MT5 tylko do odczytu, questy, akademia). Gra **nie składa zleceń**.
+* **OTC wycofane**: aktywny katalog to 60 strategii / 6 koszyków / 2 profile; strategie OTC zostają tylko jako historia (`RETIRED`),
+  stare ustawienia są oznaczone jako wycofane, nic nie jest kasowane.
+* Nowe moduły workflow v3.2 (order flow, rynki INDICES / FOMO – tylko badania, modele, ROI strategii, RiskLoot i inne) są domyślnie
+  **OFF / SHADOW / tylko do odczytu** – nie zmieniają STOP, SL/TP, limitów ryzyka, dźwigni ani trybu wykonania.
+* 1.44: intro to film Apollo23 (klik, Spacja albo Esc pomija); wersja **klienta** wymaga licencji offline – `docs/LICENCJA_PL.md`.
+  Szczegóły obu wersji: `CHANGELOG.md`.
+
 ## Nowe w 1.42 – nowy interfejs (cinematic + kula FOREX), modele ASSIST, zlecenia koszyków FX
-* Okno startowe Windows: **WEJDŹ** (dawniej JOIN THE CULT) → film intro → menu **FOREX / CRYPTO / OTC** → kula FOREX z ekranami
-  **CHARTS, SIGNALS, MODELS & BACKTEST, ROI**. Ustawienia, Tryb pracy, STOP i Diagnostyka – ikony w prawym dolnym rogu.
+* Okno startowe Windows: **WEJDŹ** (dawniej JOIN THE CULT) → film intro → menu **FOREX / CRYPTO / OTC** (od 1.45 trzecia kula to
+  TraderLifeGame – OTC wycofane) → kula FOREX z ekranami **CHARTS, SIGNALS, MODELS & BACKTEST, ROI**. Ustawienia, Tryb pracy,
+  STOP i Diagnostyka – ikony w prawym dolnym rogu.
 * Modele Chronos-2, Granite TTM, TiRex-2 i Kronos pracują jako **ASSIST** (mogą tylko wstrzymać wejście); plany koszyków FX idą do
   istniejącej ścieżki SH z Twoimi limitami ryzyka. Szczegóły: `docs/AKTUALIZACJA_1_42_PL.md`.
 * Opisy ekranów w sekcjach starszych wersji poniżej (Galaxy, wieże, Neural City, JOIN THE CULT) dotyczą interfejsu sprzed 1.42 –

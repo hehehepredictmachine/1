@@ -165,11 +165,14 @@ def install_one(mid: str, a, root: Path, base: str, out: Out) -> dict:
                 keep.append(ln)
             tmp = venv / f"requirements-{mid}-nocuda.txt"
             tmp.write_text("\n".join(keep) + "\n", encoding="utf-8")
-            out.say(3, f"instaluję zależności (z sumami) bez torch, potem {TORCH[mid]} z indeksu PyTorch {a.cuda} (bez sum w naszym pliku)")
-            rc, last = KS.run(pip + ["--require-hashes", "--only-binary=:all:", "-r", str(tmp)], out, 3)
+            # 1.46: torch FIRST - on a fresh .venv_* the hashed file without torch failed: chronos-forecasting / accelerate, tirex-2,
+            # tabicl depend on torch and pip in --require-hashes mode refuses that unpinned dependency, so torch CUDA was never
+            # installed. torch --no-deps: its own dependencies are pinned with hashes in the file and come in the second step.
+            out.say(3, f"instaluję {TORCH[mid]} z indeksu PyTorch {a.cuda} (bez sum w naszym pliku), potem zależności (z sumami) bez torch")
+            rc, last = KS.run(pip + ["--only-binary=:all:", "--force-reinstall", "--no-deps", TORCH[mid], "--index-url",
+                                     f"https://download.pytorch.org/whl/{a.cuda}"], out, 3)
             if rc == 0:
-                rc, last = KS.run(pip + ["--only-binary=:all:", "--force-reinstall", "--no-deps", TORCH[mid], "--index-url",
-                                         f"https://download.pytorch.org/whl/{a.cuda}"], out, 3)
+                rc, last = KS.run(pip + ["--require-hashes", "--only-binary=:all:", "-r", str(tmp)], out, 3)
         else:
             out.say(3, "instaluję PyTorch (CPU) i zależności – tylko pakiety z sumami SHA-256")
             rc, last = KS.run(pip + ["--require-hashes", "--only-binary=:all:", "-r", str(req)], out, 3)

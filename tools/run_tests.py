@@ -37,6 +37,13 @@ def candle_python():
     return None
 
 
+def _text(x) -> str:
+    """1.46: output captured before a timeout (bytes on POSIX even with text=True, str on Windows, or None)."""
+    if x is None:
+        return ""
+    return x.decode("utf-8", "replace") if isinstance(x, bytes) else x
+
+
 def run_candles() -> dict:
     """gold_candles reference tests (29) + runtime integration tests, with the ISOLATED .venv_candles interpreter (pinned
     numpy/pandas/scikit-learn of the module). Without that environment the suite is reported SKIPPED - never passed."""
@@ -45,8 +52,13 @@ def run_candles() -> dict:
         return {"status": "SKIPPED_NO_CANDLE_ENV", "ok": True, "note": "uruchom 10_PROGNOZY_INSTALUJ.bat (tworzy .venv_candles)"}
     env = dict(os.environ, PYTHONPATH=str(ROOT / "backend"))
     t0 = time.time()
-    p = subprocess.run([py, "-m", "unittest", "discover", "-s", str(ROOT / "tests" / "gold_candles"), "-p", "test_*.py", "-v"],
-                       cwd=str(ROOT / "tests" / "gold_candles"), env=env, capture_output=True, text=True, timeout=3600)
+    try:
+        p = subprocess.run([py, "-m", "unittest", "discover", "-s", str(ROOT / "tests" / "gold_candles"), "-p", "test_*.py", "-v"],
+                           cwd=str(ROOT / "tests" / "gold_candles"), env=env, capture_output=True, text=True, timeout=3600)
+    except subprocess.TimeoutExpired as exc:   # 1.46: a timeout was an uncaught traceback - no JSON report after the long main suite
+        tail = _text(exc.stderr)[-3000:]
+        print("[candles] TIMEOUT", tail[-1200:])
+        return {"status": "TIMEOUT", "ok": False, "interpreter": py, "ran": None, "seconds": round(time.time() - t0, 1), "tail": tail}
     tail = p.stderr[-3000:]
     print("[candles]", tail[-1200:])
     import re
@@ -63,7 +75,13 @@ def run_legacy() -> list:
         for sub, script in LEGACY:
             cwd = tmp / "vendor" / sub
             t0 = time.time()
-            p = subprocess.run([sys.executable, script], cwd=str(cwd), capture_output=True, text=True, timeout=1800)
+            try:
+                p = subprocess.run([sys.executable, script], cwd=str(cwd), capture_output=True, text=True, timeout=1800)
+            except subprocess.TimeoutExpired as exc:   # 1.46: reported (returncode None = not passed), the next suites still run
+                tail = (_text(exc.stdout) + _text(exc.stderr))[-1500:]
+                out.append({"suite": f"{sub}/{script}", "status": "TIMEOUT", "returncode": None, "seconds": round(time.time() - t0, 1), "tail": tail})
+                print(f"[legacy] {sub}/{script}: TIMEOUT\n{tail[-600:]}")
+                continue
             tail = (p.stdout + p.stderr)[-1500:]
             out.append({"suite": f"{sub}/{script}", "returncode": p.returncode, "seconds": round(time.time() - t0, 1), "tail": tail})
             print(f"[legacy] {sub}/{script}: rc={p.returncode}\n{tail[-600:]}")
