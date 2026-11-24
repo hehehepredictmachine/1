@@ -267,6 +267,19 @@ def _analysis_rows() -> list[dict]:
     return out
 
 
+def _extra_rows() -> list[dict]:
+    """1.46 arch: producers that were in the code but in no registry (quant/ids.EXTRA_PRODUCERS) - one row each, same three axes."""
+    out = []
+    for cid, (name, cat, env, files, role, adapter, why) in I.EXTRA_PRODUCERS.items():
+        nospec = cat == "NO_SPEC"
+        out.append(_e(cid, name=name, category=cat, env=env, files=list(files), quant_role=role, adapter=adapter,
+                      not_applicable_reason=None if adapter else why, notes=why if adapter else None,
+                      code_state="NO_SPEC" if nospec else "IMPLEMENTED", runtime_state="UNAVAILABLE" if nospec else "NOT_EVALUATED",
+                      state_reason="NO_SPEC" if nospec else None, source_registry=["quant.ids.EXTRA_PRODUCERS (1.46)"],
+                      validation="NOT_VALIDATED" if cat in ("MODEL_TRAINED", "MODEL_PRETRAINED", "TRAINABLE") else "NOT_APPLICABLE"))
+    return out
+
+
 def _probe(entries: list[dict], rt, inst: str) -> None:
     """Live / on-disk state through the EXISTING probes (sh.models.probe, families status, trainhub registry). Never raises."""
     from ..sh import models as SM
@@ -327,6 +340,7 @@ def build(rt=None, inst: str = "XAUUSD") -> dict:
         else:
             entries.append(r)
     entries += _analysis_rows()
+    entries += _extra_rows()
     by_id = {e["id"]: e for e in entries}
     for m in merges:                                         # MM module metadata folded into the SH row of the same producer
         e = by_id.get(m["_merge"])

@@ -280,6 +280,9 @@ def main(argv=None) -> int:
         from .studio.app import serve
         port = int(argv[argv.index("--port") + 1]) if "--port" in argv else None
         return serve(port)
+    if argv[:1] == ["models"]:                       # 1.46 arch: ONE health check of every model producer (modelhub/check.py)
+        from .modelhub.check import main as models_main
+        return models_main(argv[1:])
     if argv[:1] == ["families"]:                     # 1.33 model families: list / train / activate / use / rollback (modelhub/families/cli.py)
         from .modelhub.families.cli import main as families_main
         return families_main(argv[1:])
