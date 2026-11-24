@@ -63,8 +63,12 @@ class ModeManager:
         self.start_mode_applied: str | None = None        # arch146 D1: set only if apply_start_mode ran (status, read only)
 
     def apply_start_mode(self) -> str | None:
-        """1.39 (user decision): start in execution.start_mode on every launch (real terminal only - the runtime does not call this on the
-        synthetic demo, where AUTO_LIVE is impossible). Returns the mode applied or None."""
+        """1.39 (user decision, intent): start in execution.start_mode on every launch (real terminal only). Returns the mode applied or None.
+
+        NOT called by Runtime: its start condition (runtime.py:87, `not demo and mt5_factory is None`) is never true because the MT5
+        factory is always set before it - arch146 D1 leaves it deliberately unchanged (applying it would start in AUTO_LIVE and bind a
+        REAL account). The engine starts in the stored execution.mode and status() reports start_mode_effective = NOT_APPLIED; only an
+        explicit call (tests) sets start_mode_applied."""
         sm = getattr(self.cfg_store.get().execution, "start_mode", None)
         if not sm:
             return None

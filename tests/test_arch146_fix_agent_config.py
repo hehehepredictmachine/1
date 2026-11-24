@@ -225,5 +225,91 @@ class TestStartModeNotApplied(unittest.TestCase):
         self.assertEqual((st["mode"], st["start_mode_effective"], st["start_mode_reason"]), ("SIGNALS", "APPLIED", None))
 
 
+
+D1_OLD_DOC_RECIPES = {   # dawne zdania, które obiecywały działający start_mode jako wyłącznik LIVE
+    "START_TUTAJ_PL.md": ("**Bot startuje w AUTO LIVE**", "Wyłączenie: STOP albo"),
+    "ROLLBACK.md": ("przycisk STOP, potem w `data/config.json`",),
+    "docs/AKTUALIZACJA_1_39_PL.md": ('Wyłączenie: STOP / `start_mode: "SIGNALS"`',),
+}
+
+
+class TestStartModeDocsD1(unittest.TestCase):
+    """D1, dokumentacja (S1): instrukcje użytkownika nie podają już start_mode / live_autobind jako wyłącznika LIVE. Strażnicy
+    (przechodzą też przed zmianą) dowodzą na prawdziwym Runtime, że to, co dokumentacja teraz mówi, jest prawdą."""
+
+    DOCS = tuple(D1_OLD_DOC_RECIPES)
+
+    def setUp(self):
+        self.td = TempData()
+
+    def tearDown(self):
+        self.td.close()
+
+    @staticmethod
+    def _text(rel: str) -> tuple[str, str]:
+        import re
+
+        from _env import ROOT
+        raw = (ROOT / rel).read_text(encoding="utf-8")
+        return raw, re.sub(r"\s+", " ", re.sub(r"[*>]", "", raw))
+
+    def test_docs_say_start_mode_is_not_applied(self):
+        for rel in self.DOCS:
+            with self.subTest(doc=rel):
+                import re
+                raw, flat = self._text(rel)
+                self.assertTrue(re.search(r"start_mode`? (\(domyślnie `AUTO_LIVE`\) )?(NIE|nie) (jest )?stosowan", flat),
+                                f"{rel}: brak zdania, że start_mode nie jest stosowany")
+                for want in ("arch146 D1", "execution.mode",
+                             "POST /api/v1/mode",                 # wyłącznik: zapisana zmiana trybu
+                             "STOP nie przetrwa restartu",
+                             "nie wyłącza"):                       # start_mode / live_autobind nie wyłączają zapisanego AUTO_LIVE
+                    self.assertTrue(want in flat, f"{rel}: brak {want!r}")
+                for old in D1_OLD_DOC_RECIPES[rel]:
+                    self.assertFalse(old in raw, f"{rel}: nadal jest dawny przepis {old!r}")
+
+    def _runtime(self):
+        import mq_venv
+        from masterquo import runtime as R
+        from masterquo.mt5.fake import FakeMT5
+        from masterquo.upgrade import migrate as UM
+        with mock.patch.object(mq_venv, "repair_all", return_value={}), mock.patch.object(UM, "before", return_value=None):
+            return R.Runtime(demo=False, mt5_factory=lambda: FakeMT5(symbol="XAUUSD-", seed=3))
+
+    def test_old_recipe_does_not_switch_off_saved_auto_live(self):
+        # stan po wyborze AUTO_LIVE w panelu + dawny przepis z dokumentacji (STOP, start_mode SIGNALS, live_autobind false, restart)
+        _write_config(self.td, {"config_version": 15, "execution": {"mode": "AUTO_LIVE", "bound_account": "Broker-Live:1001",
+                                                                     "start_mode": "SIGNALS", "live_autobind": False}})
+        rt = self._runtime()
+        self.assertEqual((rt.modes.mode, rt.modes.bound_account, rt.modes.kill_switch), ("AUTO_LIVE", "Broker-Live:1001", False))
+        self.assertEqual(rt.modes.status()["start_mode_effective"], "NOT_APPLIED")
+
+    def test_stop_does_not_survive_restart(self):
+        from masterquo.config import ConfigStore
+        from masterquo.db.database import Database
+        from masterquo.execution.modes import ModeManager
+        mm = ModeManager(ConfigStore(), Database(), _Bus(), _Log(), account_provider=lambda: (None, None, False))
+        self.assertTrue(mm.set_kill(True, "USER")["kill_switch"])
+        mm2 = ModeManager(ConfigStore(), Database(), _Bus(), _Log(), account_provider=lambda: (None, None, False))
+        self.assertFalse(mm2.kill_switch)
+
+    def test_documented_off_switch_survives_restart(self):
+        from masterquo.config import ConfigStore
+        from masterquo.db.database import Database
+        from masterquo.execution.modes import ModeManager
+        _write_config(self.td, {"config_version": 15, "execution": {"mode": "AUTO_LIVE", "bound_account": "Broker-Live:1001"}})
+        mm = ModeManager(ConfigStore(), Database(), _Bus(), _Log(), account_provider=lambda: (None, None, False))
+        self.assertEqual(mm.mode, "AUTO_LIVE")
+        mm.set_mode("SIGNALS", account=None, account_key=None, synthetic=False)      # panel: POST /api/v1/mode
+        rt = self._runtime()
+        self.assertEqual((rt.modes.mode, rt.modes.bound_account), ("SIGNALS", None))
+        self.assertFalse(rt.modes.gate("Broker-Live:1001", {"trade_mode": "REAL", "login": 1001}, False)["allowed"])
+
+    def test_documented_offline_edit_survives_restart(self):
+        _write_config(self.td, {"config_version": 15, "execution": {"mode": "SIGNALS", "bound_account": None}})
+        rt = self._runtime()
+        self.assertEqual((rt.modes.mode, rt.modes.bound_account), ("SIGNALS", None))
+
+
 if __name__ == "__main__":
     unittest.main()
