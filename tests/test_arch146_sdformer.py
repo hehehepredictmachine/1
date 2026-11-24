@@ -41,7 +41,7 @@ def _run(*args, timeout=600):
 class TestSdformerCheckpoint(unittest.TestCase):
     def test_checkpoint_written_by_1_46_0_loads_with_weights_only(self):
         d = Path(tempfile.mkdtemp(prefix="sdf146_"))
-        code = ("import torch, sys; from pathlib import Path; from sdformer_runtime.model import load_checkpoint; p = Path(sys.argv[1]) / 'last.pt';"
+        code = ("import torch, sys; from pathlib import Path; from sdformer_runtime.ckpt import load_checkpoint; p = Path(sys.argv[1]) / 'last.pt';"
                 "torch.save({'deps': {'torch': torch.__version__}, 'w': torch.zeros(2)}, p);"      # exactly what 1.46.0 wrote
                 "ck = load_checkpoint(p); print('OK', type(ck['deps']['torch']).__name__)")
         r = _run("-c", code, str(d))

@@ -262,9 +262,11 @@ def to_markdown(rows: list[dict], meta: dict) -> str:
 def _area_worker(argv) -> int:
     ap = argparse.ArgumentParser(prog="masterquo models _area")
     ap.add_argument("area", choices=S.AREAS)
-    ap.add_argument("--inst", default="XAUUSD")
+    ap.add_argument("--inst", default=None, help="instrument z config/instruments_v1.json (domyślnie MQ_INSTRUMENT / domyślny projektu)")
     ap.add_argument("--only")
     a = ap.parse_args(argv)
+    import mq_instruments
+    a.inst = mq_instruments.current(a.inst)
     if not os.environ.get("MASTERQUO_DATA_DIR"):
         print("_area wymaga tymczasowego MASTERQUO_DATA_DIR (uruchamiane przez models check)", file=sys.stderr)
         return 2
@@ -285,12 +287,18 @@ def main(argv=None) -> int:
     c.add_argument("--live", type=float, default=0.0, metavar="SEKUNDY", help="uruchom Runtime demo (jak serve --demo) na N sekund")
     c.add_argument("--only", help="wzorzec id (fnmatch), np. 'family:*'")
     c.add_argument("--area", action="append", choices=S.AREAS, help="tylko wybrane obszary smoke (można powtórzyć)")
-    c.add_argument("--inst", default="XAUUSD")
+    c.add_argument("--inst", default=None, help="instrument z config/instruments_v1.json (domyślnie MQ_INSTRUMENT / domyślny projektu)")
     c.add_argument("--timeout", type=float, default=900.0, help="limit czasu jednego obszaru smoke [s]")
     c.add_argument("--json", help="zapisz wynik JSON")
     c.add_argument("--md", help="zapisz tabelę Markdown")
     c.add_argument("--keep", action="store_true", help="nie usuwaj folderu tymczasowego (do analizy)")
     a = ap.parse_args(argv)
+    import mq_instruments
+    try:
+        a.inst = mq_instruments.current(a.inst)
+    except ValueError as exc:
+        print(f"models check: {exc} (instrumenty: {', '.join(mq_instruments.profiles())})", file=sys.stderr)
+        return 2
     t0 = time.monotonic()
     tmp = Path(tempfile.mkdtemp(prefix="pmw_models_check_"))
     old = os.environ.get("MASTERQUO_DATA_DIR")

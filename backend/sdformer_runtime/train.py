@@ -78,7 +78,8 @@ def main(argv=None) -> int:
     import numpy as np
     import torch
     from . import data as D
-    from .model import SDformerFlow, load_checkpoint, n_params
+    from .ckpt import load_checkpoint
+    from .model import SDformerFlow, n_params
     torch.set_num_threads(int(a.threads))
     t_start = time.time()
     bars = json.loads(Path(a.data).read_text(encoding="utf-8"))

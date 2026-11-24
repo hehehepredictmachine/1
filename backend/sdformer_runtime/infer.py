@@ -25,7 +25,8 @@ def main(argv=None) -> int:
     import numpy as np
     import torch
     from . import data as D
-    from .model import SDformerFlow, load_checkpoint
+    from .ckpt import load_checkpoint
+    from .model import SDformerFlow
     torch.set_num_threads(a.threads)
     ck = load_checkpoint(Path(a.checkpoint) / "last.pt")                     # weights_only (1.46) + TorchVersion of 1.46.0 checkpoints
     m = SDformerFlow()
