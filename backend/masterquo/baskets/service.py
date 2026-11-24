@@ -858,8 +858,11 @@ class BasketService:
                   "decision_ts": time.time(), "candidate_key": f"{s['strategy_id']}|{plan['entry_ref']}"}
             a = q.assess(cd, log_row=False)
             conf = a.get("confidence") or {}
+            ev_id = (a.get("event") or {}).get("event_id")
+            # 1.46 (I0539): the Quant event id (text, e.g. TP1_BEFORE_STOP) is 'quant_event_id' - NOT 'event_id' (that is the basket event of
+            # the signal) and not a probability. 'p_event' = the same value, a deprecated alias kept for one version (ledger rows / readers)
             return {"p_event_raw": conf.get("p_event_raw"), "confidence_state": conf.get("state"), "confidence_source": "TabICLv2 (Quant)",
-                    "p_event": (a.get("event") or {}).get("event_id")}
+                    "quant_event_id": ev_id, "p_event": ev_id}
         except Exception as exc:  # noqa: BLE001
             return {"confidence_state": "ERROR", "confidence_reason": f"{type(exc).__name__}: {exc}"[:120]}
 

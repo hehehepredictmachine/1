@@ -86,6 +86,33 @@ class _Svc(unittest.TestCase):
         (self.d / name).write_text(obj if isinstance(obj, str) else json.dumps(obj), encoding="utf-8")
 
 
+# ======================================================================================================================== I0539
+class TestQuantEventIdField(_Svc):
+    """BasketService._quant: 'p_event' held the Quant event id (text), not a probability -> 'quant_event_id' (+ alias for one version)."""
+
+    PLAN = {"plan_type": "PositionPlan", "side": "LONG", "entry_ref": 2000.0, "sl": 1990.0, "targets": [{"price": 2020.0, "weight": 1.0}],
+            "timeout_bars": 8, "timeframe": "M5", "risk_per_unit": 10.0}
+
+    def _quant(self):
+        return types.SimpleNamespace(instrument=lambda: "XAUUSD",
+                                     assess=lambda cd, log_row=False: {"confidence": {"p_event_raw": 0.61, "state": "OK"},
+                                                                       "event": {"event_id": "TP1_BEFORE_STOP"}})
+
+    def test_event_id_named_as_such_alias_kept_score_unchanged(self):
+        from masterquo.baskets import catalog as CAT
+        strat = CAT.BY_ID["FX_SMC_01"]
+        s = self.svc(quant=self._quant())
+        c = s._context("FOREX_MT5", "XAUUSD", "MT5", "SYNTHETIC", "1", "CFD")
+        out = s._scores(c, strat, None, 1, {}, dict(self.PLAN))
+        self.assertEqual(out.get("quant_event_id"), "TP1_BEFORE_STOP")
+        self.assertEqual(out["p_event"], out["quant_event_id"])                       # alias (rows / readers of 1.46.0), same value
+        self.assertEqual(out["p_event_raw"], 0.61)
+        self.assertEqual(out["confidence_state"], "OK")
+        base = self.svc()._scores(c, strat, None, 1, {}, dict(self.PLAN))              # without Quant: setup_score is the same
+        self.assertEqual(out["setup_score"], base["setup_score"])
+        self.assertEqual(out["setup_components"], base["setup_components"])
+
+
 # ======================================================================================================================== I0112
 class TestRetiredOtcCodeRemoved(_Svc):
     def test_every_planner_is_reachable_from_the_active_catalog(self):
