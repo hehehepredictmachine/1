@@ -677,5 +677,56 @@ class TestQuantUnitsProductionApi(unittest.TestCase):
         self.assertEqual(calls, set())
 
 
+# ================================================================================================ I0054 shared calibration metrics
+# outputs of the metric / bootstrap variants on fixed arrays, computed by the code BEFORE the I0054 change (base 2dce8bf) - bit-for-bit
+METRIC_SNAPSHOT = json.loads('{"mc_logloss": 0.5166767763410296, "num_log_loss": 0.5166755262722847, "th_logloss": 1.6256240352250673, "th_ece": {"ece": 0.29319, "bins": [{"from": 0.333, "to": 0.4, "n": 6, "confidence": 0.3751, "accuracy": 0.5}, {"from": 0.4, "to": 0.467, "n": 13, "confidence": 0.4375, "accuracy": 0.3077}, {"from": 0.467, "to": 0.533, "n": 32, "confidence": 0.4997, "accuracy": 0.25}, {"from": 0.533, "to": 0.6, "n": 30, "confidence": 0.5646, "accuracy": 0.2667}, {"from": 0.6, "to": 0.667, "n": 20, "confidence": 0.6371, "accuracy": 0.35}, {"from": 0.667, "to": 0.733, "n": 13, "confidence": 0.6911, "accuracy": 0.3846}, {"from": 0.733, "to": 0.8, "n": 16, "confidence": 0.7578, "accuracy": 0.3125}, {"from": 0.8, "to": 0.867, "n": 8, "confidence": 0.8345, "accuracy": 0.5}, {"from": 0.867, "to": 0.933, "n": 6, "confidence": 0.8852, "accuracy": 0.8333}, {"from": 0.933, "to": 1.0, "n": 6, "confidence": 0.9623, "accuracy": 0.1667}]}, "ml_block_bootstrap": {"mean": 0.1456, "ci95": [0.0252, 0.3195], "block": 10, "reps": 1000}, "num_block_bootstrap": {"estimate": 0.14555687677255386, "lo": 0.0010813369195748694, "hi": 0.3562873050066074, "level": 0.9, "block": 4, "n_boot": 300, "seed": 7, "n": 60, "method": "moving block bootstrap (percentyle)"}, "lab_edge": {"status": "ready", "n": 60, "block": 4, "mean": 0.14555687677255386, "ci95": [-0.04751707415349779, 0.3569385666274183], "p_mean_le_0": 0.07333333333333333, "verdict": "NO_VALIDATED_EDGE", "seed": 7, "n_boot": 300, "note": "bootstrap blokowy \\u2013 transakcje zale\\u017cne nie s\\u0105 liczone jako niezale\\u017cne"}, "bt_block_bootstrap": {"n": 60, "block": 4, "expectancy_r_90": [-0.0309, 0.3209], "winrate_90": [40.0, 59.322], "pf_90": [0.9205, 2.3142], "p_expectancy_le_0": 0.1}, "sfb_lcb": 0.029110750237050495}')
+
+
+def _metric_data():
+    import numpy as np
+    rng = np.random.default_rng(20261124)
+    p = rng.uniform(0, 1, 200)
+    p[:3] = [0.0, 1.0, 0.99995]
+    y = (rng.uniform(0, 1, 200) < p).astype(float)
+    P = rng.dirichlet([1.0, 1.0, 1.0], 150)
+    P[0] = [1.0, 0.0, 0.0]
+    yc = rng.integers(0, 3, 150)
+    yc[0] = 2
+    r = [float(x) for x in rng.normal(0.05, 1.0, 60)]
+    return p, y, P, yc, r
+
+
+class TestMetricDelegation(unittest.TestCase):
+    """Calibration metrics were duplicated with other constants (quant/numeric vs montecarlo vs trainhub). The Monte Carlo and Training
+    Center log loss / ECE now live in quant/numeric with each consumer's exact convention; every variant (incl. the bootstraps that stay
+    separate - quant/numeric.METRIC_VARIANTS says why) gives exactly the numbers it gave before."""
+
+    def test_shared_functions_exist_and_consumers_delegate(self):
+        from masterquo.montecarlo import validate as mcv
+        from masterquo.quant import numeric as N
+        from masterquo.trainhub import learn as L
+        p, y, P, yc, _ = _metric_data()
+        self.assertEqual(mcv.logloss(p, y), N.log_loss_clipped(p, y, 1e-4))
+        self.assertEqual(L.logloss(P, yc), N.log_loss_multiclass(P, yc))
+        self.assertEqual(L.ece(P, yc), N.ece_confidence(P, yc))
+        for k in ("log_loss", "ece", "block_bootstrap"):
+            self.assertIn(k, N.METRIC_VARIANTS)
+
+    def test_numbers_are_bit_for_bit_as_before(self):
+        from masterquo.baskets import sfb
+        from masterquo.lab import edge
+        from masterquo.ml import validation as mv
+        from masterquo.montecarlo import validate as mcv
+        from masterquo.quant import numeric as N
+        from masterquo.strategies import ema_pullback_backtest as bt
+        from masterquo.trainhub import learn as L
+        p, y, P, yc, r = _metric_data()
+        got = {"mc_logloss": mcv.logloss(p, y), "num_log_loss": N.log_loss(p, y), "th_logloss": L.logloss(P, yc), "th_ece": L.ece(P, yc),
+               "ml_block_bootstrap": mv.block_bootstrap(r), "num_block_bootstrap": N.block_bootstrap(r, n_boot=300),
+               "lab_edge": edge.block_bootstrap_mean(r, n_boot=300), "bt_block_bootstrap": bt.block_bootstrap(r, n_boot=300),
+               "sfb_lcb": sfb._block_bootstrap_lcb(r, 5, 300, 0.9)}
+        self.assertEqual(json.loads(json.dumps(got, default=float)), METRIC_SNAPSHOT)
+
+
 if __name__ == "__main__":
     unittest.main()

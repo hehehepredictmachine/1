@@ -24,6 +24,7 @@ from pathlib import Path
 
 import numpy as np
 
+from ..quant import numeric as N
 from . import engine as E
 
 DEFAULT_EVENTS = [{"side": s, "tp": tp, "sl": 3.0} for s in ("BUY", "SELL") for tp in (2.5, 5.0)]
@@ -155,9 +156,7 @@ def brier(p, y) -> float:
 
 
 def logloss(p, y) -> float:
-    p = np.clip(np.asarray(p, float), 1e-4, 1 - 1e-4)
-    y = np.asarray(y, float)
-    return float(-np.mean(y * np.log(p) + (1 - y) * np.log(1 - p)))
+    return N.log_loss_clipped(p, y, 1e-4)              # 1.46 arch (I0054): the shared implementation (clip 1e-4), bit-for-bit
 
 
 def reliability(p, y, bins: int = 10) -> list[dict]:
