@@ -447,6 +447,11 @@ class FamilyService:
         # 1.46 D18: the marketdata Store / live bridge write REAL_USER_DATA / SYNTHETIC_TEST / MT5_LIVE_BRIDGE - only the literal 'REAL' /
         # 'SYNTHETIC' were kept, so every record had data_kind None and Quant let a family fitted on synthetic data into a REAL snapshot
         kind = B.kind_class(man.get("data_kind"))
+        if kind == "SYNTHETIC" and use == "ASSIST" and man.get("data_kind") != "SYNTHETIC":
+            # S0(b) guard: a role ASSIST saved before the gate (status.assist_gate_violation) on a SYNTHETIC_TEST artifact keeps the 1.45
+            # value (None) - in a REAL snapshot it stays eligible, so the coordinator with Quant in ASSIST (pub['eligible']) keeps its
+            # MODEL_ASSIST_HOLD on the ACTIVE path. The literal 'SYNTHETIC' stays excluded as in 1.45 (REQUIRED never turns MISSING -> PASS).
+            kind = None
         impl, why = f.implementation()
         t0 = time.perf_counter()
         try:

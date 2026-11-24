@@ -8,6 +8,9 @@
 * D18 (W): rekord PMW-PRED-2 rodziny brał data_kind z manifestu tylko dla dosłownych 'REAL' / 'SYNTHETIC', a Store danych zapisuje
   REAL_USER_DATA / SYNTHETIC_TEST / MT5_LIVE_BRIDGE - każdy rekord miał data_kind None, więc quant.checks nie odrzucał artefaktu
   wytrenowanego na syntetyce w migawce REAL. Teraz base.kind_class (jedno słownictwo z bramką ASSIST).
+* Przegląd D18 (S0(b)): rodzina w roli ASSIST zapisanej przed bramką (assist_gate_violation) na artefakcie SYNTHETIC_TEST nie może
+  wypaść z migawki REAL - koordynator w trybie Quant ASSIST bierze prognozy z pub['eligible'] i straciłby jej MODEL_ASSIST_HOLD
+  na ścieżce ACTIVE (BLOCKED -> ENTER). Przy roli ASSIST rekord niesie data_kind jak w 1.45.
 """
 from __future__ import annotations
 
@@ -19,6 +22,7 @@ import tempfile
 import unittest
 from contextlib import redirect_stdout
 from pathlib import Path
+from types import SimpleNamespace
 from unittest import mock
 
 import _env
@@ -172,6 +176,89 @@ class TestFamiliesServiceAssistGate(_StoreCase):
         self.assertFalse(r["ok"])
         self.assertEqual(r["status"], "ASSIST_GATE")
         self.assertEqual(self.store.state(FID, INST)["active"], "GOOD")
+
+
+class TestFamiliesLegacyAssistSyntheticKeepsHold(_StoreCase):
+    """Review of D18 (S0(b)): a direction family whose role ASSIST was saved on a SYNTHETIC_TEST artifact (1.45.0 set_use refused only
+    the literal 'SYNTHETIC'; before D5 activate / rollback did not check the gate) must stay in the REAL snapshot of Quant - with Quant
+    in ASSIST the coordinator reads pub['eligible'] and the main path (ACTIVE) would lose MODEL_ASSIST_HOLD (BLOCKED -> ENTER)."""
+
+    FAM = "SEQ_LSTM"
+    T = 1_760_000_100.0                                                           # bar open (M5 grid)
+
+    def pred(self, use="ASSIST", kind="SYNTHETIC_TEST"):
+        from masterquo.config import ConfigStore
+        from masterquo.modelhub.families.service import FamilyService
+        self.run_("SYN", "APPROVED", kind, fid=self.FAM)
+        self.store._save_state(self.FAM, INST, {"active": "SYN", "use": use, "history": []})    # state saved before the gate
+        s = FamilyService(ConfigStore(), None, store=self.store)
+        f = s.fams[self.FAM]
+        bars = [{"t": self.T - 300 * i, "o": 2000.0, "h": 2001.0, "l": 1999.0, "c": 2000.0, "tv": 10, "spread": 20} for i in range(80)][::-1]
+        with mock.patch.object(f, "implementation", return_value=("AVAILABLE", None)), mock.patch.object(f, "load", return_value={}), \
+                mock.patch.object(f, "predict", return_value={"DOWN": 0.8, "FLAT": 0.1, "UP": 0.1}), \
+                mock.patch.object(s, "_live", return_value={"bars": bars}):
+            p = s.predict(self.FAM, INST)
+        self.assertEqual((p["state"], p["use"]), ("READY", use), p)
+        return p
+
+    def quant_assist(self, p):
+        """Quant in ASSIST: QuantService.coordinator_predictions over a published REAL snapshot screened by quant.checks."""
+        from masterquo.quant import checks as CK
+        from masterquo.quant.service import QuantService
+        scr = CK.screen([p], now=self.T + 60, snapshot_kind="REAL")
+        q = SimpleNamespace(pub=SimpleNamespace(current=lambda: {"instrument": INST, "eligible": scr["eligible"], "excluded": scr["excluded"]}),
+                            assist_active=lambda: True, coordinator_entry=lambda *a, **k: None)
+        q.coordinator_predictions = lambda inst: QuantService.coordinator_predictions(q, inst)
+        return q, scr
+
+    def coordinator(self, quant, preds):
+        from masterquo.config import ConfigStore
+        from masterquo.db.database import Database
+        from masterquo.decision.coordinator import DecisionCoordinator
+        db = Database()
+        self.addCleanup(db.close)
+        c = DecisionCoordinator(db, ConfigStore(), families=SimpleNamespace(predictions=lambda inst: list(preds)), instrument_fn=lambda: INST,
+                                clock=lambda: self.T + 60)
+        c.quant = quant
+        return c
+
+    def test_legacy_assist_on_synthetic_stays_in_real_snapshot_and_holds(self):
+        from masterquo.decision.coordinator import evaluate_models
+        p = self.pred()
+        self.assertIsNone(p["data_kind"])                                         # as in 1.45 for SYNTHETIC_TEST
+        q, scr = self.quant_assist(p)
+        self.assertEqual([x["family"] for x in scr["eligible"]], [self.FAM], scr["excluded"])
+        _, reasons = evaluate_models(q.coordinator_predictions(INST), "BUY", required=set(), assist_threshold=0.6, max_age_s=900.0,
+                                     now=self.T + 60, assist_enabled=True)
+        self.assertEqual(reasons, [f"MODEL_ASSIST_HOLD:{self.FAM}"])
+
+    def test_active_path_with_quant_assist_stays_blocked(self):
+        p = self.pred()
+        q, _ = self.quant_assist(p)
+        for label, quant in (("Quant ASSIST (pub['eligible'])", q), ("families.predictions", None)):
+            c = self.coordinator(quant, [p])
+            g = c.model_gate_active({"direction": "LONG", "strategy_id": "S01"})
+            self.assertIsNotNone(g, f"{label}: brak węzła MODELS (rekord wykluczony z migawki REAL)")
+            self.assertEqual((g["status"], g["codes"]), ("FAIL", [f"MODEL_ASSIST_HOLD:{self.FAM}"]), label)
+            d = {"decision_id": "MQD-D18", "symbol": "XAUUSD-", "analysis_direction": "LONG", "execution_permission": "BLOCKED",
+                 "decision": "WAIT", "decision_tree": [{"node": "DATA", "status": "PASS"}, {"node": "MODELS", "status": "FAIL"}],
+                 "risk": {"entry": 2000.0, "stop_loss": 1990.0, "targets": [{"price": 2030.0}], "modeled_loss": 10.0, "lots": 0.1},
+                 "setup": {"strategy_id": "S01"}, "reason_codes": [], "mode_gate": {"reason_codes": []}, "account_key": "P"}
+            rec = c.record_active(d, "PAPER", g)
+            self.assertEqual(rec["final_verdict"], "BLOCKED", label)
+            self.assertIn(f"MODEL_ASSIST_HOLD:{self.FAM}", rec["reason_codes"])
+
+    def test_shadow_on_synthetic_still_excluded(self):
+        p = self.pred(use="SHADOW")
+        self.assertEqual(p["data_kind"], "SYNTHETIC")                             # D18 kept outside the role ASSIST
+        _, scr = self.quant_assist(p)
+        self.assertEqual(scr["eligible"], [])
+        self.assertEqual(scr["excluded"][0]["eligibility"]["reason"], "SYNTHETIC_IN_REAL_SNAPSHOT")
+
+    def test_literal_synthetic_assist_unchanged(self):
+        """The literal 'SYNTHETIC' was excluded in 1.45 already - kept so (a REQUIRED + ASSIST family must not turn MISSING -> PASS)."""
+        p = self.pred(kind="SYNTHETIC")
+        self.assertEqual(p["data_kind"], "SYNTHETIC")
 
 
 class TestFamiliesRecordDataKind(_StoreCase):
