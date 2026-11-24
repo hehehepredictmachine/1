@@ -6,7 +6,8 @@
   release/Apollo23_<ver>.zip                   OWNER  – wersja właściciela (z generatorem licencji)
   release/Apollo23_KLIENT_<ver>.zip            CLIENT – python tools/build_release.py --edition client: bez generatora, funkcji
                                                podpisywania i historii licencji; panel zbudowany z PMW_EDITION=CLIENT (kod generatora
-                                               wycięty przy kompilacji); wymaga PUBLIC_KEY_HEX w backend/masterquo/licensing/client_config.py
+                                               wycięty przy kompilacji); wymaga PUBLIC_KEY_HEX w backend/masterquo/licensing/client_config.py;
+                                               1.46: + znacznik edycji klienta backend/masterquo/licensing/_edition.py (tylko w paczce klienta)
 The Windows application package is built by tools/build_desktop.py from the same file list (--edition client as well).
 
 Untracked/ignored paths (data/, .venv/, node_modules/, secrets, logs, databases, .env) can never enter a package.
@@ -88,7 +89,9 @@ def tracked():
         files = manifest_list()
     # Frog Wizard is a separate product
     # 1.42: archive/ (old UI 1.41) and update_1_42/ (update package, reference HTML, screenshots) never go into a release
-    return [f for f in files if not f.startswith(("release/", "frog_wizard_bot/", "archive/", "update_1_42/", "update_charts/", "update_intro3d/")) and f != "MANIFEST_SHA256.txt"]
+    # 1.46: tools/research/ = one-off research scripts with paths of a past session (and their raw results), never packaged
+    return [f for f in files if not f.startswith(("release/", "frog_wizard_bot/", "archive/", "update_1_42/", "update_charts/", "update_intro3d/",
+                                                  "tools/research/")) and f != "MANIFEST_SHA256.txt"]
 
 
 def scan(files):
@@ -204,6 +207,17 @@ def build_client_frontend() -> Path:
     return out
 
 
+def client_marker() -> Path:
+    """1.46: client edition marker (masterquo/licensing/edition.py: the file exists = CLIENT). Without it an empty owner.py added to a client
+    package (or left over from an older owner / 1.43 install) made it an OWNER edition: no licence required, PMW_TEST_* overrides active.
+    Written into the git-ignored build/ folder and packed ONLY into client packages - never into the repository or an owner package."""
+    p = ROOT / "build" / "client_marker" / "_edition.py"
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text("# 1.46: znacznik edycji klienta - masterquo/licensing/edition.py: ten plik istnieje = wersja KLIENTA\n"
+                 'EDITION = "CLIENT"\n', encoding="utf-8", newline="\n")
+    return p
+
+
 def edition_entries(edition: str = "owner", *, allow_foreign: bool = False) -> list[tuple[str, Path]]:
     """[(ścieżka w paczce, plik źródłowy)] dla edycji. OWNER = pliki z gita; CLIENT = bez plików właściciela, panel klienta zamiast
     frontend/dist, kontrola: brak kodu generatora / podpisywania (te same reguły co tools/verify_release.py)."""
@@ -214,11 +228,13 @@ def edition_entries(edition: str = "owner", *, allow_foreign: bool = False) -> l
     vr = _verify_module()
     client_public_key(allow_foreign)
     dist = build_client_frontend()
-    keep = [f for f in files if f not in vr.OWNER_ONLY and not f.startswith("frontend/dist/")]
+    keep = [f for f in files if f not in vr.OWNER_ONLY and not f.startswith("frontend/dist/") and f != vr.CLIENT_EDITION_MARKER]
     entries = [(f, ROOT / f) for f in keep]
     entries += [("frontend/dist/" + p.relative_to(dist).as_posix(), p) for p in sorted(dist.rglob("*")) if p.is_file()]
+    entries.append((vr.CLIENT_EDITION_MARKER, client_marker()))
     src = dict(entries)
-    bad = vr.client_problems(lambda r: src[r].read_bytes(), [r for r, _ in entries])
+    rels = [r for r, _ in entries]
+    bad = vr.client_problems(lambda r: src[r].read_bytes(), rels) + vr.edition_problems(rels, client=True)
     if bad:
         sys.exit("BŁĄD: paczka klienta zawierałaby elementy wersji właściciela:\n" + "\n".join(bad[:20]))
     return entries

@@ -14,6 +14,8 @@ Per archive:
   * 1.46: MANIFEST_SHA256.txt is required (DESKTOP: also MANIFEST_DESKTOP_SHA256.txt) and in the folder package lists every file;
     files that the package's own installers / launcher check for must be present; names differing only in case are refused;
     one secret rule set (SECRET_NAMES, SECRETS, CONFIG_SECRETS, forbidden names) shared with tools/build_release.py.
+  * 1.46: a client package (name with KLIENT) carries the client edition marker backend/masterquo/licensing/_edition.py and no owner
+    module; an owner package must not carry the marker.
 Exit code 0 only when every archive passes. Nothing is extracted to disk. A damaged archive is a FAIL line, not a traceback.
 """
 from __future__ import annotations
@@ -173,6 +175,20 @@ CLIENT_MARKERS = (b"SigningKey", b"sign_license", b"/api/v1/owner/", b"LicenseGe
 PUBKEY_RX = re.compile(rb'^PUBLIC_KEY_HEX\s*=\s*"([^"]*)"', re.M)
 
 
+# 1.46: client edition marker (masterquo.licensing.edition: the file exists = CLIENT, even when an owner.py is added to the package). The
+# client builds (build_release / build_desktop --edition client) write it into the package only; it is never in the repository.
+CLIENT_EDITION_MARKER = "backend/masterquo/licensing/_edition.py"
+
+
+def edition_problems(rels, client: bool) -> list[str]:
+    """1.46: a client package must carry the edition marker (without it an empty owner.py switched it to OWNER: no licence, PMW_TEST_*
+    overrides on); an owner package must not (it would lock the owner edition as CLIENT). owner.py in a client package: OWNER_ONLY."""
+    has = CLIENT_EDITION_MARKER in set(rels)
+    if client:
+        return [] if has else [f"brak {CLIENT_EDITION_MARKER} (znacznik edycji klienta)"]
+    return [f"{CLIENT_EDITION_MARKER}: znacznik edycji klienta w paczce właściciela"] if has else []
+
+
 def client_problems(read, rels) -> list[str]:
     """read(rel) -> bytes; rels = ścieżki względne plików paczki."""
     out = [f"{r}: plik wersji właściciela w paczce klienta" for r in rels if r in OWNER_ONLY]
@@ -294,8 +310,10 @@ def _check_zip(path: Path, top: str | None, problems: list[str]) -> None:
         missing = sorted(n for n in installer_required(lambda r: z.read(files[r]), files) - set(manifests) if n not in files)
         if missing:
             problems.append(f"brak plików wymaganych przez instalatory / launcher: {missing[:8]}")
-        if "KLIENT" in path.name.upper():
+        client = "KLIENT" in path.name.upper()
+        if client:
             problems += client_problems(lambda r: z.read(files[r]), list(files))
+        problems += edition_problems(files, client)        # 1.46: client edition marker in client packages only
         removed = [r for r in files if r.startswith(("license_server/", "backend/masterquo/license/")) or r == "edition.json"]
         if removed:
             problems.append(f"elementy usuniętego systemu licencji w paczce: {removed[:5]}")

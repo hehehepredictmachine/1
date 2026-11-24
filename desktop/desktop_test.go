@@ -516,7 +516,7 @@ func TestStudioModeLaunchesStudioWithOwnData(t *testing.T) {
 	if e.Port() != 8780 || healthPath() != "api/studio/health" || expectedApp() != "PepeTrainingStudio" {
 		t.Fatal("studio port / health")
 	}
-	if !strings.HasPrefix(l.WindowTitle("1.33.0"), "Pepe Data & Training Studio") {
+	if !strings.HasPrefix(l.WindowTitle("1.33.0"), displayName+" Data & Training Studio") { // 1.46: Apollo23 display name (was "Pepe ...")
 		t.Fatal("title")
 	}
 }

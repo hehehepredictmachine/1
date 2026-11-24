@@ -5,7 +5,11 @@
 Sources: the user's attachments (the tower with purple lightning is the base of the main menu; the night-sky tower and the
 eye cathedral become the Precision and Dyscypline backgrounds) and one procedural image (Profits - vault, drawn by
 tools/wizard_backgrounds/profits_vault.html, no external art). Portrait or small sources are composed onto a 1920x1080 canvas:
-the picture itself is never stretched - it is fitted by height and the sides are filled with a blurred, darkened copy."""
+the picture itself is never stretched - it is fitted by height and the sides are filled with a blurred, darkened copy.
+
+1.46: ARCHIVED together with the 1.41 interface (archive/ui_1_41/, never packaged - tools/build_release.py tracked()). The three-towers
+menu, frontend/src/features/wizard and frontend/public/assets/wizard no longer exist. ROOT is now archive/ui_1_41, so a run writes into
+archive/ui_1_41/frontend/public/assets/wizard and never into the live panel."""
 from __future__ import annotations
 
 import argparse
@@ -27,7 +31,8 @@ def cover(im: Image.Image, w: int = W, h: int = H, y_focus: float = 0.5) -> Imag
 
 
 def fit_height(im: Image.Image) -> Image.Image:
-    """Picture fitted by height in the middle; sides = blurred, darkened copy (no distortion, nothing cut off)."""
+    """Picture fitted by height in the middle; sides = blurred, darkened copy (no distortion; 1.46: a source wider than 16:9 is wider
+    than the canvas after fitting, so its sides are cut off)."""
     back = cover(im).filter(ImageFilter.GaussianBlur(28))
     back = ImageEnhance.Brightness(back).enhance(0.45)
     s = H / im.height

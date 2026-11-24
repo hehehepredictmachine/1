@@ -120,11 +120,15 @@ Wersja: **1.26.0**. Ten dokument realizuje specyfikację „PEPEMARKETWIZARD —
 
 ## 3. Konfiguracja zasobów (plik → przeznaczenie)
 Jedno miejsce: `frontend/src/features/wizard/assets.ts` (`WIZARD_ASSETS`, `TOWERS`). Pliki: `frontend/public/assets/wizard/`.
-Budowane skryptem `tools/wizard_assets.py`:
+Budowane skryptem `archive/ui_1_41/tools/wizard_assets.py` (do 1.45: `tools/`):
 - kadrowanie bez deformacji;
 - korekta barwna;
 - WebP q84;
-- tło Profits renderowane z `tools/wizard_backgrounds/profits_vault.html`.
+- tło Profits renderowane z `archive/ui_1_41/tools/wizard_backgrounds/profits_vault.html`.
+
+> Archiwalne (od 1.46): menu „trzy wieże” odeszło w 1.42 razem z interfejsem 1.41 do `archive/ui_1_41/`. Generator zasobów
+> i tło Profits przeniesiono tam w 1.46 – nie trafiają do paczek, a uruchomiony generator pisze do `archive/ui_1_41/frontend/public/assets/wizard/`,
+> nigdy do bieżącego panelu.
 
 | Plik | Przeznaczenie | Pochodzenie |
 |---|---|---|
@@ -139,8 +143,8 @@ Modele 3D wież, mapy boczne i efekty są proceduralne (brak plików modeli). Po
 rotującym grafem) posłużyły jako inspiracja (`WIZARD_REFERENCES`) – nie są dołączone jako pliki.
 
 **Ponowne wygenerowanie zasobów** (np. po podmianie grafik):
-`python tools/wizard_assets.py --menu <plik tła menu> --precision <obraz> --dyscypline <obraz>` – wymaga `pillow` i (dla tła Profits)
-Playwright z Chromium.
+`python archive/ui_1_41/tools/wizard_assets.py --menu <plik tła menu> --precision <obraz> --dyscypline <obraz>` – wymaga `pillow`
+i (dla tła Profits) Playwright z Chromium. Archiwalne (od 1.46) – zob. uwagę wyżej.
 
 ## 4. Uruchomienie
 - Paczka klienta / aplikacja Windows: bez zmian w sposobie startu.

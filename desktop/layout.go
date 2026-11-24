@@ -72,7 +72,8 @@ func detectLayout(exe string, env func(string) string) Layout {
 // WindowTitle: product and version (1.30: no OWNER / CLIENT editions any more - the license system was removed).
 func (l Layout) WindowTitle(version string) string {
 	if isStudio() {
-		return "Pepe Data & Training Studio " + version
+		// 1.46: display name also in the studio window (was the old "Pepe Data & Training Studio"); exe name and app id unchanged
+		return displayName + " Data & Training Studio " + version
 	}
 	return displayName + " " + version
 }
@@ -82,5 +83,5 @@ func (l Layout) WindowTitle(version string) string {
 // the engine health identity (appName) and every PMW_* variable.
 const displayName = "Apollo23"
 
-// StudioDir: data folder of Pepe Data & Training Studio (separate from the bot's data folder, same home).
+// StudioDir: data folder of the Data & Training Studio (separate from the bot's data folder, same home; folder name unchanged).
 func (l Layout) StudioDir() string { return filepath.Join(l.Home, "data_studio") }
