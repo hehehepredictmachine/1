@@ -166,6 +166,31 @@ def build(cols_by_tf: dict[str, dict], base_tf: str, point: float) -> tuple[np.n
     return t, X, names(base_tf)
 
 
+def htf_stale(cols_by_tf: dict[str, dict], base_tf: str) -> np.ndarray:
+    """1.46: per base row, True when its higher-TF block is FROZEN: after the HTF candle joined to the row closed, the base TF traded in a
+    later HTF period that has already closed but is missing from the HTF history (e.g. M15/M30 export stopped / has a hole while M5 went
+    on). Such values are finite, so build() keeps them - 1.45.0 trained on M30 features weeks old. A weekend / session break is NOT stale
+    (no base candle traded in between). build() itself is unchanged (schema PMW-TH-FEAT-1); the dataset drops these rows."""
+    base = cols_by_tf.get(base_tf) or {}
+    t = np.asarray(base.get("time") or [], dtype=np.int64)
+    out = np.zeros(len(t), dtype=bool)
+    if not len(t):
+        return out
+    base_close = t + TF_S[base_tf]
+    for htf in HTF_OF[base_tf]:
+        ht = np.asarray((cols_by_tf.get(htf) or {}).get("time") or [], dtype=np.int64)
+        if not len(ht):
+            continue                                                 # no HTF history at all: build() already gives NaN
+        hs = TF_S[htf]
+        avail = ht + hs
+        idx = np.searchsorted(avail, base_close, side="right") - 1
+        ok = idx >= 0
+        k = np.searchsorted(t, avail[np.where(ok, idx, 0)], side="left")     # first base candle opened at / after that HTF close
+        kk = np.minimum(k, len(t) - 1)
+        out |= ok & (k < len(t)) & ((t[kk] // hs) * hs + hs <= base_close)   # its HTF period closed by the row's close -> HTF missing
+    return out
+
+
 def last_row(cols_by_tf: dict[str, dict], base_tf: str, point: float) -> tuple[int | None, np.ndarray | None, list[str]]:
     """Live inference: features of the newest CLOSED base candle (same code as training)."""
     t, X, nm = build(cols_by_tf, base_tf, point)

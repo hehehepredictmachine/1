@@ -12,11 +12,15 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import platform
+import re
 import shutil
 import sys
+import threading
 import time
 import zipfile
+from contextlib import contextmanager
 from pathlib import Path
 
 import numpy as np
@@ -25,6 +29,8 @@ from ..marketdata.store import atomic_bytes, atomic_json, iso, read_json, sha256
 from . import features as F
 
 PACKAGE_VERSION = "PMW-TH-PKG-1"
+# 1.46: model_key / version become path segments (package_dir) - the same rule as the API's /trainhub/version check (_SAFE)
+SAFE_ID = re.compile(r"^[A-Za-z0-9_\-]{1,64}$")
 
 
 def root() -> Path:
@@ -90,12 +96,13 @@ def save_package(inst: str, cfg: dict, trained: dict, ds_desc: dict, store_manif
     files = {p.name: sha256_file(p) for p in sorted(d.iterdir()) if p.is_file() and p.name != "package_manifest.json"}
     atomic_json(d / "package_manifest.json", {"package_version": PACKAGE_VERSION, "instrument": inst, "model_key": key, "version": version,
                                               "created_at": iso(time.time()), "files": files})
-    reg = _reg(inst)
-    reg.setdefault("versions", {}).setdefault(key, []).append({"version": version, "created_at": iso(time.time()), "model_id": res["model_id"],
-                                                                "base_tf": cfg["base_tf"], "horizon": cfg["horizon"], "data_kind": store_manifest.get("data_kind"),
-                                                                "holdout": res["holdout"], "walk_forward": {k: v for k, v in res["walk_forward"].items() if k != "folds"},
-                                                                "trading_eval_holdout": res["trading_eval_holdout"], "path": str(d.relative_to(root()))})
-    _save_reg(inst, reg)
+    with reg_lock(inst):                          # 1.46: read-modify-write of registry.json under the shared registry lock
+        reg = _reg(inst)
+        reg.setdefault("versions", {}).setdefault(key, []).append({"version": version, "created_at": iso(time.time()), "model_id": res["model_id"],
+                                                                    "base_tf": cfg["base_tf"], "horizon": cfg["horizon"], "data_kind": store_manifest.get("data_kind"),
+                                                                    "holdout": res["holdout"], "walk_forward": {k: v for k, v in res["walk_forward"].items() if k != "folds"},
+                                                                    "trading_eval_holdout": res["trading_eval_holdout"], "path": str(d.relative_to(root()))})
+        _save_reg(inst, reg)
     return {"model_key": key, "version": version, "path": str(d)}
 
 
@@ -121,6 +128,63 @@ def _reg(inst: str) -> dict:
 def _save_reg(inst: str, reg: dict) -> None:
     _reg_path(inst).parent.mkdir(parents=True, exist_ok=True)
     atomic_json(_reg_path(inst), reg)
+
+
+_REG_TLOCK = threading.RLock()
+_REG_HELD = threading.local()
+
+
+@contextmanager
+def reg_lock(inst: str, timeout_s: float = 60.0):
+    """1.46: registry.json was rewritten read-modify-write without any lock while the training process (save_package) and the panel
+    (activate / rollback / deactivate / remove_version) wrote it concurrently - the later writer dropped the other's new version or
+    activation. One exclusive OS file lock per instrument (models/<inst>/registry.lock: fcntl.flock / msvcrt.locking - released by the
+    OS when a process dies) plus a thread lock; re-entrant in the same thread. Hold it only for re-read -> change -> save."""
+    with _REG_TLOCK:
+        held = _REG_HELD.__dict__.setdefault("n", {})               # per instrument: this thread already holds its file lock
+        if held.get(inst):
+            held[inst] += 1
+            try:
+                yield
+            finally:
+                held[inst] -= 1
+            return
+        p = _reg_path(inst).with_name("registry.lock")
+        p.parent.mkdir(parents=True, exist_ok=True)
+        f = open(p, "a+b")  # noqa: SIM115 - the handle IS the lock, closed in finally
+        try:
+            if os.name == "nt":
+                import msvcrt
+                f.seek(0)
+                end = time.monotonic() + timeout_s
+                while True:
+                    try:
+                        msvcrt.locking(f.fileno(), msvcrt.LK_NBLCK, 1)
+                        break
+                    except OSError:
+                        if time.monotonic() > end:
+                            raise TimeoutError(f"rejestr modeli {inst} zajęty przez inny proces dłużej niż {timeout_s:.0f} s") from None
+                        time.sleep(0.05)
+            else:
+                import fcntl
+                fcntl.flock(f.fileno(), fcntl.LOCK_EX)
+            held[inst] = 1
+            try:
+                yield
+            finally:
+                held[inst] = 0
+                try:
+                    if os.name == "nt":
+                        import msvcrt
+                        f.seek(0)
+                        msvcrt.locking(f.fileno(), msvcrt.LK_UNLCK, 1)
+                    else:
+                        import fcntl
+                        fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+                except OSError:
+                    pass                                   # closing the handle releases the lock anyway
+        finally:
+            f.close()
 
 
 def registry(inst: str) -> dict:
@@ -205,6 +269,8 @@ def activate(inst: str, key: str, version: str, *, reason: str = "panel") -> dic
     reg = _reg(inst)
     if not any(v["version"] == version for v in reg.get("versions", {}).get(key, [])):
         return {"ok": False, "status": "NOT_FOUND", "reason": f"brak wersji {version} modelu {key}"}
+    # 1.46: the slow checks below run WITHOUT the registry lock; the registry is re-read under the lock afterwards - 1.45.0 saved the copy
+    # read here, erasing a version the training process had added (or an activation / rollback done) in the meantime
     comp = compatibility(inst, key, version)
     if not comp["ok"]:
         return {"ok": False, "status": "INCOMPATIBLE", "compatibility": comp, "reason": "test zgodności nie przeszedł – aktywna wersja bez zmian"}
@@ -215,37 +281,81 @@ def activate(inst: str, key: str, version: str, *, reason: str = "panel") -> dic
     if not pt["ok"]:
         return {"ok": False, "status": "INCOMPATIBLE", "compatibility": comp, "prediction_test": pt,
                 "reason": "test predykcji po wczytaniu nie przeszedł – aktywna wersja bez zmian"}
-    prev = reg.setdefault("active", {}).get(key)
-    reg["active"][key] = version
-    reg.setdefault("history", []).append({"at": iso(time.time()), "model_key": key, "action": "ACTIVATE", "version": version, "previous": prev,
-                                          "reason": reason, "prediction_test": pt})
-    _save_reg(inst, reg)
+    with reg_lock(inst):
+        reg = _reg(inst)
+        if not any(v["version"] == version for v in reg.get("versions", {}).get(key, [])):
+            return {"ok": False, "status": "NOT_FOUND", "reason": f"wersja {version} modelu {key} usunięta w trakcie aktywacji"}
+        prev = reg.setdefault("active", {}).get(key)
+        reg["active"][key] = version
+        reg.setdefault("history", []).append({"at": iso(time.time()), "model_key": key, "action": "ACTIVATE", "version": version, "previous": prev,
+                                              "reason": reason, "prediction_test": pt})
+        _save_reg(inst, reg)
     return {"ok": True, "status": "ACTIVE", "model_key": key, "version": version, "previous": prev, "compatibility": comp, "prediction_test": pt}
+
+
+def _active_chain(reg: dict, key: str) -> list:
+    """1.46: the versions active one after another (oldest first), replayed from the history: ACTIVATE pushes, ROLLBACK pops back to its
+    target, DEACTIVATE empties the chain (nothing was active)."""
+    st: list = []
+    for h in reg.get("history") or []:
+        if h.get("model_key") != key:
+            continue
+        a, v = h.get("action"), h.get("version")
+        if a == "ACTIVATE" and v:
+            if not st or st[-1] != v:
+                st.append(v)
+        elif a == "ROLLBACK":
+            if st:
+                st.pop()
+            while st and v and st[-1] != v:
+                st.pop()
+            if v is None:
+                st.clear()
+            elif not st:
+                st.append(v)
+        elif a == "DEACTIVATE":
+            st.clear()
+    return st
 
 
 def rollback(inst: str, key: str) -> dict:
     reg = _reg(inst)
     cur = (reg.get("active") or {}).get(key)
-    hist = [h for h in reg.get("history", []) if h["model_key"] == key and h["action"] == "ACTIVATE"]
-    prev = hist[-1]["previous"] if hist and hist[-1]["version"] == cur else None
-    if prev:
-        comp = compatibility(inst, key, prev)
-        if not comp["ok"]:
-            return {"ok": False, "status": "INCOMPATIBLE", "reason": "poprzednia wersja niezgodna z bieżącym kodem", "compatibility": comp}
-    if prev:
-        reg["active"][key] = prev
-    else:
-        reg.get("active", {}).pop(key, None)
-    reg.setdefault("history", []).append({"at": iso(time.time()), "model_key": key, "action": "ROLLBACK", "version": prev, "previous": cur})
-    _save_reg(inst, reg)
+    if not cur:
+        return {"ok": False, "status": "NOTHING_TO_ROLLBACK", "active": None, "previous": None, "reason": f"brak aktywnej wersji {key} – nie ma czego cofać"}
+    # 1.46: the previous version comes from the chain of activations - 1.45.0 looked only at the LAST ACTIVATE entry, so a second rollback
+    # (whose last ACTIVATE was the version just rolled back) found nothing and silently DISABLED the model with status ROLLED_BACK
+    known = {v.get("version") for v in (reg.get("versions") or {}).get(key, [])}
+    st = _active_chain(reg, key)
+    if st and st[-1] == cur:
+        cand = [v for v in reversed(st[:-1]) if v != cur]
+    else:                                                  # history inconsistent with the active version (older files): 1.45.0 rule
+        hist = [h for h in reg.get("history", []) if h["model_key"] == key and h["action"] == "ACTIVATE"]
+        cand = [hist[-1]["previous"]] if hist and hist[-1]["version"] == cur and hist[-1].get("previous") else []
+    prev = next((v for v in cand if v in known), None)
+    if not prev:
+        return {"ok": False, "status": "NOTHING_TO_ROLLBACK", "active": cur, "previous": None,
+                "reason": "brak wcześniejszej aktywnej wersji – aktywna wersja bez zmian (wyłączenie modelu: „Dezaktywuj”)"}
+    comp = compatibility(inst, key, prev)
+    if not comp["ok"]:
+        return {"ok": False, "status": "INCOMPATIBLE", "reason": "poprzednia wersja niezgodna z bieżącym kodem", "compatibility": comp}
+    with reg_lock(inst):
+        reg = _reg(inst)
+        if (reg.get("active") or {}).get(key) != cur:
+            return {"ok": False, "status": "CONFLICT", "active": (reg.get("active") or {}).get(key), "previous": None,
+                    "reason": "aktywna wersja zmieniła się w trakcie – rollback nie wykonany, odśwież i ponów"}
+        reg.setdefault("active", {})[key] = prev
+        reg.setdefault("history", []).append({"at": iso(time.time()), "model_key": key, "action": "ROLLBACK", "version": prev, "previous": cur})
+        _save_reg(inst, reg)
     return {"ok": True, "status": "ROLLED_BACK", "active": prev, "previous": cur}
 
 
 def deactivate(inst: str, key: str) -> dict:
-    reg = _reg(inst)
-    cur = (reg.get("active") or {}).pop(key, None)
-    reg.setdefault("history", []).append({"at": iso(time.time()), "model_key": key, "action": "DEACTIVATE", "version": None, "previous": cur})
-    _save_reg(inst, reg)
+    with reg_lock(inst):                          # 1.46: under the registry lock (see reg_lock)
+        reg = _reg(inst)
+        cur = (reg.get("active") or {}).pop(key, None)
+        reg.setdefault("history", []).append({"at": iso(time.time()), "model_key": key, "action": "DEACTIVATE", "version": None, "previous": cur})
+        _save_reg(inst, reg)
     return {"ok": True, "status": "DISABLED", "previous": cur}
 
 
@@ -263,11 +373,12 @@ def export_zip(inst: str, key: str, version: str, out: Path) -> Path:
 
 
 def remove_version(inst: str, key: str, version: str) -> None:
-    reg = _reg(inst)
-    if (reg.get("active") or {}).get(key) == version:
-        raise ValueError("nie można usunąć aktywnej wersji")
-    reg["versions"][key] = [v for v in reg.get("versions", {}).get(key, []) if v["version"] != version]
-    _save_reg(inst, reg)
+    with reg_lock(inst):                          # 1.46: the active check and the write see the same registry (see reg_lock)
+        reg = _reg(inst)
+        if (reg.get("active") or {}).get(key) == version:
+            raise ValueError("nie można usunąć aktywnej wersji")
+        reg.setdefault("versions", {})[key] = [v for v in reg.get("versions", {}).get(key, []) if v["version"] != version]
+        _save_reg(inst, reg)
     shutil.rmtree(package_dir(inst, key, version), ignore_errors=True)
 
 

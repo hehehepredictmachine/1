@@ -17,6 +17,7 @@ import numpy as np
 from ..modelhub import contract as C
 from . import features as F
 from . import registry as R
+from .dataset import positive as _pos
 
 INSTRUMENTS = ("XAUUSD", "BTC")
 BARS = {"base": 600, "htf": 300}
@@ -118,27 +119,40 @@ class TrainhubInference:
         if not cols[tf]["time"]:
             return self._pred(inst, key, version, conf, "ERROR", "brak zamkniętych świec (offset czasu serwera nieznany?)", data_quality="MISSING")
         last_t = cols[tf]["time"][-1]
+        close_t = last_t + F.TF_S[tf]
         if not force and self.last_bar.get((inst, key)) == last_t and (inst, key) in self.latest:
-            return self.latest[(inst, key)]
+            cached = self.latest[(inst, key)]
+            # 1.46: the stored prediction was returned as it was until the next closed candle - with the market closed / candles not
+            # arriving a READY (data_quality OK) stayed READY for days. Freshness is re-checked on every poll.
+            age = self.clock() - close_t
+            if age > 3 * F.TF_S[tf] + 30 and (cached.get("state") == "READY" or cached.get("data_quality") == "STALE"):
+                return self._stale(inst, key, version, conf, close_t, age)
+            return cached
         self.last_bar[(inst, key)] = last_t
-        point = float((self.bridge.symbol_meta(sym) or {}).get("point") or conf.get("point") or 0.01)
+        # 1.46: point of the broker symbol, else the one used at training (config.json); unknown = no prediction (1.45.0: 0.01 guessed)
+        point = _pos((self.bridge.symbol_meta(sym) or {}).get("point")) or _pos(conf.get("point"))
+        if not point:
+            return self._pred(inst, key, version, conf, "ERROR", f"brak specyfikacji symbolu {sym} (point) – inferencja wstrzymana",
+                              data_quality="MISSING")
         t, x, names = F.last_row(cols, tf, point)
         if names != (sch or {}).get("names"):
             return self._pred(inst, key, version, conf, "INCOMPATIBLE", "kolejność / nazwy cech inne niż w paczce – inferencja zablokowana")
-        close_t = last_t + F.TF_S[tf]
         age = self.clock() - close_t
         dq = "OK" if age <= 3 * F.TF_S[tf] + 30 else "STALE"
         if x is None or not np.all(np.isfinite(x)):
             return self._pred(inst, key, version, conf, "ERROR", "niepełne cechy (za krótka historia / brak świec wyższego interwału)",
                               data_quality="DEGRADED", data_time=_iso(close_t))
         if dq != "OK":
-            return self._pred(inst, key, version, conf, "ERROR", f"dane nieaktualne: ostatnia zamknięta świeca {_iso(close_t)} "
-                              f"({int(age // 60)} min) – rynek zamknięty albo brak notowań", data_quality="STALE", data_time=_iso(close_t),
-                              freshness_s=round(age, 1))
+            return self._stale(inst, key, version, conf, close_t, age)
         p = R.predict_loaded(obj, x.reshape(1, -1))[0]
         res = {"DOWN": round(float(p[0]), 6), "FLAT": round(float(p[1]), 6), "UP": round(1.0 - round(float(p[0]), 6) - round(float(p[1]), 6), 6)}
         return self._pred(inst, key, version, conf, "READY", result=res, data_time=_iso(close_t), freshness_s=round(age, 1),
                           compute_ms=round((time.perf_counter() - t0) * 1000, 1), data_quality=dq)
+
+    def _stale(self, inst, key, version, conf, close_t, age) -> dict:
+        return self._pred(inst, key, version, conf, "ERROR", f"dane nieaktualne: ostatnia zamknięta świeca {_iso(close_t)} "
+                          f"({int(age // 60)} min) – rynek zamknięty albo brak notowań", data_quality="STALE", data_time=_iso(close_t),
+                          freshness_s=round(age, 1))
 
     def predictions(self, inst: str) -> list[dict]:
         with self._lock:

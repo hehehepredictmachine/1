@@ -127,6 +127,20 @@ class TrainingCenter:
         if inst not in ("XAUUSD", "BTC"):
             raise ValueError("instrument XAUUSD albo BTC (trenowane i oceniane osobno)")
         params = dict(params or {})
+        if kind in ("DATASET", "TRAIN", "FULL", "EVALUATE"):
+            # 1.46: training parameters checked at submit (HTTP 400) - 1.45.0 queued any value and the job died later in the worker
+            # (holdout_frac=0 -> IndexError, grid_limit<0 -> empty grid); the same check runs again in the worker with the store manifest
+            from .pipeline import config as _check_params
+            _check_params(params)
+        if kind == "EVALUATE":
+            # 1.46: model_key / version become a package path (joblib.load, evaluations.json write) in the worker - checked like the
+            # API's /trainhub/version (safe identifiers) and they must name a version of this instrument's registry
+            from .registry import SAFE_ID, registry
+            key, ver = params.get("model_key"), params.get("version")
+            if not (isinstance(key, str) and isinstance(ver, str) and SAFE_ID.match(key) and SAFE_ID.match(ver)):
+                raise ValueError("EVALUATE wymaga model_key i version (litery, cyfry, _ i -)")
+            if not any(v.get("version") == ver for v in ((registry(inst).get("versions") or {}).get(key) or [])):
+                raise ValueError(f"brak wersji {ver} modelu {key} w rejestrze {inst}")
         dedup = json.dumps([kind, inst, params], sort_keys=True, default=str)
         with self._lock:
             ex = self.db.execute("SELECT id FROM jobs WHERE dedup=? AND status IN ('QUEUED','RUNNING')", (dedup,)).fetchone()
@@ -292,6 +306,11 @@ class TrainingCenter:
         if r["status"] == "RUNNING":                          # the child did not record its end (killed / crashed)
             if self._cancelled(jid):
                 update(self.db, jid, status="CANCELLED", finished_at=time.time(), stage="anulowane – proces treningu zatrzymany")
+            elif self._stop.is_set():
+                # 1.46: a clean bot stop kills the child too - 1.45.0 recorded that as FAILED ("kodem -15"), so the documented
+                # INTERRUPTED state never appeared (the restart recovery only converts rows still RUNNING)
+                update(self.db, jid, status="INTERRUPTED", finished_at=time.time(), stage="przerwane – bot zatrzymany",
+                       error="przerwane – bot został zatrzymany w trakcie")
             else:
                 update(self.db, jid, status="FAILED", finished_at=time.time(), error=f"proces treningu zakończył się kodem {rc}")
         self.proc = None

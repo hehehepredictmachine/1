@@ -17,6 +17,7 @@ from __future__ import annotations
 import hashlib
 import io
 import json
+import math
 
 import numpy as np
 
@@ -28,6 +29,32 @@ CLASSES = ("DOWN", "FLAT", "UP")
 
 class InsufficientData(ValueError):
     pass
+
+
+def positive(x) -> float | None:
+    """A finite number > 0, else None (missing is never replaced by a default)."""
+    try:
+        v = float(x)
+    except (TypeError, ValueError):
+        return None
+    return v if math.isfinite(v) and v > 0 else None
+
+
+def epoch(x, name: str = "data") -> float | None:
+    """1.46: range bounds (--from / --to, job params) arrive as ISO text; Store.read compares them with int epoch seconds (1.45.0: TypeError
+    'int >= str' -> traceback / FAILED job). Same conversion as the export (export._ts); a bad format is a readable ValueError."""
+    from ..marketdata.export import _ts
+    try:
+        return _ts(x)
+    except (TypeError, ValueError, OverflowError) as exc:
+        raise ValueError(f"{name}: nieprawidłowa data {x!r} – oczekiwany format ISO, np. 2026-01-31 albo 2026-01-31T00:00:00Z") from exc
+
+
+def symbol_point(man: dict | None, cfg: dict | None = None) -> float | None:
+    """Price point of the symbol: measured (store manifest: costs.spread / symbol_spec) or given explicitly (cfg['point']); None if unknown."""
+    man = man or {}
+    return (positive(((man.get("costs") or {}).get("spread") or {}).get("point")) or positive((man.get("symbol_spec") or {}).get("point"))
+            or positive((cfg or {}).get("point")))
 
 
 def labels(cols: dict, tf: str, horizon: int, k_atr: float, point: float, commission_price: float, slippage_price: float):
@@ -57,19 +84,30 @@ def build(store, inst: str, cfg: dict, start=None, end=None) -> dict:
     """Feature matrix + labels for one instrument / base TF from the candle store (closed candles only)."""
     tf = cfg["base_tf"]
     need = (tf,) + F.HTF_OF[tf]
+    start, end = epoch(start, "początek zakresu (--from / start)"), epoch(end, "koniec zakresu (--to / end)")   # 1.46: ISO -> epoch s
     cols = {x: store.read(inst, x, start, end) for x in need}
     man = store.manifest(inst)
-    point = float(((man.get("costs") or {}).get("spread") or {}).get("point") or cfg.get("point") or 0.01)
+    # 1.46: an unknown point (manifest written after a failed symbol_info) was silently 0.01 - the spread cost of the labels and the
+    # spread_atr feature in the wrong scale (10x for a 3-digit XAUUSD) and different from inference (real point). Never guessed now.
+    point = symbol_point(man, cfg)
     if not cols[tf]["time"]:
         raise InsufficientData(f"brak świec {inst} {tf} w magazynie – najpierw „Eksportuj dane”")
+    if point is None:
+        raise InsufficientData(f"brak specyfikacji symbolu {inst} (point) w manifeście magazynu – ponów „Eksportuj dane” przy połączonym MT5 "
+                               "(albo podaj point jawnie); bez niej koszt spreadu i cecha spread_atr byłyby w nieznanej skali")
     t, X, names = F.build(cols, tf, point)
     y, lend, fwd, cost, atr = labels(cols[tf], tf, int(cfg["horizon"]), float(cfg["k_atr"]), point, float(cfg.get("commission_price") or 0.0),
                                      float(cfg.get("slippage_price") or 0.0))
-    ok = (y >= 0) & np.all(np.isfinite(X), axis=1)
+    fin = np.all(np.isfinite(X), axis=1)
+    # 1.46: rows whose higher-TF candle is frozen (HTF history ends / has a hole while the base TF traded on) are not usable - 1.45.0
+    # trained on finite but weeks-old M15/M30 values (features.htf_stale; a weekend / session break is not stale)
+    stale = F.htf_stale(cols, tf)
+    ok = (y >= 0) & fin & ~stale
     files = {k: v for k, v in (man.get("files") or {}).items() if k.split("/")[0] in need}
     ds = {"t": t[ok], "X": X[ok], "y": y[ok], "label_end": lend[ok], "fwd": fwd[ok], "cost": cost[ok], "atr": atr[ok], "names": names,
           "point": point, "rows_total": int(len(t)), "rows_usable": int(ok.sum()),
-          "dropped": {"warmup_or_missing_htf": int(((y >= 0) & ~np.all(np.isfinite(X), axis=1)).sum()), "no_label": int((y < 0).sum())},
+          "dropped": {"warmup_or_missing_htf": int(((y >= 0) & ~fin).sum()), "no_label": int((y < 0).sum()),
+                      "stale_htf": int(((y >= 0) & fin & stale).sum())},
           "source_files": files, "data_kind": man.get("data_kind"), "symbol": man.get("symbol"), "time_model": man.get("time_model")}
     ds["hash"] = hashlib.sha256(json.dumps(sorted((k, v.get("sha256")) for k, v in files.items())).encode()
                                 + ds["t"].tobytes() + ds["y"].tobytes()).hexdigest()[:16]
@@ -96,13 +134,16 @@ def splits(ds: dict, *, holdout_frac: float, n_folds: int, embargo_bars: int, st
         raise InsufficientData(f"za mało danych: {n} próbek z etykietą < wymagane {min_samples} – wyeksportuj dłuższą historię "
                                f"(≈ {int(min_samples * step / 86400 * 1.4) + 1} dni kalendarzowych dla tego interwału)")
     t, lend = ds["t"], ds["label_end"]
+    # 1.46: holdout_frac outside (0, 1) gave h0 = n (IndexError in t[h0]) or a negative index (absurd split); checked before indexing
+    if not 0.0 < float(holdout_frac) < 1.0 or int(n_folds) < 1:
+        raise ValueError(f"holdout_frac {holdout_frac} (0..1) / n_folds {n_folds} (>= 1) poza zakresem")
     h0 = int(n * (1 - holdout_frac))
-    hold_start = t[h0]
-    emb = embargo_bars * step
-    dev = np.where(lend <= hold_start - emb)[0]
     hold = np.arange(h0, n)
     if len(hold) < 200:
         raise InsufficientData(f"zbiór końcowy ma {len(hold)} próbek (< 200) – za krótka historia")
+    hold_start = t[h0]
+    emb = embargo_bars * step
+    dev = np.where(lend <= hold_start - emb)[0]
     blocks = np.array_split(dev, n_folds + 1)
     folds = []
     for k in range(1, n_folds + 1):
