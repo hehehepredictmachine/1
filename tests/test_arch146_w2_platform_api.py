@@ -552,5 +552,59 @@ class TestInstrumentSingleSource(_Base):
         self.assertEqual(cm.exception.detail, "INSTRUMENT_INVALID")
 
 
+# ------------------------------------------------------------------------------------------------------------------------- I0007
+class TestProducerHorizonsAndTimeframes(_Base):
+    """I0007: horyzonty i interwały tego samego producenta zgodne między rejestrami (opisy; bez wpływu na rekordy predykcji)."""
+
+    def test_kronos_api_timeframes_match_settings(self):
+        import typing
+
+        from fastapi import HTTPException
+        from masterquo.api import app as A
+        from masterquo.kronos import settings as KS
+        rt = make_rt()
+        rt.kronos.forecast.return_value = {"ok": True}
+        app = A.create_app(rt, PORT)
+        for tf in typing.get_args(KS.TF):
+            ep(app, "GET", "/api/v1/kronos/forecast")(instrument="XAUUSD", tf=tf)               # HEAD: M3 -> 400 TIMEFRAME_NOT_ALLOWED
+        self.assertEqual([c.args for c in rt.kronos.forecast.call_args_list], [("XAUUSD", tf) for tf in typing.get_args(KS.TF)])
+        with self.assertRaises(HTTPException) as cm:
+            ep(app, "GET", "/api/v1/kronos/forecast")(instrument="XAUUSD", tf="H4")
+        self.assertEqual(cm.exception.detail, "TIMEFRAME_NOT_ALLOWED")
+        rt.kronos.history.return_value = []
+        ep(app, "GET", "/api/v1/kronos/history")(instrument="BTC", tf="m3", limit=5)
+        rt.kronos.history.assert_called_once_with("BTC", "M3", 5)
+
+    def test_event_gru_horizon_is_the_label_horizon(self):
+        from masterquo.modelhub.families import seq
+        self.assertEqual(seq.EventGRU.HORIZONS, (2,))                                            # etykieta unit_targets(u, 2); adapter horizon_bars=2
+        self.assertEqual(seq.EventGRU().capabilities()["horizons"], [2])
+        src = (PKG / "quant" / "adapters.py").read_text(encoding="utf-8")
+        self.assertIn('task="EVENT_UNITS_DIR3", horizon_bars=2', src)
+
+    def test_tabular_keeps_class_attrs_and_describes_allowed_set(self):
+        from masterquo.modelhub.families import tabular
+        from masterquo.trainhub import features as TF
+        for cls in (tabular.RF, tabular.XGB, tabular.SVM):
+            self.assertEqual((cls.TF, cls.HORIZONS, cls.DATA["tf"]), ("M5", (6,), "M5"))         # atrybuty klasowe bez zmian
+            cap = cls().capabilities()
+            self.assertEqual((cap["tf"], cap["horizons"]), ("M5", [6]))
+            self.assertEqual(cap["tf_allowed"], list(TF.HTF_OF))
+            self.assertIn("paczk", cap["horizon_source"])
+        summary = {"versions": [{"model_key": "TH_RF_M15_H8"}], "active": {"TH_RF_M15_H8": "v3", "TH_XGB_M1_H12": "v1"}}
+        with mock.patch("masterquo.trainhub.registry.summary", return_value=summary):
+            st = tabular.RF().trainhub_state("XAUUSD")
+        self.assertEqual(st["active_config"], [{"model_key": "TH_RF_M15_H8", "version": "v3", "base_tf": "M15", "horizon": 8}])
+        self.assertEqual((st["artifact"], st["use"]), ("CANDIDATE", "SHADOW"))                   # dotychczasowe pola bez zmian
+
+    def test_inventory_lists_settings_timeframes(self):
+        from masterquo.kronos import settings as KS
+        from masterquo.quant import inventory as QI
+        from masterquo.tsfm import settings as TS
+        self.assertEqual(QI._OVR["kronos:Kronos-small"]["tfs"], list(KS.TF_ALL))
+        for k in ("tsfm:chronos2", "tsfm:granite_ttm"):
+            self.assertEqual(QI._OVR[k]["tfs"], list(TS.TF_ALL), k)
+
+
 if __name__ == "__main__":
     unittest.main()

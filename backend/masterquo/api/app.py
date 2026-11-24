@@ -2180,7 +2180,9 @@ def create_app(rt, port: int) -> FastAPI:
         return _AG.evidence(_AD.all_predictions(rt, i), strategy, i)
 
     # ------------------------------------------------------------------ Kronos (NeoQuasar/Kronos-small since 1.42.8; Kronos-base 1.37-1.42.7)
-    _KR_TF = ("M1", "M5", "M15", "M30", "H1")
+    # 1.46 arch (I0007): the timeframes the Kronos settings allow (kronos/settings.TF) - M3 was missing here (an enabled M3 gave 400).
+    # Only the tf parameter of the two read-only GET routes (forecast / history) is validated with it; nothing is queued or forced.
+    from ..kronos.settings import TF_ALL as _KR_TF
 
     def _kr_tf(tf: str) -> str:
         tf = tf.upper() if isinstance(tf, str) else ""        # 1.46: a number was an AttributeError (.upper) -> 500

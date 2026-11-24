@@ -19,6 +19,8 @@ import json
 from datetime import datetime, timezone
 from pathlib import Path
 
+from ..kronos.settings import TF_ALL as _KRONOS_TF
+from ..tsfm.settings import TF_ALL as _TSFM_TF
 from . import ids as I
 
 VERSION = "PMW-QUANT-INV-1"
@@ -92,15 +94,18 @@ _OVR: dict[str, dict] = {
                            "unit": "log_return", "task_type": "REGRESSION", "tfs": ["EVENT"]},
     # --- other SH rows ------------------------------------------------------------------------------------------------
     "tsfm:chronos2": {"role": "BASE_FORECAST", "adapter": A_EXISTING, "unit": "price", "task_type": "REGRESSION", "task": "TSFM_CLOSE_H*",
-                      "tfs": ["M5", "M15"], "env": ".venv_chronos2", "files": ["backend/masterquo/tsfm/", "backend/tsfm_runtime/"],
-                      "notes": "amazon/chronos-2 (120M); kwantyle modelu, punkt = mediana; nieskalibrowane na danych brokera"},
+                      "tfs": list(_TSFM_TF), "env": ".venv_chronos2", "files": ["backend/masterquo/tsfm/", "backend/tsfm_runtime/"],
+                      "notes": "amazon/chronos-2 (120M); kwantyle modelu, punkt = mediana; nieskalibrowane na danych brokera; "
+                               "interwały = dozwolone w ustawieniach TSFM (domyślnie włączone M5, M15)"},
     "tsfm:granite_ttm": {"role": "BASE_FORECAST", "adapter": A_EXISTING, "unit": "price", "task_type": "REGRESSION", "task": "TSFM_CLOSE_H*",
-                         "tfs": ["M5", "M15"], "env": ".venv_granite", "files": ["backend/masterquo/tsfm/", "backend/tsfm_runtime/"],
+                         "tfs": list(_TSFM_TF), "env": ".venv_granite", "files": ["backend/masterquo/tsfm/", "backend/tsfm_runtime/"],
                          "notes": "ibm-granite/granite-timeseries-ttm-r2 (TTM R2 512-96, 0,8M); prognoza punktowa (bez kwantyli); nieskalibrowana; "
-                                  "1.40 zamiast FinCast (FinCast: RETIRED, historia zachowana)"},
+                                  "1.40 zamiast FinCast (FinCast: RETIRED, historia zachowana); "
+                                  "interwały = dozwolone w ustawieniach TSFM (domyślnie włączone M5, M15)"},
     "kronos:Kronos-small": {"role": "BASE_FORECAST", "adapter": A_EXISTING, "unit": "price", "task_type": "REGRESSION", "task": "KRONOS_CLOSE_PATH_H*",
-                            "tfs": ["M1", "M5", "M15", "H1"], "env": ".venv_kronos", "files": ["backend/masterquo/kronos/", "backend/kronos_runtime/"],
-                            "notes": "pojedyncza ścieżka nie jest prawdopodobieństwem; pretrained ≠ dostrojony do brokera"},
+                            "tfs": list(_KRONOS_TF), "env": ".venv_kronos", "files": ["backend/masterquo/kronos/", "backend/kronos_runtime/"],
+                            "notes": "pojedyncza ścieżka nie jest prawdopodobieństwem; pretrained ≠ dostrojony do brokera; "
+                                     "interwały = dozwolone w ustawieniach Kronos (domyślnie włączone M5, M15)"},
     "agent:claude": {"role": "NOT_A_VOTE", "adapter": None, "na": "opis / weto tekstowe agenta – bez p(win); poza meta-modelem", "unit": "state", "task_type": "STATE"},
 }
 
