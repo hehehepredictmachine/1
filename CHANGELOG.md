@@ -1,5 +1,71 @@
 # CHANGELOG
 
+## 1.46.0 – Apollo23: audyt całego kodu, naprawy z testami regresji, eksportery danych
+
+Pełny opis jest w **`docs/AUDYT_1_45.md`**. Każde zgłoszenie ma tam plik:linia, wagę, dowód, poprawkę, status i test.
+
+Zasady tego wydania:
+- STOP, SL/TP strategii, limity i obliczenia ryzyka, dźwignia, tryb wykonania i ścieżki zleceń MT5 są **bez zmian**.
+- Moduły workflow v3.2 zostają OFF/SHADOW/read-only.
+- Identyfikatory wewnętrzne są bez zmian: `masterquo`, `PMW_*`, folder danych, nazwy exe, mutex, trasy API, klucze konfiguracji, ID strategii i modeli.
+- Format, podpisy i klucz licencji PMW1 są bez zmian.
+
+* **Audyt (ETAP 1).** Przegląd objął całe repozytorium: backend, frontend, aplikację Windows, narzędzia i testy.
+  * 53 części kodu i 7 przekrojów: bezpieczeństwo lokalnego API, zasady v3.2, czas UTC i serwera, jednostki i ryzyko, pozostałości intro 3D/OTC/nazwy, inwentarz eksporterów, paczki i sekrety.
+  * Smoke test 286 tras GET na serwerze demo.
+  * Wynik: 999 zgłoszeń.
+* **Naprawy (ETAP 2).**
+  * 700 zgłoszeń naprawionych z testem regresji, który na kodzie 1.45.0 nie przechodzi.
+  * 36 drobnych porządków bez testu (martwy kod, opisy) i 25 zgłoszeń, które załatwiły wcześniejsze poprawki tego wydania.
+  * Testy regresji są w plikach (`tests/test_audit_146*.py`, `tests/js/audit146_*.test.mjs`, `desktop/audit146_*_test.go`).
+  * Najważniejsze, bezpieczeństwo:
+    * import checkpointów bez wykonywania kodu (`torch.load` bez pickle);
+    * path traversal w importach paczek, komponentów i ścieżek z body API;
+    * kontrola Host/Origin w Studio;
+    * sesje panelu odporne na obce strony;
+    * pełniejszy skan sekretów w paczkach;
+    * znacznik edycji klienta w paczkach KLIENT: pusty `owner.py` nie zmienia już paczki klienta w wersję właściciela.
+  * Dane:
+    * brak danych to `null`/`UNAVAILABLE`, nie 0 (koszty, prowizje, wolumeny, kwotacje, historia deali, spread w backteście);
+    * czas serwera bez zweryfikowanego offsetu nie jest zapisywany jako UTC (eksporty, czytniki, wykresy);
+    * brak podglądu przyszłości (dataset SCALP_STRUCTURE, kontekst TabICL, extind as_of, kalibracje Lab).
+  * Stabilność:
+    * wątki nie giną po pierwszym wyjątku;
+    * wyścigi na współdzielonych połączeniach SQLite usunięte;
+    * cache i słowniki mają limity;
+    * blokady treningu, rodzin modeli i Studio są odporne na ponownie użyty pid (Windows: koniec `os.kill(pid, 0)`);
+    * rejestry modeli prognoz i scalp nie są nadpisywane pustym widokiem, gdy plik jest nieczytelny.
+  * Pomiar w replay i walidacji: stop po luce po cenie open, spread z CSV brokera, kalendarz M1 Kronosa, okna DEV bez holdoutu.
+  * TEST_INSTALACJI nie nadpisuje raportów walidacji bramkujących AUTO_LIVE.
+  * Regresja z porządkowania importów (zmiana `contract_hash` prognoz) cofnięta.
+* **Odbiór (ETAP 4): przegląd zgodności z zasadami.**
+  * Cały diff 1.46 (387 plików) przejrzało 9 niezależnych recenzentów, a każde podejrzenie sprawdził osobny weryfikator.
+  * 25 poprawek zmieniało zachowanie na żywo: które zlecenia idą do MT5 i kiedy, rozliczanie pozycji, bramki setupów, wejścia modeli, działanie „Zatrzymaj Apollo23”.
+  * Dla tych poprawek **przywrócono zachowanie 1.45**. Gotowe poprawki, z odwołaniem do commitu, opisuje sekcja „Do decyzji”.
+  * Przy odbiorze naprawiono też:
+    * wyścig w nadzorcy silnika aplikacji Windows (`Stop()`);
+    * zakładkę LICENCJA niedostępną w wąskim oknie.
+* **Do decyzji właściciela.**
+  * 161 zgłoszeń z tabeli i pozycje spoza tabeli **nie zostało zmienionych**.
+  * Ich poprawka zmieniłaby zachowanie strategii, ścieżkę zleceń, ryzyko, wejścia wytrenowanych modeli albo wymagałaby usuwania historii lub nieodwracalnej migracji.
+  * Lista z zalecanymi poprawkami jest w `docs/AUDYT_1_45.md`.
+* **Eksportery danych (ETAP 3).**
+  * Jeden moduł `backend/masterquo/exports/` z 15 eksporterami.
+  * Formaty CSV i JSONL, czas UTC ISO-8601 (dane MT5 dodatkowo z czasem serwera z etykietą).
+  * `manifest.json` z SHA-256, zakresem dat i liczbą wierszy.
+  * Bez sekretów; dane realne i wirtualne w osobnych plikach.
+  * CLI `python -m masterquo export-<nazwa>`, API `GET /api/v1/exports/...`.
+  * Import kopii TraderLifeGame jest addytywny i idempotentny, z kopią przed importem.
+  * Opis: `docs/EKSPORTY_DANYCH.md`.
+* **Nazwa Apollo23 w warstwie wyświetlanej.**
+  * Dotyczy: komunikatów konsoli i `.bat`, licencji, Studio (tytuł okna), tekstów Telegram i panelu (centrum treningowe, diagnostyka), launchera konsolowego, instrukcji PDF.
+  * Nazwy paczek: `Apollo23_<wersja>.zip`, `Apollo23_KLIENT_…`, `Apollo23_DESKTOP_…`, `Apollo23_DESKTOP_KLIENT_…`.
+  * Bez zmian: folder w ZIP, nazwy exe, folder danych, mutex, zmienne `PMW_*` i trasy API.
+* **Instrukcje PDF** przebudowane:
+  * teksty 1.46: dwie edycje (innym osobom tylko paczki KLIENT), bez OTC, intro filmowe;
+  * nowe zrzuty obecnego interfejsu w instrukcji krok po kroku.
+* **Testy:** Python: 2454 testy (pełny przebieg 2452 + 2 testy odbioru), 0 porażek, 26 pominiętych (osobne środowiska modeli, testy na żywo, OpenCL/ONNX, reportlab); w 1.45.0 było 1427 testów i 2 porażki. UI w przeglądarce (`test_ui_142`, Playwright): 8 OK. Go: `go vet` (Linux i Windows), testy i integracja nadzorcy silnika OK. Frontend: `tsc` OK. Paczki: `Apollo23_1_46_0.zip`, `Apollo23_KLIENT_1_46_0.zip`, `Apollo23_DESKTOP_1_46_0.zip`, `Apollo23_DESKTOP_KLIENT_1_46_0.zip`; `verify_release --all` OK.
+
 ## 1.45.0 – Apollo23: workflow v3.2 (TASK 001–025)
 Wszystkie nowe moduły są domyślnie **OFF / SHADOW / tylko do odczytu**; żaden nie ma ścieżki zleceń i żaden nie zmienia STOP, SL, limitów
 ryzyka, dźwigni ani trybu wykonania. Projektowanie interfejsu pominięte (zgodnie z poleceniem) – moduły mają API, a gra prostą stronę.
