@@ -467,6 +467,8 @@ def save(inst: str, res: dict, *, spec: dict) -> str:
            "feature_schema": res["model"]["feature_schema"], "sha256": hashlib.sha256(blob.encode()).hexdigest(), "created_at": time.time(),
            "report": res["report"], "runtime": {"numpy": np.__version__, "meta_version": VERSION}, "inputs_rev": list(INPUTS_REV),
            "producer_semantics": PRODUCERS}                       # QFENCE: rows of the current producer semantics
+    if spec.get("task_group"):                                    # 1.46 arch (I0528 / I0798): trained per group (task_hash = group key)
+        man.update(train_key="TASK_GROUP", task_group=spec["task_group"], member_task_hashes=list(spec.get("member_task_hashes") or [])[:200])
     write_json_atomic(d / "manifest.json", man)
     return ver
 

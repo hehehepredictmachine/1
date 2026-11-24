@@ -165,7 +165,7 @@ def _metamodel(ctx) -> dict:
         res = (job.get("results") or [{}])[0]
         gate_msg = None
         try:
-            M.activate(INST, th, res.get("version") or "missing")
+            M.activate(INST, res.get("task_hash") or th, res.get("version") or "missing")     # I0528: the key of the trained group
         except M.MetaError as exc:
             gate_msg = str(exc)
         a0 = q.assess(cd)
@@ -191,6 +191,7 @@ def _metamodel(ctx) -> dict:
             return steps
         ctx.step = "artifact"
         ver = r2["version"]
+        th = r2.get("task_hash") or th                           # 1.46 arch (I0528 / I0798): trained and activated under the group key
         model, man = M.load(INST, th, ver)                       # sha256 + schema + reproduction sample are checked by load()
         rep = (man.get("report") or {}).get("reproduction") or []
         diff = max((abs(M.predict(model, s["features"])["p_event"] - s["out"]["p_event"]) for s in rep), default=float("nan"))

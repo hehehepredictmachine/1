@@ -336,22 +336,26 @@ class QuantService:
                 out.append(p)
         return out, pub
 
-    def _model(self, inst: str, th: str):
-        ver = (M.pointer(inst).get("active") or {}).get(th)
+    def _model(self, inst: str, th: str, tg: str | None = None):
+        """The active artifact for a candidate: its training group first (1.46 arch I0528 / I0798 - train_from_ledger trains per group),
+        else the exact task_hash (an artifact trained before, with its original meaning)."""
+        act = M.pointer(inst).get("active") or {}
+        key = tg if tg and act.get(tg) else th
+        ver = act.get(key)
         if not ver:
             return None, None, None
         with self._lock:
-            hit = self._models.get((inst, th))
+            hit = self._models.get((inst, key))
             if hit and hit[0] == ver:
                 return hit
         try:
-            model, man = M.load(inst, th, ver)
+            model, man = M.load(inst, key, ver)
         except Exception as exc:  # noqa: BLE001
             return ver, None, {"status": "INCOMPATIBLE", "reason": str(exc)[:200]}
         if man["status"] != "VALIDATED_SHADOW":
             return ver, None, {"status": man["status"], "reason": "artefakt bez zaakceptowanej walidacji"}
         with self._lock:
-            self._models[(inst, th)] = (ver, model, man)
+            self._models[(inst, key)] = (ver, model, man)
         return ver, model, man
 
     def assess(self, cd: dict, *, mode: str | None = None, log_row: bool = False, evidence: dict | None = None,
@@ -405,13 +409,17 @@ class QuantService:
                            "reason": tb.get("reason"), "context_id": tb.get("context_id"), "calibration_status": "UNCALIBRATED",
                            "computed_at": tb.get("computed_at"), "influence": CONFIDENCE_INFLUENCE if tb.get("state") == "READY" else "NONE",
                            "note": "surowy wynik modelu (nie zmierzony win rate); bez stałych premii; brak wyniku ≠ 50 %"}
-        ver, model, man = self._model(inst, th)
+        tg = spec.task_group()
+        a["task_group"] = tg
+        ver, model, man = self._model(inst, th, tg)
         if model is None:
             n = self.ledger.counts(inst)
             task = next((t for t in n["tasks"] if t["task_hash"] == th), None)
+            grp = next((g for g in n.get("groups") or [] if g.get("task_group") == tg), None)
             a.update(status="NOT_TRAINED" if not ver else (man or {}).get("status", "INCOMPATIBLE"),
                      reason=("brak wytrenowanego modelu dla tego zdarzenia" if not ver else (man or {}).get("reason")),
-                     probability=None, ev=None, evidence={"ledger_rows_for_task": (task or {}).get("by_status", {}), "positives": (task or {}).get("positives")})
+                     probability=None, ev=None, evidence={"ledger_rows_for_task": (task or {}).get("by_status", {}), "positives": (task or {}).get("positives"),
+                                                          "ledger_rows_for_group": (grp or {}).get("by_status", {}), "task_group": tg})
         else:
             fv = F.version_of(model.get("feature_schema")) or F.VERSION
             nfeats = None
@@ -724,9 +732,15 @@ def training_evidence(counts: dict) -> dict:
         tasks.append({"task_hash": t.get("task_hash"), "event_id": t.get("event_id"), "engine": t.get("engine"), "labelled_current": cur,
                       "labelled_older_versions": sum(int(n) for v, n in byv.items() if v != F.CURRENT), "required_min_labelled": need,
                       "missing": max(0, need - cur)})
+    groups = []                                     # 1.46 arch (I0528 / I0798): training runs per group - the evidence that counts
+    for g in (counts or {}).get("groups") or []:
+        byv = g.get("labelled_by_feature_version") or {}
+        cur = int(byv.get(F.CURRENT, 0))
+        groups.append({"task_group": g.get("task_group"), "event_id": g.get("event_id"), "engine": g.get("engine"), "tasks": g.get("tasks"),
+                       "labelled_current": cur, "required_min_labelled": need, "missing": max(0, need - cur)})
     return {"feature_version": F.CURRENT, "required_min_labelled": need,
             "required_basis": f"DEV {M.CRITERIA['min_dev']} + CAL {M.CRITERIA['min_cal']} + TEST {M.CRITERIA['min_test']} (bloki czasowe z "
-                              "embargiem – faktycznie potrzeba nieco więcej)", "tasks": tasks,
+                              "embargiem – faktycznie potrzeba nieco więcej)", "tasks": tasks, "groups": groups,
             "note": f"Nowe MetaModele uczą się tylko na wierszach {F.CURRENT}; wiersze sprzed 1.46 (FEAT-1) zostają w ledgerze, ale nie trenują. "
                     "Do czasu zebrania wierszy działa dotychczasowy aktywny artefakt FEAT-1."}
 
@@ -791,8 +805,20 @@ def _safe(fn, default):
         return default
 
 
+def _group_of_row(r: dict) -> str:
+    return EV.task_group_of(r.get("spec") or {})
+
+
 def train_from_ledger(ledger: QuantLedger, inst: str, task_hash: str | None = None, *, crit: dict | None = None, log=print) -> list[dict]:
-    rows = ledger.training_rows(inst, task_hash)
+    """1.46 arch (I0528 / I0798): one MetaModel per TRAINING GROUP (events.task_group_of = the task without targets_r / horizon_s; the plan
+    shape is a feature) - per task_hash practically every SH candidate was its own task and no task reached the 300 / 100 / 100 rows.
+    task_hash (argument kept for the API / CLI): a group key (G...) trains that group, a task_hash trains the group of that task; the
+    artifact is stored and activated under the group key (QuantService._model looks the group up first, then the task_hash of an older
+    artifact)."""
+    rows = ledger.training_rows(inst)
+    if task_hash:
+        want = {_group_of_row(r) for r in rows if r.get("task_hash") == task_hash} | ({task_hash} if task_hash.startswith(EV.TASK_GROUP_PREFIX) else set())
+        rows = [r for r in rows if _group_of_row(r) in want]
     # 1.46: a new MetaModel learns from rows of the CURRENT feature semantics only (features.CURRENT); rows of an older version (same
     # column names, another meaning - Kalman candidate, stale DXY) stay in the ledger but are never mixed into the training set
     older: dict[str, int] = {}
@@ -801,7 +827,8 @@ def train_from_ledger(ledger: QuantLedger, inst: str, task_hash: str | None = No
         if r.get("feature_version", F.CURRENT) == F.CURRENT:
             cur.append(r)
         else:
-            older[r["task_hash"]] = older.get(r["task_hash"], 0) + 1
+            g = _group_of_row(r)
+            older[g] = older.get(g, 0) + 1
     if older:
         log(f"[QUANT] {inst}: pominięto {sum(older.values())} wierszy starszej wersji cech (≠ {F.CURRENT}) – nowe modele uczą się tylko na "
             f"wierszach bieżącej wersji")
@@ -815,13 +842,14 @@ def train_from_ledger(ledger: QuantLedger, inst: str, task_hash: str | None = No
         if r.get("data_kind") in ("REAL", "SYNTHETIC"):
             known.append(r)
         else:
-            unknown[r["task_hash"]] = unknown.get(r["task_hash"], 0) + 1
+            g = _group_of_row(r)
+            unknown[g] = unknown.get(g, 0) + 1
     if unknown:
         log(f"[QUANT] {inst}: pominięto {sum(unknown.values())} wierszy o nieznanym rodzaju danych (UNKNOWN) – nie są dowodem do treningu")
     rows = known
     by: dict[str, list] = {}
     for r in rows:
-        by.setdefault(r["task_hash"], []).append(r)
+        by.setdefault(_group_of_row(r), []).append(r)
     if not by:
         log(f"[QUANT] {inst}: brak oznaczonych wierszy w ledgerze – trening nieuruchomiony (INSUFFICIENT_EVIDENCE)")
         return [{"task_hash": task_hash, "status": "INSUFFICIENT_EVIDENCE",
@@ -830,16 +858,19 @@ def train_from_ledger(ledger: QuantLedger, inst: str, task_hash: str | None = No
                  "feature_version": F.CURRENT}]
     out = []
     for th, rs in sorted(by.items()):
+        rs.sort(key=lambda r: (r["decision_ts"], r["row_id"]))        # one group = many tasks: one time order for the blocks
         spec = rs[0]["spec"]
+        members = sorted({r.get("task_hash") for r in rs if r.get("task_hash")})
         seen = (M.pointer(inst).get("seen_tests") or {}).get(th, [])
-        log(f"[QUANT] {inst} zadanie {th} ({spec.get('event_id')}): {len(rs)} wierszy")
-        res = M.train(rs, task={"task_hash": th, "event_id": spec.get("event_id")}, crit=crit, seen_tests=seen, feature_version=F.CURRENT)
-        item = {"task_hash": th, "event_id": spec.get("event_id"), "status": res["status"], "n_rows": len(rs),
-                "reason": res["report"].get("reason"), "failed_gates": res["report"].get("failed_gates"),
+        log(f"[QUANT] {inst} grupa {th} ({spec.get('event_id')}): {len(rs)} wierszy z {len(members)} zadań (task_hash)")
+        res = M.train(rs, task={"task_hash": th, "task_group": th, "train_key": "TASK_GROUP", "event_id": spec.get("event_id"),
+                                "member_tasks": len(members)}, crit=crit, seen_tests=seen, feature_version=F.CURRENT)
+        item = {"task_hash": th, "task_group": th, "member_tasks": len(members), "event_id": spec.get("event_id"), "status": res["status"],
+                "n_rows": len(rs), "reason": res["report"].get("reason"), "failed_gates": res["report"].get("failed_gates"),
                 "excluded_unknown_data_kind": unknown.get(th, 0), "excluded_older_feature_version": older.get(th, 0),
                 "feature_version": F.CURRENT}
         if "model" in res:
-            ver = M.save(inst, res, spec=spec)
+            ver = M.save(inst, res, spec={**spec, "task_hash": th, "task_group": th, "member_task_hashes": members[:200]})
             M.record_test(inst, th, res["report"]["test_row_ids"])
             item["version"] = ver
             item["test"] = {k: res["report"]["test_once"].get(k) for k in ("log_loss", "prior_log_loss", "ece", "n")}
