@@ -195,5 +195,65 @@ class TestScalpActivationRefusesRejected(_Case):
         self.assertTrue(any(x.startswith("[UWAGA]") and "S_REJ" in x for x in out.splitlines()), out)
 
 
+# ===================================================================================================== D21 gold_candles adapter
+def _rt(state: dict):
+    fs = type("FS", (), {"public": lambda self_: state})()
+    return type("RT", (), {"forecast": fs, "trainhub_inference": None})()
+
+
+def _probs(mins: int, session: str = "NOT_VERIFIED_BROKER_SESSIONS", **kw) -> dict:
+    return {"horizon_minutes": mins, "probabilities": {"DOWN": 0.2, "FLAT": 0.3, "UP": 0.5}, "session_check": session, **kw}
+
+
+class TestGoldForecastAdapterStates(unittest.TestCase):
+    def state(self, model: dict) -> dict:
+        rep = {"symbol": "XAUUSD-", "forecast": {"feature_time_utc": "2026-11-20T20:45:00Z", "probabilities": {
+            "5": _probs(5), "15": _probs(15),
+            "30": _probs(30, "BLOCKED_SESSION_BREAK", blocked_reason="horyzont obejmuje przerwę rynku – prognoza niedopuszczalna")}}}
+        return {"status": "SHADOW", "instrument": "XAUUSD", "report": rep, "model": model}
+
+    def test_rejected_and_session_break_horizons_are_not_ready(self):
+        from masterquo.modelhub import adapters as AD
+        from masterquo.modelhub import contract as C
+        ps = AD.forecast_predictions(_rt(self.state({"run_id": "R1", "horizon_status": {"1": "SHADOW_VALIDATED", "3": "REJECTED",
+                                                                                         "6": "SHADOW_UNVALIDATED"}})), "XAUUSD")
+        self.assertEqual([(p["horizon"]["bars"], p["state"]) for p in ps], [(1, "READY"), (3, "DISABLED"), (6, "BLOCKED_DATA")])   # was 3x READY
+        self.assertEqual(ps[0]["result"], {"DOWN": 0.2, "FLAT": 0.3, "UP": 0.5})
+        for p in ps[1:]:
+            self.assertIsNone(p["result"])                                                    # a refused horizon never carries a value
+            self.assertTrue(p["unavailable_reason"])
+            self.assertEqual(p["model_key"], f"gold_candles_{p['horizon']['bars'] * 5}m")
+        self.assertIn("REJECTED", ps[1]["unavailable_reason"])
+        self.assertIn("przerwę rynku", ps[2]["unavailable_reason"])
+        for p in ps:
+            C.validate(p)
+
+    def test_ready_horizons_are_calibrated_on_the_calibration_period(self):
+        from masterquo.modelhub import adapters as AD
+        ps = AD.forecast_predictions(_rt(self.state({"run_id": "R1", "horizon_status": {"1": "SHADOW_UNVALIDATED", "3": "SHADOW_VALIDATED",
+                                                                                         "6": "SHADOW_VALIDATED"}})), "XAUUSD")
+        ready = [p for p in ps if p["state"] == "READY"]
+        self.assertEqual(len(ready), 2)
+        for p in ready:
+            self.assertEqual(p["calibration"]["status"], "CALIBRATED_DEV")                   # was UNCALIBRATED
+            self.assertTrue(p["calibration"]["method"])
+
+    def test_quant_features_only_from_admitted_horizons(self):
+        # impact on Quant: fc:gold_candles:* features exist only for READY horizons (vectorise() masks the others)
+        from masterquo.modelhub import adapters as AD
+        from masterquo.quant import features as F
+        ps = AD.forecast_predictions(_rt(self.state({"run_id": "R1", "horizon_status": {"1": "SHADOW_VALIDATED", "3": "REJECTED",
+                                                                                         "6": "SHADOW_VALIDATED"}})), "XAUUSD")
+        keys = sorted(F.prediction_features(ps, "LONG"))
+        self.assertEqual(keys, ["fc:gold_candles_5m:CANDLE_CLOSE_DIRECTION_H1_M5:M5:edge"])
+
+    def test_without_registry_verdict_the_horizon_stays_ready(self):
+        from masterquo.modelhub import adapters as AD
+        st = self.state({"run_id": "R0"})
+        st["report"]["forecast"]["probabilities"].pop("30")
+        ps = AD.forecast_predictions(_rt(st), "XAUUSD")
+        self.assertEqual([p["state"] for p in ps], ["READY", "READY"])
+
+
 if __name__ == "__main__":
     unittest.main()
