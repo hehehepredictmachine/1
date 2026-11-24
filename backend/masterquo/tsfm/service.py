@@ -829,6 +829,11 @@ class TsfmService:
             pass
 
     # ================================================================== install / verify / validation jobs (separate processes / thread)
+    def start_tabicl_install(self, argv: list[str], on_done=None) -> dict:
+        """Public facade for POST /api/v1/quant/tabicl/install (1.46 arch I0212: the API called the private _run_job_proc). Only delegates:
+        same job name 'install_tabicl', the same argv / status file / environment and the same answer ('... już trwa' while RUNNING)."""
+        return self._run_job_proc("install_tabicl", argv, on_done=on_done)
+
     def _run_job_proc(self, name: str, argv: list[str], env: dict | None = None, on_done=None) -> dict:
         cur = self.jobs.get(name)
         if cur and cur.get("state") == "RUNNING":

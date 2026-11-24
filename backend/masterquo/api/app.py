@@ -2800,7 +2800,7 @@ def create_app(rt, port: int) -> FastAPI:
         from .. import paths as _P
         from ..tsfm.settings import default_weights_root as _dwr
         argv = [_sys.executable, str(_P.ROOT_DIR / "tools" / "tsfm_setup.py"), "--model", "tabicl", "--root", str(_P.ROOT_DIR), "--weights-root", str(_dwr())]
-        return rt.tsfm._run_job_proc("install_tabicl", argv)
+        return rt.tsfm.start_tabicl_install(argv)
 
     # ---- 1.41 research modules (SDformerFlow, cellular feature graph, COA, BChimp, G7 SMC radar, exponential trend channel)
     def _research():
