@@ -123,8 +123,9 @@ def _fetch(url: str, part: Path, size: int | None, label: str, rep, step: int, r
             err = exc
         except (OSError, TimeoutError) as exc:   # network interruption: resume on the next attempt
             err = exc
-        rep.say(f"{label}: przerwane pobieranie ({type(err).__name__}: {str(err)[:120]}) – ponowienie {attempt + 1}/{retries}", step)
-        time.sleep(min(30, 2 ** (attempt + 1)))
+        if attempt < retries:                 # 1.46: no "ponowienie 5/4" and no extra wait of up to 30 s after the LAST attempt
+            rep.say(f"{label}: przerwane pobieranie ({type(err).__name__}: {str(err)[:120]}) – ponowienie {attempt + 1}/{retries}", step)
+            time.sleep(min(30, 2 ** (attempt + 1)))
     raise err if err else OSError("pobieranie nie powiodło się")
 
 
@@ -210,7 +211,6 @@ def download(weights_dir: str, status_file: str | None) -> int:
             files.append({"name": name, "size": p.stat().st_size, "sha256": M.sha256_file(p), "source_check": check, "source_value": src,
                           "download_s": round(time.time() - t0, 1)})
             rep.say(f"{c['repo']}/{name}: zgodny ze źródłem ({check})", step)
-        shutil.rmtree(dest / ".cache", ignore_errors=True)            # huggingface_hub download metadata - not part of the model
         comps_out.append({"kind": c["kind"], "repo": c["repo"], "revision": c["revision"], "dir": lock.component_dir_name(c), "files": files,
                           "card_license": _card_license(dest / "README.md")})
         step += 1
@@ -258,6 +258,7 @@ def verify(weights_dir: str, status_file: str | None, reference: bool, device: s
     except E.EngineError as exc:
         return result(False, exc.code, rep, error=exc.detail)
     rep.say(f"urządzenie: {info['device']} ({info.get('device_note') or 'OK'}); ładowanie {info['load_ms']} ms", 3)
+    info = dict(info)                    # 1.46: the LOAD state - the engine's own info dict may change during the self test
     st = eng.selftest(reference=reference)
     rep.say(f"prognoza testowa: {st['smoke']['pred_len']} świec w {st['smoke']['ms']} ms" +
             (f"; parity z oficjalnym KronosPredictor: {st['parity']['status']}; dane referencyjne autorów: {st['reference']['status']}" if reference else ""), 4)

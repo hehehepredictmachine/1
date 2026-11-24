@@ -7,8 +7,9 @@ from pathlib import Path
 
 
 def predict(req):
-    ck = Path(req.get("checkpoint") or "")
-    if not ck.is_dir():
+    # 1.46: Path("") is the working directory (is_dir() True) - a missing checkpoint tried to load transformers from the CWD
+    ck = Path(req["checkpoint"]) if req.get("checkpoint") else None
+    if ck is None or not ck.is_dir():
         return {"ok": False, "error": "CHECKPOINT_NOT_FOUND"}
     import torch
     from transformers import AutoModelForSequenceClassification, AutoTokenizer

@@ -150,11 +150,13 @@ def horizon_status(rep: dict, data_kind: str) -> tuple[str, list[str]]:
     return ("SHADOW_UNVALIDATED", why) if why else ("SHADOW_VALIDATED", ["kryteria jakości prognozy ceny spełnione (nie dotyczy rentowności strategii)"])
 
 
-def train_horizon(h, m5, x, usable, plan, trees, log):
+def train_horizon(h, m5, x, usable, plan, trees, log, config=None):
     from gold_candles.features import make_labels
     from gold_candles.model import export_logistic, export_quantile, logistic_probability, metrics, quantile_prediction
     from sklearn.ensemble import GradientBoostingRegressor
-    labels, delta, label_end = make_labels(m5, h)
+    # 1.46: the labels use the instrument config (neutral_atr of the profile, written to the registry as label_threshold_atr and
+    # used by the live SHADOW evaluation) - make_labels(m5, h) used the reference default Config() (0.20)
+    labels, delta, label_end = make_labels(m5, h) if config is None else make_labels(m5, h, config)
     valid = usable & labels.notna() & delta.notna() & label_end.notna()
     xx = x.loc[valid].reset_index(drop=True)
     yy = labels.loc[valid].astype(int).reset_index(drop=True)
@@ -276,7 +278,7 @@ def run(args) -> int:
             native, rep = saved["native"], saved["report"]
             log(f"h{h}", "wznowiono z checkpointu")
         else:
-            native, rep = train_horizon(h, m5, x, usable, plan, args.trees, log)
+            native, rep = train_horizon(h, m5, x, usable, plan, args.trees, log, config)
             write_json_atomic(ck, {"native": native, "report": rep})
         if native is None:
             hstat[str(h)] = {"status": rep["status"], "reasons": rep["reasons"]}
@@ -311,7 +313,8 @@ def run(args) -> int:
                           "strategy_validation": "STRATEGY_BACKTEST_NOT_AVAILABLE",
                           "meaning": "Future close direction / distribution only; not P(TP before SL), not win rate, not EV; no order permission."})
     write_json_atomic(out / "forecast_validation.json", summary)
-    reg = read_registry()
+    # 1.46: strict - an unreadable registry was returned empty and written back with only this run (all runs + active model lost)
+    reg = read_registry(strict=True)
     knowledge = max((m["knowledge_cutoff_utc"] for m in models.values()), default=None)
     reg["runs"][run_id] = {"run_id": run_id, "created_at_utc": artifact["created_at_utc"], "model_path": str(model_p.resolve()),
                            "artifact_sha256": sha256_file(model_p), "validation_path": str((out / "forecast_validation.json").resolve()),
@@ -326,9 +329,9 @@ def run(args) -> int:
     log("registry", f"zapisano run {run_id}: {overall}")
     if args.activate and args.data_kind == "REAL_USER_DATA" and len(models) == 3 and runtime.get("status") == "OK" and overall in ("TRAINED_SHADOW", "PARTIAL_VALIDATION"):
         activate(run_id, reason="po treningu: horyzonty z walidacją SHADOW, zgodność loadera")
+        log("registry", f"aktywny model obserwacyjny SHADOW: {run_id}")     # 1.46: was logged in the elif branch (activation refused)
     elif args.activate:
         log("registry", f"NIE aktywowano ({overall}, loader {runtime.get('status')}) – poprzedni aktywny model bez zmian; run dostępny do inspekcji")
-        log("registry", f"aktywny model obserwacyjny SHADOW: {run_id}")
     log("end", f"{overall}; artefakty w {out}")
     return 0
 

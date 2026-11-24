@@ -46,9 +46,13 @@ def _active_model(symbol: str, tick_size: float):
     return _cache["model"], _cache["entry"], "OK", None
 
 
-def session_check(feature_close_utc: str, horizon_minutes: int) -> str:
+def session_check(feature_close_utc: str, horizon_minutes: int, inst: str | None = None) -> str:
     """The reference module does not know the broker's sessions. Known weekly break of spot gold (Fri 21:00 UTC - Sun 22:00 UTC,
     conservative window) -> BLOCKED_SESSION_BREAK; otherwise NOT_VERIFIED_BROKER_SESSIONS (daily breaks / holidays unknown)."""
+    # 1.46: the gold weekend window only for XAUUSD - for BTC (MQ_INSTRUMENT=BTC) the profile says 24/7 availability is checked from
+    # the broker's history, never assumed, so a weekend BTC forecast was wrongly marked as not admissible
+    if (inst or instrument()) != "XAUUSD":
+        return "NOT_VERIFIED_BROKER_SESSIONS"
     t = datetime.fromisoformat(feature_close_utc.replace("Z", "+00:00"))
     end = t.timestamp() + horizon_minutes * 60
     for ts in range(int(t.timestamp()), int(end) + 1, 60):

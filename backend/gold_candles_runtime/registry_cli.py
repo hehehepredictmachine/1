@@ -5,7 +5,17 @@ import argparse
 import sys
 import time
 
-from .common import use_instrument, activate, activatable, read_registry, write_registry
+from .common import use_instrument, activate, activatable, current_contract, read_registry, write_registry
+
+
+def _check(e: dict) -> tuple[bool, str | None]:
+    """1.46: list / rollback check the contract of the CURRENT code exactly like activate() and the worker (activatable(e) without a
+    contract skipped it: 'list' said 'może być aktywny' and 'rollback' switched to a model the worker shows as CONTRACT_MISMATCH)."""
+    try:
+        cur = current_contract(e)
+    except Exception as exc:  # noqa: BLE001 - e.g. an invalid tick size in an old entry: never activatable, never a traceback
+        return False, f"CONTRACT_UNKNOWN:{type(exc).__name__}: {exc}"[:200]
+    return activatable(e, cur)
 
 
 def main(argv=None) -> int:
@@ -20,10 +30,14 @@ def main(argv=None) -> int:
     args = ap.parse_args(argv)
     use_instrument(args.instrument)
     reg = read_registry()
+    if reg.get("error"):
+        # 1.46: rollback / deactivate wrote the EMPTY view of an unreadable registry back (all runs and the active model were lost)
+        print(f"[BLAD] {reg['error']}: rejestr nieczytelny (zablokowany lub uszkodzony) – plik zostaje bez zmian.")
+        return 2
     if args.cmd == "list":
         print(f"Aktywny: {reg.get('active') or 'brak'}")
         for rid, e in sorted(reg["runs"].items()):
-            ok, why = activatable(e)
+            ok, why = _check(e)
             print(f"  {rid}  {e.get('data_kind')}  {e.get('overall_status')}  horyzonty {e.get('horizon_status')}  "
                   f"{'może być aktywny' if ok else 'NIE: ' + str(why)}")
         return 0
@@ -35,7 +49,7 @@ def main(argv=None) -> int:
         hist = reg.get("history") or []
         while hist:
             prev = hist.pop()
-            if prev in reg["runs"] and activatable(reg["runs"][prev])[0]:
+            if prev in reg["runs"] and _check(reg["runs"][prev])[0]:
                 cur = reg.get("active")
                 reg["active"] = prev
                 reg.setdefault("events", []).append({"at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "action": "ROLLBACK", "from": cur, "to": prev})

@@ -5,10 +5,14 @@
 * split: chronological - the last 15 % of samples are the validation tail used only for the technical loss check (not an efficacy report).
 * loss: MSE of the STFS forecast of the next 24 normalised bar descriptors (self-supervised, the source's STFS target).
 * from_scratch: new weights (seeded); fine_tune: weights of --checkpoint, NEW run id, optimizer reset (data may differ);
-  resume: --checkpoint must be a FULL state (weights + optimizer + RNG + step) of the SAME dataset hash and config -> continues the run.
+  resume: --checkpoint must be a FULL state (weights + optimizer + RNG + step) of the SAME dataset hash and config -> continues the
+  training state in a NEW version folder (--out/<run id>, resumed_from = the source version); the source (usually the ACTIVE version)
+  is never written; nothing left to train (epoch >= --epochs) -> NOTHING_TO_DO.
 * checkpoint (atomic, after every epoch): model, optimizer, epoch / step, RNG states, architecture, normaliser, dataset hash, schema,
   target, runtime / package versions; files last.pt (always), best_training_loss.pt (lowest TRAINING loss - not a quality claim).
-* cancel: the cancel file (or SIGTERM) stops at the next batch; the last COMPLETE checkpoint stays, nothing is activated.
+* cancel: the cancel file (or SIGTERM) stops at the next batch; the last COMPLETE checkpoint stays (an interrupted epoch is not saved),
+  nothing is activated. The time limit (--minutes) inside an epoch saves that epoch marked partial_epoch=True.
+* trained_until = time of the last TARGET bar of the training samples; the validation tail starts after a FORECAST-bar embargo.
 Last stdout line: RESULT {json}; holdout / accuracy / calibration are NOT computed here -> null with status NOT_RUN.
 """
 from __future__ import annotations
@@ -85,11 +89,15 @@ def main(argv=None) -> int:
         print("RESULT " + json.dumps({"ok": False, "code": "NO_DATA", "error": f"za mało próbek ({len(X)}) – potrzeba min. 64 okien 120 + 24 świec"}))
         return 1
     run_id = a.run_id or ("SDF-" + datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S"))
-    out = Path(a.out) / run_id
-    out.mkdir(parents=True, exist_ok=True)
+    out = Path(a.out) / run_id                     # 1.46: created only after the checkpoint checks (no empty version folder)
+    resumed_from = None
     rng = np.random.default_rng(a.seed)
     torch.manual_seed(a.seed)
     n_tr = int(len(X) * 0.85)
+    # 1.46: embargo - a sample's target covers the next FORECAST bars, so the validation tail starts at the first sample whose bar is
+    # more than FORECAST bars after the last training sample (its targets overlapped the training targets: optimistic val_tail_loss)
+    v0 = next((j for j in range(n_tr, len(X)) if idx[j] - idx[n_tr - 1] > D.FORECAST), len(X))
+    trained_until = float(bars[idx[n_tr - 1] + D.FORECAST]["t"])     # 1.46: last TARGET bar seen in training (was its last INPUT bar)
     mu, sd = X[:n_tr].reshape(-1, D.DESCR).mean(0), X[:n_tr].reshape(-1, D.DESCR).std(0) + 1e-8      # normaliser: TRAINING rows only
     norm = lambda z: (z - mu) / sd                                                                       # noqa: E731
     Xn, Yn = torch.tensor(norm(X)), torch.tensor(norm(Y))
@@ -113,8 +121,19 @@ def main(argv=None) -> int:
             Xn, Yn = torch.tensor(norm(X)), torch.tensor(norm(Y))
             torch.set_rng_state(ck["rng"]["torch"])
             rng.bit_generator.state = ck["rng"]["numpy"]
-            run_id = ck["run_id"]
-            out = Path(a.checkpoint)
+            # 1.46: resume wrote into the checkpoint folder = the ACTIVE version (used by the live inference before any activation
+            # test; a cancel left a half-written state; previous_run became the same id, so rollback restored nothing) - it now
+            # continues the training state in its OWN new version folder, the source is only read
+            resumed_from = ck.get("run_id")
+            if out.resolve() == Path(a.checkpoint).resolve():
+                print("RESULT " + json.dumps({"ok": False, "code": "RESUME_TARGET_IS_SOURCE", "run_id": run_id,
+                                              "error": "resume zapisuje nową wersję – --run-id nie może wskazywać katalogu checkpointu"}))
+                return 1
+            if epoch0 >= a.epochs:
+                print("RESULT " + json.dumps({"ok": False, "code": "NOTHING_TO_DO", "run_id": run_id, "resumed_from": resumed_from,
+                                              "error": f"checkpoint ma już {epoch0} epok (≥ --epochs {a.epochs}) – nic do wznowienia"}))
+                return 1
+    out.mkdir(parents=True, exist_ok=True)
     w0 = {k: v.detach().clone() for k, v in model.state_dict().items() if v.dtype.is_floating_point}
     lossf = torch.nn.MSELoss()
     history = []
@@ -123,9 +142,11 @@ def main(argv=None) -> int:
         model.train()
         perm = rng.permutation(n_tr)
         tot, nb = 0.0, 0
+        partial = False
         for b0 in range(0, n_tr, a.batch):
             if STOP["flag"] or (a.cancel_file and Path(a.cancel_file).exists()) or (time.time() - t_start) > a.minutes * 60:
                 cancelled = STOP["flag"] or bool(a.cancel_file and Path(a.cancel_file).exists())
+                partial = True
                 break
             ib = perm[b0:b0 + a.batch]
             pred, _ = model(Xn[ib], TF[ib])
@@ -143,28 +164,35 @@ def main(argv=None) -> int:
                 print(f"[SDF-TRAIN] epoka {ep + 1}/{a.epochs} krok {step} strata {tot / nb:.5f}", flush=True)
         if nb == 0:
             break
+        if cancelled and partial:
+            break                                  # 1.46: a cancelled, unfinished epoch is never saved as complete - last.pt keeps the last full one
         tr_loss = tot / nb
         model.eval()
-        with torch.no_grad():
-            vp, _ = model(Xn[n_tr:], TF[n_tr:])
-            val_loss = float(lossf(vp, Yn[n_tr:]))
-        history.append({"epoch": ep + 1, "train_loss": tr_loss, "val_tail_loss": val_loss, "batches": nb})
+        val_loss = None
+        if v0 < len(X):
+            with torch.no_grad():
+                vp, _ = model(Xn[v0:], TF[v0:])
+                val_loss = float(lossf(vp, Yn[v0:]))
+        history.append({"epoch": ep + 1, "train_loss": tr_loss, "val_tail_loss": val_loss, "batches": nb, **({"partial_epoch": True} if partial else {})})
         state = {"implementation_id": IMPLEMENTATION_ID, "runtime": RUNTIME_VERSION, "arch": model.arch, "model": model.state_dict(),
                  "optimizer": opt.state_dict(), "epoch": ep + 1, "step": step, "rng": {"torch": torch.get_rng_state(), "numpy": rng.bit_generator.state},
                  "normalizer": {"mu": mu.tolist(), "sd": sd.tolist(), "fitted_on": "training rows"}, "dataset_hash": dh, "run_id": run_id,
                  "schema": {"descriptor": list(D.NAMES), "history": D.HISTORY, "forecast": D.FORECAST, "order": "OLDEST_TO_NEWEST"},
                  "target": "STFS_NEXT24_DESCRIPTORS", "context": a.context, "deps": {"torch": torch.__version__, "numpy": np.__version__},
-                 "trained_until": float(T[n_tr - 1][-1]), "best_training_loss": min(best, tr_loss), "history": history, "saved_at": _now()}
+                 "trained_until": trained_until, "best_training_loss": min(best, tr_loss), "history": history, "saved_at": _now(),
+                 "resumed_from": resumed_from, "partial_epoch": partial}
         _atomic_save(torch, state, out / "last.pt")
         if tr_loss < best:
             best = tr_loss
             _atomic_save(torch, state, out / "best_training_loss.pt")
-        print(f"[SDF-TRAIN] epoka {ep + 1} zapisana: strata trening {tr_loss:.5f}, ogon walidacyjny {val_loss:.5f}", flush=True)
+        print(f"[SDF-TRAIN] epoka {ep + 1} zapisana: strata trening {tr_loss:.5f}, ogon walidacyjny "
+              f"{'brak (embargo)' if val_loss is None else f'{val_loss:.5f}'}", flush=True)
         if cancelled:
             break
     changed = any(not torch.equal(w0[k], v) for k, v in model.state_dict().items() if k in w0)
     ok = (out / "last.pt").exists() and changed and not cancelled
     res = {"ok": ok, "code": None if ok else ("CANCELLED" if cancelled else "NO_CHECKPOINT"), "run_id": run_id, "dir": str(out), "op": a.op,
+           "resumed_from": resumed_from,
            "dataset_hash": dh, "samples": int(len(X)), "train_samples": n_tr, "params": n_params(model), "epochs_done": len(history) + epoch0,
            "steps": step, "weights_changed": bool(changed), "history": history, "seconds": round(time.time() - t_start, 1),
            "metrics": {"holdout": None, "accuracy": None, "calibration": None, "status": "NOT_RUN"}, "implementation_id": IMPLEMENTATION_ID}

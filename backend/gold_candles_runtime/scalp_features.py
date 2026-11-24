@@ -80,7 +80,9 @@ def labels(t, c, a, spread, commission_price: float, slippage_price: float):
         q = np.full(n, np.nan)
         end = np.zeros(n, dtype=np.int64)
         for i in range(n - hz):
-            if a[i] is None or t[i + hz] - t[i] != 60 * hz:
+            # 1.46: also ATR == 0 (flat first minutes of a history): q = d / ATR raised ZeroDivisionError and ended the whole
+            # training; build() already drops these rows (ai <= 0), so they never had features
+            if a[i] is None or a[i] <= 0 or t[i + hz] - t[i] != 60 * hz:
                 continue
             sp = spread[i] if spread is not None and spread[i] is not None and not (isinstance(spread[i], float) and math.isnan(spread[i])) else None
             if sp is None:

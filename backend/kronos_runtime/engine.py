@@ -127,11 +127,21 @@ class Engine:
         except Exception as exc:  # noqa: BLE001
             return "cpu", f"test CUDA nieudany ({type(exc).__name__}: {exc}"[:160] + ") – CPU"
 
-    def _to_cpu(self, why: str) -> None:
+    def _move(self, dev: str) -> None:
         p = self.predictor
-        p.tokenizer = p.tokenizer.to("cpu")
-        p.model = p.model.to("cpu")
-        p.device = "cpu"
+        p.tokenizer = p.tokenizer.to(dev)
+        p.model = p.model.to(dev)
+        p.device = dev
+        # 1.46: the upstream RotaryPositionalEmbedding keeps cos_cached / sin_cached as PLAIN attributes (not buffers) and rebuilds them
+        # only when seq_len changes - .to() left them on the old device, so after a GPU -> CPU fallback every attention layer mixed
+        # cuda and cpu tensors (the retry and every later forecast failed). The vendor code stays unchanged; the caches are reset here.
+        for mod in (p.tokenizer, p.model):
+            for m in mod.modules():
+                if hasattr(m, "seq_len_cached"):
+                    m.seq_len_cached = m.cos_cached = m.sin_cached = None
+
+    def _to_cpu(self, why: str) -> None:
+        self._move("cpu")
         self.info["device"] = "cpu"
         self.info["device_note"] = f"GPU_ERROR_FALLBACK_CPU: {why}"[:200]
 
@@ -187,11 +197,21 @@ class Engine:
                "sampling": {"T": T, "top_k": top_k, "top_p": top_p, "sample_count": 1}, "context_bars": n, "paths": None}
         npaths = int(req.get("paths") or 0)
         if npaths >= 2:
+            def run_paths():
+                torch.manual_seed(seed + 1)
+                with torch.inference_mode():
+                    return self.predictor.predict_batch([df] * npaths, [x_t] * npaths, [y_t] * npaths, pred_len=pred_len, T=T, top_k=top_k,
+                                                        top_p=top_p, sample_count=1, verbose=False)
             t1 = time.perf_counter()
-            torch.manual_seed(seed + 1)
-            with torch.inference_mode():
-                outs = self.predictor.predict_batch([df] * npaths, [x_t] * npaths, [y_t] * npaths, pred_len=pred_len, T=T, top_k=top_k,
-                                                    top_p=top_p, sample_count=1, verbose=False)
+            try:
+                outs = run_paths()
+            except Exception as exc:  # 1.46: the CUDA -> CPU fallback covers the paths too (the batch needs the most memory)
+                if not str(self.predictor.device).startswith("cuda"):
+                    raise
+                self._to_cpu(f"{type(exc).__name__}: {exc}")
+                res.update(device=str(self.predictor.device), device_note=self.info.get("device_note"))
+                t1 = time.perf_counter()
+                outs = run_paths()
             closes = np.stack([o["close"].to_numpy() for o in outs])          # (N, pred_len)
             q = {f"q{int(p * 100)}": [float(v) for v in np.quantile(closes, p, axis=0)] for p in (0.1, 0.5, 0.9)}
             res["paths"] = {"n": npaths, "close_quantiles": q, "final_close": [float(v) for v in closes[:, -1]],
@@ -223,8 +243,25 @@ class Engine:
         if not reference:
             return res
         dev0 = str(self.predictor.device)
+        info0 = {k: self.info.get(k) for k in ("device", "device_note")}
         if dev0 != "cpu":
             self._to_cpu("porównanie referencyjne liczone na CPU (jak u autorów)")
+        try:
+            return self._reference(res, df, feats)
+        finally:
+            # 1.46: the reference comparison runs on CPU, but the engine (and self.info returned by load() to install.verify) stayed on
+            # CPU with a false GPU_ERROR_FALLBACK_CPU note - the device of the load is restored (RoPE caches reset by _move)
+            if dev0 != "cpu":
+                try:
+                    self._move(dev0)
+                    self.info.update(info0)
+                except Exception as exc:  # noqa: BLE001 - the GPU cannot take the model back: stay on CPU and say why
+                    self._to_cpu(f"powrót na {dev0} po porównaniu referencyjnym nieudany ({type(exc).__name__}: {exc})")
+
+    def _reference(self, res: dict, df, feats: list[str]) -> dict:
+        import numpy as np
+        import pandas as pd
+        import torch
         # ---- parity: adapter vs official call (sampled path, the production settings T=1, top_p=0.9)
         ctx, H, seed = 400, 12, 4242
         sub = df.iloc[:ctx]
@@ -239,7 +276,7 @@ class Engine:
                                          x_timestamp=pd.Series(pd.to_datetime(req["candles"]["t"])), y_timestamp=pd.Series(pd.to_datetime(req["y_t"])),
                                          pred_len=H, T=1.0, top_k=0, top_p=0.9, sample_count=1, verbose=False)
         d = max(float(np.abs(np.asarray(got[k]) - ref[k].to_numpy()).max()) for k in ("open", "high", "low", "close"))
-        res["parity"] = {"status": "PASS" if d <= 1e-6 else "DIFF", "max_abs_diff": d, "context": ctx, "pred_len": H, "seed": seed,
+        res["parity"] = {"status": "PASS" if d <= 1e-6 else "DIFF", "max_abs_diff": d, "context": ctx, "pred_len": H, "seed": seed, "device": "cpu",
                          "criterion": "|predict() bota − bezpośrednie KronosPredictor.predict| ≤ 1e-6 (te same dane, ziarno, T=1, top_p=0,9, CPU)"}
         # ---- the authors' regression files: only for the pair they were generated with
         if lock.MODEL["repo"] != lock.REFERENCE_DATA_MODEL:
