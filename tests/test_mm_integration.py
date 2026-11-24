@@ -187,13 +187,9 @@ class TestNativeContracts(unittest.TestCase):
         self.td.close()
 
     def _perfect_native(self) -> dict:
-        ref = self.ref
-        k = [ln.split(",") for ln in (ref / "mm_ref_kalman.csv").read_text().splitlines()[1:] if ln]
-        g = [ln.split(",") for ln in (ref / "mm_ref_gpr.csv").read_text().splitlines()[1:] if ln]
-        b = [ln.split(",") for ln in (ref / "mm_ref_breakout.csv").read_text().splitlines()[1:] if ln]
-        f = lambda x: None if x == "nan" else float(x)                                  # noqa: E731
-        return {"kalman": [[int(r[0])] + [f(x) for x in r[1:7]] + [r[7]] for r in k], "gpr": [[int(r[0])] + [f(x) for x in r[1:]] for r in g],
-                "hdc": {"all_pass": True}, "breakout": [[int(r[0]), r[1], float(r[2]), float(r[3])] for r in b]}
+        # 1.46 arch (I0490/I0497/I0505/I0506/I0508/I0511): the native JSON has more sections (gpr_tune, hdc words, hdc_acc, breakout_modes,
+        # tsvp, stack) and a missing one is a FAIL - the perfect native is the format contract of fixtures.expected_native
+        return FX.expected_native(self.ref)
 
     def test_parity_statuses(self):
         nat = Path(self.td.dir) / "PMW_MM_NATIVE.txt"

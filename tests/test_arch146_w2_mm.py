@@ -250,9 +250,9 @@ class TestNativeReferenceContract(_Ref):
     def test_selftest_writes_every_section_parity_reads(self):
         src = SELFTEST.read_text(encoding="utf-8")
         for key in ("gpr_tune", "hdc_acc", "breakout_modes", "tsvp", "stack", "hamming_ab", "bind_ab", "perm_a_77", "bundle_abc", "bundle_ab_tie"):
-            self.assertIn(f'\\"{key}\\"', src, key)
+            self.assertTrue(f'\\"{key}\\"' in src, key)
         for fname in ("mm_ref_hdc_acc.csv", "mm_fixture_ticks.csv", "mm_ref_tsvp.csv", "mm_ref_stack.csv"):
-            self.assertIn(fname, src)
+            self.assertTrue(fname in src, fname)
             self.assertTrue((self.ref / fname).exists(), fname)
 
     def test_missing_reference_file_is_reported(self):
