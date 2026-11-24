@@ -399,8 +399,7 @@ def cmd_import_iv(path: str) -> int:
     if not p.is_file():
         print(f"[BŁĄD] Brak pliku: {p}")
         return 2
-    db = Database()
-    db.migrate()
+    db = Database()                     # 1.46 arch (I0096): Database.__init__ migrates (the second db.migrate() here was redundant)
     rep = iv_import.store(db, iv_import.parse_text(p.read_text(encoding="utf-8"), "json" if p.suffix.lower() == ".json" else "csv"), imported_by="CLI")
     print(f"[IV] wierszy {rep['rows']}: przyjęto {rep['accepted']}, już zapisane {rep['already_stored']}, odrzucono {len(rep['rejected'])}")
     for r in rep["rejected"][:50]:

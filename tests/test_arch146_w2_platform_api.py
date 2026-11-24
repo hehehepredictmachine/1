@@ -606,5 +606,85 @@ class TestProducerHorizonsAndTimeframes(_Base):
             self.assertEqual(QI._OVR[k]["tfs"], list(TS.TF_ALL), k)
 
 
+# ------------------------------------------------------------------------------------------------------------------------- I0096
+class TestDbLifecycle(_Base):
+    """I0096: bazy tworzone ad hoc są zamykane – GET /api/v1/training/active dla nieaktywnego instrumentu i MLRouter.switch (stara baza
+    ML po old.stop() i dołączeniu wątków); baza główna i baza aktywnej usługi ML nigdy nie są zamykane; zbędne drugie migrate()."""
+
+    def _active(self, instrument: str, ml_inst: str, store_db):
+        from masterquo.api import app as A
+        rt = make_rt()
+        rt.ml.inst = ml_inst
+        rt.lab.trainer.models.return_value = []
+        app = A.create_app(rt, PORT)
+        with mock.patch("masterquo.ml.router.ml_store", return_value=(store_db(rt), Path(self.td.dir))):
+            r = ep(app, "GET", "/api/v1/training/active")(instrument=instrument)
+        return rt, r
+
+    def test_adhoc_db_of_inactive_instrument_is_closed(self):
+        adhoc = mock.MagicMock()
+        adhoc.one.return_value = {"model_id": "M-1"}
+        _, r = self._active("BTC", "XAUUSD", lambda rt: adhoc)
+        self.assertEqual(r["families"]["ml"], {"active": "M-1"})
+        adhoc.close.assert_called_once_with()                       # HEAD: nigdy nie zamykana
+
+    def test_main_db_is_never_closed(self):
+        rt, _ = self._active("XAUUSD", "BTC", lambda rt: rt.db)      # XAUUSD = baza główna (ml_store zwraca rt.db)
+        rt.db.close.assert_not_called()
+        rt2, _ = self._active("BTC", "XAUUSD", lambda rt: rt.ml.cur.db)
+        rt2.ml.cur.db.close.assert_not_called()
+
+    def _router(self, old_db, main_db):
+        import threading
+
+        from masterquo.ml.router import MLRouter
+        r = MLRouter.__new__(MLRouter)
+        order = mock.MagicMock()
+        old = types.SimpleNamespace(inst="BTC", db=old_db, _threads=[], stop=order.stop)
+        old_db.close = order.close
+        new = types.SimpleNamespace(inst="XAUUSD", root=Path(self.td.dir), start=mock.Mock())
+        log = mock.MagicMock()
+        object.__setattr__(r, "_a", (None, main_db, None, None, log))
+        object.__setattr__(r, "_lock", threading.Lock())
+        object.__setattr__(r, "_started", False)
+        object.__setattr__(r, "cur", old)
+        object.__setattr__(r, "_make", lambda inst: new)
+        return r, order, new
+
+    def test_router_switch_closes_old_db_after_stop(self):
+        r, order, new = self._router(types.SimpleNamespace(), main_db=object())
+        self.assertTrue(r.switch("XAUUSD"))
+        self.assertIs(r.cur, new)
+        self.assertEqual([c[0] for c in order.mock_calls], ["stop", "close"])   # HEAD: tylko stop
+
+    def test_router_switch_never_closes_main_db(self):
+        main = types.SimpleNamespace()
+        r, order, _ = self._router(main, main_db=main)
+        r.switch("XAUUSD")
+        self.assertEqual([c[0] for c in order.mock_calls], ["stop"])
+
+    def test_router_switch_skips_close_while_old_threads_live(self):
+        import threading
+        ev = threading.Event()
+        t = threading.Thread(target=ev.wait, daemon=True)
+        t.start()
+        r, order, _ = self._router(types.SimpleNamespace(), main_db=object())
+        r.cur._threads = [t]
+        with mock.patch("masterquo.ml.router.JOIN_TIMEOUT_S", 0.2):
+            r.switch("XAUUSD")
+        self.assertEqual([c[0] for c in order.mock_calls], ["stop"])           # wątek nie zakończył się -> bez close
+        ev.set()
+
+    def test_cmd_import_iv_has_no_second_migrate(self):
+        tree = ast.parse((PKG / "__main__.py").read_text(encoding="utf-8"))
+        fn = next(n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef) and n.name == "cmd_import_iv")
+        self.assertFalse([n for n in ast.walk(fn) if isinstance(n, ast.Attribute) and n.attr == "migrate"])
+        from masterquo.db.database import Database
+        db = Database(Path(self.td.dir) / "x.sqlite")                           # __init__ migruje bezwarunkowo
+        self.assertTrue(db.one("SELECT COUNT(*) AS n FROM schema_migrations")["n"] > 0)
+        self.assertEqual(db.migrate(), [])
+        db.close()
+
+
 if __name__ == "__main__":
     unittest.main()

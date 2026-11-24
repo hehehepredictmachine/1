@@ -3474,7 +3474,13 @@ def create_app(rt, port: int) -> FastAPI:
             out["ml"] = {"active": rt.ml.registry.champion_id}
         else:
             db, root = ml_store(instrument, rt.db)
-            row = db.one("SELECT model_id FROM ml_models WHERE status='CHAMPION'")
+            try:
+                row = db.one("SELECT model_id FROM ml_models WHERE status='CHAMPION'")
+            finally:
+                # 1.46 arch (I0096): the Database built here for an inactive instrument was never closed (one per request). Only that
+                # ad-hoc instance is closed (its connection of THIS request thread) - never the main database nor the active ML service's
+                if db is not rt.db and db is not getattr(getattr(rt.ml, "cur", None), "db", None):
+                    db.close()
             out["ml"] = {"active": row["model_id"] if row else None}
         ptr = read_pointer(paths.data_dir() / "lab", instrument)
         out["lab"] = {"pinned": ptr["active"], "models": [{k: m.get(k) for k in ("model_id", "family", "role", "verdict")} for m in rt.lab.trainer.models(instrument)][:20]}
