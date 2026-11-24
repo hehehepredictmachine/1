@@ -9,6 +9,8 @@ A failure here sets ERROR_RECOVERY and never touches existing positions or their
 """
 from __future__ import annotations
 
+import copy
+import hashlib
 import json
 import os
 import threading
@@ -424,9 +426,15 @@ class ScalpService:
         if not self.forecast or not self.forecast.proc:
             return {"status": "UNAVAILABLE", "reason": "proces analityki (.venv_candles) nie działa", "pass": False}
         try:
-            return self.forecast._ask({"cmd": "setup_quality", "features": plan.get("features") or {}}, 10)
+            return self.forecast._ask({"cmd": "setup_quality", "features": plan.get("features") or {}, **self._feed_contract()}, 10)
         except Exception as exc:
             return {"status": "UNAVAILABLE", "reason": f"{type(exc).__name__}: {exc}"[:200], "pass": False}
+
+    def _feed_contract(self) -> dict:
+        """Symbol and tick of the feed (as ForecastService.tick sends them) - 1.46 arch I0616 / I0626: the worker compares them with the
+        model's training contract (CONTRACT_MISMATCH); before, it hashed the entry's own symbol / tick, so a change never mismatched."""
+        info = self.bridge.symbol_info or {}
+        return {"symbol": self.cfg_store.get().mt5.symbol, "tick_size": float(info.get("trade_tick_size") or 0) or 0.01}
 
     def recent(self, limit: int = 50, instrument: str | None = None) -> list[dict]:
         # 1.46 arch (I0040): optional instrument filter for the API list; None = every instrument (status / dashboard callers unchanged)
@@ -494,8 +502,17 @@ class ScalpService:
         try:
             m1 = self.bridge.bars("M1", 400, include_forming=False)
             pt = float((self.bridge.symbol_info or {}).get("point") or 0.01)
-            ans = self.forecast._ask({"cmd": "scalp_forecast", "m1": [dict({k: b[k] for k in ("open_utc", "o", "h", "l", "c", "tv")},
-                                                                         spread_price=b["spread"] * pt if b.get("spread") is not None else None) for b in m1]}, 20)
+            req = {"cmd": "scalp_forecast", "m1": [dict({k: b[k] for k in ("open_utc", "o", "h", "l", "c", "tv")},
+                                                        spread_price=b["spread"] * pt if b.get("spread") is not None else None) for b in m1],
+                   **self._feed_contract()}
+            # 1.46 arch I0621: ScalpService.tick and Quant scalp_a asked the worker twice per closed M1 with the same request - one answer
+            # per (active run, registry file version, exact request: bars / revision / symbol / tick); a worker failure is never cached
+            key = (reg.get("active"), self._registry_sig(), hashlib.sha256(json.dumps(req, sort_keys=True, default=str).encode()).hexdigest())
+            hit = getattr(self, "_fc_cache", None)
+            if hit is not None and hit[0] == key:
+                return copy.deepcopy(hit[1])
+            ans = self.forecast._ask(req, 20)
+            self._fc_cache = (key, copy.deepcopy(ans))
             return ans
         except Exception as exc:
             return {"status": "UNAVAILABLE", "reason": f"{type(exc).__name__}: {exc}"[:200]}
@@ -520,6 +537,13 @@ class ScalpService:
             return json.loads(p.read_text(encoding="utf-8"))
         except (OSError, ValueError):
             return {"active": None, "runs": {}}
+
+    def _registry_sig(self):
+        """mtime_ns of registry.json (activation / rollback / retraining changes it) - part of the forecast cache key; None if unknown."""
+        try:
+            return (self._root() / "registry.json").stat().st_mtime_ns
+        except Exception:  # noqa: BLE001
+            return None
 
     def training_status(self) -> dict:
         d = self._root()

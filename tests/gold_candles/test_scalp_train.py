@@ -103,25 +103,27 @@ class ScalpTrain(unittest.TestCase):
         try:
             self.assertEqual(scalp_registry.main(["activate", rid]), 0)
             bars = synth.m1_bars(1, seed=9)[:300]
-            ans = worker.scalp_forecast({"m1": bars})
+            e0 = read_registry()["runs"][rid]
+            feed = {"symbol": e0["symbol"], "tick_size": e0["tick_size"]}           # 1.46 arch I0616: the request carries the feed contract
+            ans = worker.scalp_forecast({"m1": bars, **feed})
             self.assertEqual(ans["status"], "SHADOW", ans)
             self.assertFalse(ans["execution_permission"])
             for h in ans["horizons"].values():
                 self.assertAlmostEqual(h["p_down"] + h["p_flat"] + h["p_up"], 1.0, places=3)
                 q = h["q10_q50_q90_price"]
                 self.assertTrue(q[0] <= q[1] <= q[2])
-            self.assertEqual(worker.scalp_forecast({"m1": bars[:30]})["status"], "WARMUP")
+            self.assertEqual(worker.scalp_forecast({"m1": bars[:30], **feed})["status"], "WARMUP")
             entry = read_registry()["runs"][rid]
             f = Path(entry["run_dir"]) / entry["models"]["1"]["quantiles_file"]
             raw = f.read_bytes()
             f.write_bytes(raw + b"x")
             worker._scalp_cache.update(run_id=None, model=None)
-            ans2 = worker.scalp_forecast({"m1": bars})
+            ans2 = worker.scalp_forecast({"m1": bars, **feed})
             self.assertEqual(ans2["status"], "UNAVAILABLE")
             self.assertIn("CHECKSUM", ans2["reason"])
             f.write_bytes(raw)
             self.assertEqual(scalp_registry.main(["deactivate"]), 0)
-            self.assertEqual(worker.scalp_forecast({"m1": bars})["reason"], "NO_MODEL")
+            self.assertEqual(worker.scalp_forecast({"m1": bars, **feed})["reason"], "NO_MODEL")
         finally:
             os.environ.pop("MQ_FORECAST_TEST_ALLOW_SYNTHETIC", None)
 

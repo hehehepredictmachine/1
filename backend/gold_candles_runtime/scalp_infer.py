@@ -34,14 +34,29 @@ def read_registry() -> dict:
         return {"schema": "masterquo-scalp-registry-1", "active": None, "history": [], "runs": {}, "error": "REGISTRY_UNREADABLE"}
 
 
-def activatable(entry: dict, contract: str | None) -> tuple[bool, str | None]:
+def cached_sha256(p: Path, cache: dict | None) -> str:
+    """sha256 of a file; with a cache (the worker's) reused while the file's (path, mtime_ns, size) is unchanged - 1.46 arch I0621: every
+    scalp_forecast / setup_quality request hashed every artifact again. Pickles are still verified afresh at load (load_pickle_verified)."""
+    if cache is None:
+        return sha256_file(p)
+    st = p.stat()
+    k = (str(p), st.st_mtime_ns, st.st_size)
+    v = cache.get(k)
+    if v is None:
+        if len(cache) > 512:
+            cache.clear()
+        v = cache[k] = sha256_file(p)
+    return v
+
+
+def activatable(entry: dict, contract: str | None, sha_cache: dict | None = None) -> tuple[bool, str | None]:
     if entry.get("data_kind") != "REAL_USER_DATA" and not (entry.get("data_kind") == "SYNTHETIC_TEST" and os.environ.get("MQ_FORECAST_TEST_ALLOW_SYNTHETIC") == "1"):
         return False, "NOT_REAL_USER_DATA"
     if entry.get("task_a_status") in (None, "INSUFFICIENT_DATA"):
         return False, "TASK_A_NOT_TRAINED"
     for f, sha in (entry.get("artifacts") or {}).items():
         p = relocated(entry["run_dir"], scalp_dir()) / f
-        if not p.exists() or sha256_file(p) != sha:
+        if not p.exists() or cached_sha256(p, sha_cache) != sha:
             return False, f"ARTIFACT_CHECKSUM_MISMATCH:{f}"
     if contract and entry.get("contract_hash") != contract:
         return False, "CONTRACT_MISMATCH"
