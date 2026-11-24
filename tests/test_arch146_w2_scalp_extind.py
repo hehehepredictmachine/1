@@ -467,6 +467,9 @@ class TestScalpBatCommission(unittest.TestCase):
         self.assertNotIn("--commission-per-lot-side", call)                    # the argument only through a conditional variable
         self.assertIn('if not "%~1"=="" set "COMMARG=--commission-per-lot-side %~1"', txt)
         self.assertIn("%COMMARG%", call)
+        msg = next(ln for ln in txt.splitlines() if ln.startswith('set "COMMTXT=z historii'))
+        self.assertIn("XAUUSD 0.50", msg)                                       # review: 0.50 is the package default of XAUUSD only
+        self.assertIn("inne instrumenty - podaj argument", msg)                 # another instrument: COMMISSION_UNKNOWN (scalp_train)
 
 
 # ------------------------------------------------------------------------------------------------------------ scalp SHADOW

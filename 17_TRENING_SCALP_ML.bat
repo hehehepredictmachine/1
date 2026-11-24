@@ -6,12 +6,13 @@ set "PYTHONIOENCODING=utf-8"
 rem Trening modeli scalp (A: kierunek 1/3/5 min - baseline, regresja logistyczna, HistGradientBoosting, siec MLP 64/32, kwantyle;
 rem B: jakosc setupu z replayu; C: HOLD/REDUCE/CLOSE/HEDGE_PARTIAL) na NAJNOWSZYM eksporcie data\scalp\history.
 rem Opcjonalny argument: prowizja za 1 lot na strone w walucie konta (z warunkow Twojego rachunku; "Zero" nie oznacza 0 kosztow).
-rem Bez argumentu scalp_train bierze prowizje z historii transakcji eksportu (metadane), a gdy jej brak - 0.50 (domyslna paczki XAUUSD,
-rem zrodlo zapisane w raporcie). 1.46 arch (I0110): wczesniej skrypt zawsze podawal 0.50 jako argument uzytkownika.
+rem Bez argumentu scalp_train bierze prowizje z historii transakcji eksportu (metadane), a gdy jej brak - dla XAUUSD 0.50 (domyslna
+rem paczki, zrodlo zapisane w raporcie); inny instrument bez prowizji w metadanych konczy sie bledem COMMISSION_UNKNOWN - podaj argument.
+rem 1.46 arch (I0110): wczesniej skrypt zawsze podawal 0.50 jako argument uzytkownika (takze dla instrumentow innych niz XAUUSD).
 rem Przyklad: 17_TRENING_SCALP_ML.bat 3.5    Wynik: data\scalp\runs\^<run_id^>\ (plan, raport, log). Tylko SHADOW.
 cd /d "%~dp0"
 set "COMMARG="
-set "COMMTXT=z historii transakcji eksportu (gdy brak: 0.50 - domyslna paczki)"
+set "COMMTXT=z historii transakcji eksportu (gdy brak: XAUUSD 0.50 - domyslna paczki; inne instrumenty - podaj argument)"
 if not "%~1"=="" set "COMMARG=--commission-per-lot-side %~1"
 if not "%~1"=="" set "COMMTXT=%~1 (argument)"
 echo Prowizja za 1 lot na strone: %COMMTXT% ^(inna wartosc: %~nx0 3.5^)

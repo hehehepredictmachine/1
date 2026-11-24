@@ -22,6 +22,8 @@ Profil badawczy: `config/scalp_profile_v1.json`, `MQ-SCALP-RANGE-SWEEP-1.0.0-RES
 | — | `21_ROLLBACK_MODELU_SCALP.bat [BRAK]` | poprzedni zgodny model albo brak modelu |
 
 **`<prowizja>`** to prowizja za 1 lot na stronę, w walucie konta. **Domyślnie w paczce: 0.50** – launchery 17 i 19 można uruchomić dwuklikiem.
+- `17_TRENING_SCALP_ML.bat` bez argumentu bierze prowizję z historii transakcji eksportu (metadane), a gdy jej brak – 0.50 tylko dla XAUUSD.
+  Inny instrument bez prowizji w metadanych kończy się błędem `COMMISSION_UNKNOWN` – podaj argument (1.46 arch I0110).
 - Inna wartość: argument launchera (np. `17_TRENING_SCALP_ML.bat 3.5`) oraz w `data\config.json`: `"scalp": {"commission_per_lot_side": 3.5}`.
 - Sprawdź ją w warunkach swojego rachunku – profil „Zero” nie oznacza zerowych kosztów.
 
