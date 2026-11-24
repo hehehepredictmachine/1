@@ -21,12 +21,14 @@ class Tabular(B.Family):
         return ("AVAILABLE", None) if L.available().get(self.TH_ID) else ("MISSING_DEPENDENCY", "biblioteka niedostępna (np. xgboost)")
 
     def trainhub_state(self, inst: str) -> dict:
+        # arch146 I0010: the one trainhub state (registry.status_of; package keys matched as '<TH_ID>_', the prefix without '_' also matched
+        # other models' keys); artifact / use as before, state + reason of the trainhub view added (no live view from the family service)
         from ...trainhub import registry as R
-        s = R.summary(inst)
-        mine = [v for v in s["versions"] if str(v.get("model_key", "")).startswith(self.TH_ID)]
-        act = {k: v for k, v in (s.get("active") or {}).items() if k.startswith(self.TH_ID)}
-        return {"artifact": "CANDIDATE" if mine else "NOT_TRAINED", "versions": len(mine), "active": act,
-                "use": "SHADOW" if act else "OFF", "note": "trening / aktywacja w Centrum treningu (trainhub)"}
+        st = R.status_of(inst, self.TH_ID)
+        act = st["active"]
+        return {"artifact": "CANDIDATE" if st["n_versions"] else "NOT_TRAINED", "versions": st["n_versions"], "active": act,
+                "use": "SHADOW" if act else "OFF", "state": st["state"], "reason": st["reason"],
+                "note": "trening / aktywacja w Centrum treningu (trainhub)"}
 
 
 class RF(Tabular):
