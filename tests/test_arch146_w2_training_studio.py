@@ -434,6 +434,27 @@ class TestI0010TrainhubStatusSingleSource(_Data):
         self.assertEqual((th["artifact"], th["versions"], th["use"]), ("CANDIDATE", 2, "OFF"))    # artifact / use unchanged
         self.assertEqual((th.get("state"), th.get("reason")), (st["state"], st["reason"]))      # HEAD: no trainhub state in the family view
 
+    def test_family_view_active_package_has_no_false_state(self):
+        # recenzja: widok rodzin nie ma rt – dla aktywnej paczki status_of daje DISABLED „serwis inferencji … nie działa”
+        # (cause NO_LIVE_VIEW), także gdy bot działa, a katalog pokazuje READY; widok rodzin tego stanu nie podaje
+        from masterquo.modelhub.families import registry as famreg
+        from masterquo.trainhub import learn as L
+        from masterquo.trainhub import registry as R
+        reg = R.registry("XAUUSD")
+        reg["active"]["TH_RF_M5_H6"] = "r2"
+        R._save_reg("XAUUSD", reg)
+        with mock.patch.object(L, "available", return_value={"TH_RF": True}):
+            self.assertEqual(R.status_of("XAUUSD", "TH_RF")["cause"], "NO_LIVE_VIEW")
+            th = famreg()["TH_RF"].trainhub_state("XAUUSD")
+            self.assertEqual((th["artifact"], th["versions"], th["use"], th["active"]), ("CANDIDATE", 2, "SHADOW", {"TH_RF_M5_H6": "r2"}))
+            self.assertNotIn("state", th)                                     # przed poprawką recenzji: DISABLED
+            self.assertNotIn("reason", th)
+            self.preds = [{"model_key": "TH_RF_M5_H6", "state": "READY"}]
+            self.assertEqual(R.status_of("XAUUSD", "TH_RF", self.rt)["state"], "READY")   # live state: the model catalog's
+        with mock.patch.object(L, "available", return_value={"TH_RF": False}):
+            th = famreg()["TH_RF"].trainhub_state("XAUUSD")                  # a state that needs no live view stays
+            self.assertEqual((th["state"], th["reason"]), ("DISABLED", "biblioteka modelu niedostępna w tym środowisku"))
+
 
 # ================================================================================================ I0101 (wariant bezpieczny) history.json
 class TestI0101PepeHistoryNotList(_Data):
