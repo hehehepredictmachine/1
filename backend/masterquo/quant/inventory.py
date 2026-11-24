@@ -38,7 +38,10 @@ A_SETUP = "evaluation.service (prawdopodobieństwo per kandydat setupu)"
 
 _OVR: dict[str, dict] = {
     # --- rules / measurements (SH deterministic rows) -------------------------------------------------------------
-    "rule:data_quality": {"role": "GATE_EXISTING", "adapter": A_EXT, "files": ["backend/masterquo/mt5/bridge.py"], "unit": "state", "task_type": "STATE",
+    # 1.46 arch (I0553): the files where the data-quality checks really live (SH limits, ACTIVE session model, Quant snapshot QC)
+    "rule:data_quality": {"role": "GATE_EXISTING", "adapter": A_EXT, "files": ["backend/masterquo/sh/context.py", "backend/masterquo/data/quality.py",
+                                                                             "backend/masterquo/quant/snapshot.py", "backend/masterquo/mt5/bridge.py"],
+                          "unit": "state", "task_type": "STATE",
                           "data": "notowanie MT5, zegar, spread", "receivers": ["sh.service", "engine.decision", "quant.snapshot"]},
     "rule:risk_engine": {"role": "GATE_EXISTING", "adapter": None, "na": "bramka ryzyka liczona w ścieżce wykonania (RiskBook / risk/portfolio.py) – Quant jej nie dubluje",
                          "files": ["backend/masterquo/sh/risk.py", "backend/masterquo/risk/portfolio.py"], "unit": "state", "task_type": "STATE"},

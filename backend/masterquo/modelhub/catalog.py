@@ -18,7 +18,10 @@ CAT_FROM_MM = {"TRAINABLE": "TRAINABLE", "ONLINE_LEARNER": "ONLINE", "RECURSIVE_
                "RULE_STRATEGY": "RULE", "OPTIMIZER": "INFRA", "DATA_INFRA": "INFRA", "VISUALIZATION": "INDICATOR", "BENCHMARK": "INFRA"}
 # where the code lives + what it needs (sh/models.REGISTRY ids)
 LOCATION = {
-    "data_quality": ("mt5/bridge.py, engine (M01)", "notowania + świece z MT5"), "risk_engine": ("sh/risk.py", "rachunek, pozycje, specyfikacja symbolu"),
+    # 1.46 arch (I0553): the three data-quality checks that really run (SH limits, ACTIVE session model, Quant snapshot QC) - it named
+    # 'mt5/bridge.py, engine (M01)', where none of them lives
+    "data_quality": ("sh/context.py (SH), data/quality.py (ACTIVE), quant/snapshot.py (QC migawki Quant)", "notowania + świece z MT5"),
+    "risk_engine": ("sh/risk.py", "rachunek, pozycje, specyfikacja symbolu"),
     "news": ("news/", "kalendarz makro"), "regime_v2": ("lab/market_v2.py", "świece M5"), "structure_v2": ("lab/structure_v2.py", "świece M5/M15/H1"),
     "smc_pullback": ("lab/context_ind/smc.py", "świece M5"), "vamd": ("extind/vamd.py", "świece M1/M5"), "fractal": ("extind/fractal.py", "świece M1/M5"),
     "atr_vol": ("indicators/series.py", "świece M1/M5"), "candles_patterns": ("analysis/candles.py, analysis/chart_patterns.py", "świece"),
