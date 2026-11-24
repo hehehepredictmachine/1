@@ -92,6 +92,11 @@ class SHService:
         self.snapshot: dict | None = None
         self.snap_cache: dict = {}                    # per (instrument, session epoch): no M5 analysis carried across a switch
         self.state: dict = {"status": "STARTING", "updated_at": None, "warnings": []}
+        self._adopt_at = -1e18                        # w2 (I0745): last lookup of unknown entry outcomes
+        self._adopt_fail: dict = {}                   # plan_id -> failed adoptions (bounded; a reconnect starts again)
+        self._watch_at = -1e18                        # w2 (I0111 / I0748): last read-only status refresh
+        self._watch_seen: set = set()
+        self._macro_held: dict = {}                   # w2 (I0557): pack / basket signal_id held in a macro window -> valid_until
 
     # ------------------------------------------------------------------ lifecycle
     def start(self) -> None:
@@ -243,10 +248,40 @@ class SHService:
         key = (bars["M1"][-1]["open_utc"], epoch, inst)
         if key != self.last_bar_key:
             self.last_bar_key = key
-            self.cycle(inst, bars, q, spec, acc, mode, now, shc, ex, entry_block=gate["entry_block"])
+            eb = self.new_entry_block(gate)
+            self.state["macro_block"] = [c for c in eb if str(c).startswith("MACRO_")]
+            self.cycle(inst, bars, q, spec, acc, mode, now, shc, ex, entry_block=eb)
         self._set("RUNNING", None, mode=mode, entry_block=gate["entry_block"], instrument=inst, symbol=spec.symbol, account_margin_mode=acc.get("margin_mode"),
                   open_plans=[self.plan_view(p, q) for p in self.store.open_plans(spec.symbol)], last_eval=self.last_eval,
                   config_hash=shc["_hash"])
+
+    def new_entry_block(self, gate: dict) -> list:
+        """w2 (I0557): reasons that forbid NEW entries in this cycle = the mode gate (STOP, account, ...) + the macro calendar, by the rule of
+        the ACTIVE path (engine/decision.macro_block_codes: a high-impact event window when risk.macro_block_high_impact; an unavailable
+        calendar only with risk.macro_calendar_required). Codes are only appended - the gate's codes are never filtered - and the gate of
+        hedges / exits (self.gate()) is not touched. news None (tests, replay) -> as before; a failing read -> MACRO_GATE_ERROR."""
+        codes = list(gate.get("entry_block") or [])
+        if self.news is None:
+            return codes
+        try:
+            from ..engine.decision import macro_block_codes
+            codes += macro_block_codes(self.news.macro() or {}, self.cfg_store.get().risk)
+        except Exception as exc:  # noqa: BLE001 - unknown calendar state = no new entries
+            codes.append(f"MACRO_GATE_ERROR:{type(exc).__name__}")
+        return codes
+
+    def model_rows(self, inst: str, snap: dict | None) -> list[dict]:
+        """w2 (I0004 / I0551): rows of su['models'] (presentation only): the live matrix from the runtime provider (cached, refreshed off this
+        thread) or NOT_EVALUATED; data_quality from this cycle's snapshot, news from the calendar in memory. Never raises."""
+        prov = self.models_provider
+        try:
+            rows = prov(inst) if prov is not None else MR.not_evaluated(inst)["rows"]
+        except Exception:  # noqa: BLE001 - presentation only
+            rows = MR.not_evaluated(inst)["rows"]
+        try:
+            return MR.refresh_rows(rows, inst, snap=snap, news=self.news)
+        except Exception:  # noqa: BLE001
+            return rows
 
     # ------------------------------------------------------------------ evaluation cycle (new closed M1)
     def cycle(self, inst, bars, q, spec, acc, mode, now, shc, ex, entry_block: list | None = None) -> dict:
@@ -258,14 +293,24 @@ class SHService:
         snap = CX.snapshot(bars, q, tick=spec.tick_size, now=now, cfg={"max_bar_age_s": r["max_bar_age_s"], "max_quote_age_s": r["max_quote_age_s"],
                                                                       "max_spread_usd": ic.get("max_spread_usd")}, cache=self.snap_cache.setdefault((inst, ep), {}))
         self.snapshot = snap
-        mx = MR.matrix(None, inst)
+        rows = self.model_rows(inst, snap)
         evals = {}
+        tp_err = None
         for strat in STRATEGIES:
             prof = C.profile(shc, inst, strat)
-            su = SU.evaluate(strat, inst, snap, spec, prof, now=now, models=mx["rows"], config_hash=shc["_hash"], m1=bars["M1"][-20:])
-            if su["status"] == "READY" and TM.status(inst, strat).get("status") == "READY":
-                pr = TM.predict(inst, strat, TM.features(su, snap))
-                su = SU.evaluate(strat, inst, snap, spec, prof, now=now, tp_prob=pr, models=mx["rows"], config_hash=shc["_hash"], m1=bars["M1"][-20:])
+            su = SU.evaluate(strat, inst, snap, spec, prof, now=now, models=rows, config_hash=shc["_hash"], m1=bars["M1"][-20:])
+            if su["status"] == "READY":
+                try:                                 # w2 (I0824): a broken event model (registry / artifact) never aborts the cycle
+                    pr = TM.predict(inst, strat, TM.features(su, snap)) if TM.status(inst, strat).get("status") == "READY" else None
+                except Exception as exc:  # noqa: BLE001
+                    pr = None
+                    err = f"{type(exc).__name__}: {exc}"[:200]
+                    tp_err = tp_err or err
+                    self.log.warn("SH", "TP_MODEL_ERROR", f"{strat}: {err}")  # noqa: PLE1205, G010 - application log (source, code, text)
+                    su = dict(su, status="WAIT", status_reason=f"model zdarzenia SH: błąd odczytu ({err}) – wejście wstrzymane",
+                              probability=dict(su.get("probability") or {}, status="ERROR", reason=err))
+                if pr is not None:
+                    su = SU.evaluate(strat, inst, snap, spec, prof, now=now, tp_prob=pr, models=rows, config_hash=shc["_hash"], m1=bars["M1"][-20:])
             evals[strat] = self._tsfm(self._kronos(su, inst, strat, snap), inst, strat)
         ind = self.indicators
         if ind is not None:                                               # PMW-IND-1 context (role OBSERVE: shown + logged, never a gate)
@@ -283,9 +328,15 @@ class SHService:
                     evals[k] = apply_to_setup(su, fam.setup_context(su, inst))
                 except Exception as exc:  # noqa: BLE001
                     su["family_context"] = {"error": f"{type(exc).__name__}: {exc}"[:160]}
-        pevals = self.pack_cycle(inst, spec, q, acc, now, shc, snap)
+        # w2 (I0824): in a bar with a broken event model the pack / baskets are not evaluated and no candidate stays READY - exactly the
+        # entries of before (the exception ended the cycle there); the cycle now completes (signals, panel, observers)
+        pevals = self.pack_cycle(inst, spec, q, acc, now, shc, snap) if tp_err is None else []
         for su in pevals:
             evals[f"{su['strategy_id']}|{su['pack']['signal_tf']}"] = su
+        if tp_err is not None:
+            for su in evals.values():
+                if su.get("status") == "READY":
+                    su["status"], su["status_reason"] = "WAIT", f"cykl bez wejść: błąd modelu zdarzenia SH ({tp_err})"
         ready = [s for s in evals.values() if s["status"] == "READY"]
         opens = self.store.open_plans(spec.symbol)
         foreign = self.foreign_positions(spec.symbol, shc["magic_number"]) if mode in RK.REAL_MODES else 0
@@ -313,9 +364,16 @@ class SHService:
                     su["risk"] = risk
                 else:
                     su["status_reason"] = "koordynator: " + cd["reason"]
-            if risk and risk["status"] == "PASS" and entry_block:
-                su["entry_block"] = list(entry_block)
-                su["status_reason"] = "nowe wejścia zablokowane: " + ", ".join(entry_block)
+            eb = list(entry_block or [])
+            if is_pack and risk and risk["status"] == "PASS":
+                # w2 (I0557): a pack / basket candidate held in a high-impact macro window never enters later on its pre-event signal
+                if "MACRO_EVENT_WINDOW" in eb:
+                    self._macro_held[su["signal_id"]] = float(su.get("valid_until") or now + 3600.0)
+                elif su.get("signal_id") in self._macro_held:
+                    eb.append("MACRO_PRE_EVENT_SIGNAL")
+            if risk and risk["status"] == "PASS" and eb:
+                su["entry_block"] = list(eb)
+                su["status_reason"] = "nowe wejścia zablokowane: " + ", ".join(eb)
             model_block = None
             arc = self.arc
             was_ready = (self.last_saved.get(strat, (None,))[0] == "READY")
@@ -338,13 +396,15 @@ class SHService:
             self.persist_signal(su, risk, cd, now, key=strat if is_pack else None)
             if not is_pack:
                 self.last_eval[strat] = su                                 # full setup (checklist, levels, models) for the panel
-            if risk and risk["status"] == "PASS" and mode in ("PAPER",) + RK.REAL_MODES and not entry_block and not model_block:
+            if risk and risk["status"] == "PASS" and mode in ("PAPER",) + RK.REAL_MODES and not eb and not model_block:
                 res = self.open_plan(ex, su, risk, spec, q, mode, now, shc, inst, snap)
                 if is_pack and (res or {}).get("status") in ("OPEN", "ABORTED", "FILLED", "PARTIAL", "REJECTED", "UNKNOWN", "DUPLICATE"):
                     if su.get("basket"):
                         self.basket_consumed(su, res)
                     else:
                         self.pack.consumed(su)
+        for k in [k for k, t in self._macro_held.items() if t < now]:
+            del self._macro_held[k]
         for fn in list(self.listeners):
             try:
                 fn(evals, inst=inst, symbol=spec.symbol, snap=snap, now=now)

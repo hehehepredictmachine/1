@@ -28,6 +28,28 @@ def _node(name: str, status: str, met: list[str] | None = None, unmet: list[str]
     return {"node": name, "status": status, "met": met or [], "unmet": unmet or [], "reason_codes": codes or []}
 
 
+def macro_market(macro: dict, risk_cfg) -> tuple[list[str], list[str]]:
+    """MARKET node, macro part (unmet, reason codes) - one rule for the ACTIVE path (build) and SH (macro_block_codes, w2 I0557)."""
+    unmet, codes = [], []
+    if risk_cfg.macro_block_high_impact:
+        if macro.get("status") not in ("OK", "PARTIAL"):
+            if risk_cfg.macro_calendar_required:
+                unmet.append("MACRO_CALENDAR_AVAILABLE")
+            codes.append("MACRO_CALENDAR_" + str(macro.get("status")))
+        elif macro.get("risk_level") == "HIGH":
+            unmet.append("NO_HIGH_IMPACT_EVENT_WINDOW")
+            codes.append("MACRO_EVENT_WINDOW")
+    return unmet, codes
+
+
+def macro_block_codes(macro: dict, risk_cfg) -> list[str]:
+    """Only the BLOCKING macro codes (an unmet macro condition of the MARKET node): MACRO_EVENT_WINDOW inside a high-impact window,
+    MACRO_CALENDAR_<status> only with macro_calendar_required; [] with macro_block_high_impact False. The informative calendar codes of the
+    ACTIVE node (required False) never block."""
+    unmet, codes = macro_market(macro, risk_cfg)
+    return list(codes) if unmet else []
+
+
 def structural_direction(m02: dict | None) -> str:
     d = (m02 or {}).get("structural_direction")
     return {"BULLISH": "LONG", "BEARISH": "SHORT"}.get(d, "NEUTRAL")
@@ -53,14 +75,9 @@ def build(*, snapshot_id: str, as_of: str, symbol: str, account_key: str | None,
     if dq["market_state"] != "OPEN":
         mk_unmet.append("MARKET_OPEN")
         mk_codes.append("MARKET_" + dq["market_state"])
-    if risk_cfg.macro_block_high_impact:
-        if macro.get("status") not in ("OK", "PARTIAL"):
-            if risk_cfg.macro_calendar_required:
-                mk_unmet.append("MACRO_CALENDAR_AVAILABLE")
-            mk_codes.append("MACRO_CALENDAR_" + str(macro.get("status")))
-        elif macro.get("risk_level") == "HIGH":
-            mk_unmet.append("NO_HIGH_IMPACT_EVENT_WINDOW")
-            mk_codes.append("MACRO_EVENT_WINDOW")
+    m_unmet, m_codes = macro_market(macro, risk_cfg)
+    mk_unmet += m_unmet
+    mk_codes += m_codes
     nodes.append(_node("MARKET", "FAIL" if mk_unmet else "PASS", met=[] if mk_unmet else ["MARKET_OPEN", "MACRO_OK"], unmet=mk_unmet, codes=mk_codes))
     # 3 STRATEGY
     sdir = structural_direction(m02)
