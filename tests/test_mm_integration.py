@@ -125,8 +125,9 @@ class TestArtifactsLedgerDrift(unittest.TestCase):
         self.td.close()
 
     def test_artifact_immutability_promotion_rollback(self):
-        a1 = AR.save("XAUUSD", "unit_model", {"w": np.arange(4.0)}, {"status": "VALIDATED_SHADOW", "data_kind": "REAL_USER_DATA"})
-        a2 = AR.save("XAUUSD", "unit_model", {"w": np.arange(4.0) + 1}, {"status": "VALIDATED_SHADOW", "data_kind": "REAL_USER_DATA"})
+        ok = {"status": "VALIDATED_SHADOW", "data_kind": "REAL_USER_DATA", "gates": {"g": True}}           # 1.46 arch I0545: gates passed
+        a1 = AR.save("XAUUSD", "unit_model", {"w": np.arange(4.0)}, ok)
+        a2 = AR.save("XAUUSD", "unit_model", {"w": np.arange(4.0) + 1}, ok)
         a3 = AR.save("XAUUSD", "unit_model", {"w": np.zeros(2)}, {"status": "CANDIDATE"})
         AR.promote_shadow("XAUUSD", "unit_model", a1, "first")
         AR.promote_shadow("XAUUSD", "unit_model", a2, "second")

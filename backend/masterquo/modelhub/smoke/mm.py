@@ -7,7 +7,8 @@ Real project paths only, on SYNTHETIC_TEST data (FakeMT5 of the smoke Ctx) in th
   artifact written by the job is read back (`mm/artifacts.load`) and its stored test metrics are recomputed from the loaded state;
 * rules / measurements - the bot's SHADOW service `MMService.live` on a stub runtime (bridge rows of FakeMT5) and the Quant adapter
   `quant.adapters.mm` that turns its cache into PMW-PRED-2 records;
-* Event GRU - the Quant adapter `quant.adapters.EventGRU().predict` on an artifact promoted ONLY in the temporary data folder.
+* Event GRU - the Quant adapter `quant.adapters.EventGRU().predict` on a technical SHADOW pointer written ONLY in the temporary data
+  folder (the store's promote_shadow refuses a technical artifact - checked first).
 
 Nothing here is a quality result: synthetic artifacts are TECHNICAL_TEST_ONLY by design.
 """
@@ -97,6 +98,26 @@ def _live(ctx):
         v = rt.mm.live(ctx.inst)
         c["live"] = (rt, v, QA.mm(rt, ctx.inst))
     return c["live"]
+
+
+def _smoke_pointer(ctx, model_id: str, aid: str) -> str | None:
+    """Technical SHADOW pointer of the smoke run - written ONLY in the temporary data folder of `models check --smoke` (the store's
+    promote_shadow rightly refuses a technical artifact: mm/artifacts.promotable). None on success, else the failure text."""
+    import time
+
+    from ... import registry_io as RIO
+    from ...mm import artifacts as AR
+    root = AR.root(ctx.inst).resolve()
+    if ctx.data_dir.resolve() not in root.parents:
+        return f"smoke: folder wskaźnika {root} poza tymczasowym folderem danych {ctx.data_dir} – zapis odmówiony"
+    with AR._ptr_lock(ctx.inst):
+        ptr = AR.read_pointer(ctx.inst, strict=True)
+        prev = ptr["active"].get(model_id)
+        ptr["active"][model_id] = aid
+        ptr.setdefault("events", []).append({"at": time.time(), "model_id": model_id, "from": prev, "to": aid,
+                                             "reason": "SMOKE_TECHNICAL_POINTER (models check --smoke, folder tymczasowy; nie promocja)"})
+        RIO.write_json_atomic(AR._ptr_path(ctx.inst), ptr)
+    return None
 
 
 def _live_ok(ctx, key: str):
@@ -466,7 +487,21 @@ def _event_engine_dir3(ctx) -> dict:
                                                        "feature_schema": man.get("feature_schema"),
                                                        "event_source": man.get("event_source"), "target": man.get("target"),
                                                        "note": "SMOKE: artefakt techniczny w folderze tymczasowym models check – NIE walidacja"})
-    AR.promote_shadow(ctx.inst, "event_engine_dir3", aid2, "models check --smoke (folder tymczasowy)")
+    # 1.46 arch (I0545): the store refuses it (no gates passed on REAL_USER_DATA) - the smoke checks the refusal, then writes its technical
+    # pointer itself, only inside the temporary data folder, to exercise the live Quant path
+    try:
+        AR.promote_shadow(ctx.inst, "event_engine_dir3", aid2, "models check --smoke (folder tymczasowy)")
+        steps["predict"] = fail("BŁĄD bramki: artefakt techniczny (status VALIDATED_SHADOW bez bramek i danych REAL) przesunął wskaźnik SHADOW "
+                                "(mm/artifacts.promotable)")
+        return steps
+    except AR.ArtifactError as exc:
+        if "NOT_VALIDATED_GATES" not in str(exc):
+            steps["predict"] = fail(f"nieoczekiwany błąd promocji: {exc}")
+            return steps
+    why = _smoke_pointer(ctx, "event_engine_dir3", aid2)
+    if why:
+        steps["predict"] = fail(why)
+        return steps
     p = QA.EventGRU().predict(rt, ctx.inst)
     res = p.get("result") or {}
     tot = sum(float(x) for x in res.values()) if res else float("nan")
