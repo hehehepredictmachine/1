@@ -56,23 +56,26 @@ class TestAggregate(unittest.TestCase):
         return C.make(**d)
 
     def test_zero_dev_skill_speaks_before_negative_skill(self):
-        """chunk_23#19: `x[0] or -1` turned a valid skill 0.0 into -1 - the model with skill -0.5 became the group speaker."""
+        """chunk_23#19: `x[0] or -1` turned a valid skill 0.0 into -1 - the model with skill -0.5 became the group speaker.
+        arch146 D12: a skill <= 0 is no better than the baseline - neither model speaks now; the ranking (0.0 before -0.5) still holds."""
         from masterquo.modelhub import aggregate as AG
         skills = {"TH_LOGREG_M5_H6": 0.0, "TH_HGB_M5_H6": -0.5}
         neg, zero = self._p("TH_HGB_M5_H6"), self._p("TH_LOGREG_M5_H6")
         with mock.patch.object(AG, "dev_skill", side_effect=lambda inst, key, ver: skills[key]):
             for order in ([neg, zero], [zero, neg]):
                 g = AG.evidence(order, "SCALPING", "XAUUSD")["groups"][0]
-                self.assertEqual(g["speaker"], "TH_LOGREG_M5_H6")
-                self.assertEqual(g["dev_skill"], 0.0)
-                self.assertEqual([x["model"] for x in g["silenced_same_group"]], ["TH_HGB_M5_H6"])
+                self.assertIsNone(g["speaker"])                                   # never the -0.5 model
+                self.assertEqual([x["model"] for x in g["silenced_same_group"]], ["TH_LOGREG_M5_H6", "TH_HGB_M5_H6"])
 
     def test_none_skill_still_last(self):
+        """An unmeasured skill ranks after any model that may speak; a model measured as worse than the baseline (arch146 D12) never
+        speaks - the unmeasured one does (weight 0)."""
         from masterquo.modelhub import aggregate as AG
-        skills = {"TH_LOGREG_M5_H6": None, "TH_HGB_M5_H6": -0.5}
-        with mock.patch.object(AG, "dev_skill", side_effect=lambda inst, key, ver: skills[key]):
-            g = AG.evidence([self._p("TH_LOGREG_M5_H6"), self._p("TH_HGB_M5_H6")], "SCALPING", "XAUUSD")["groups"][0]
-        self.assertEqual(g["speaker"], "TH_HGB_M5_H6")
+        for skills, speaker in (({"TH_LOGREG_M5_H6": None, "TH_HGB_M5_H6": 0.3}, "TH_HGB_M5_H6"),
+                                ({"TH_LOGREG_M5_H6": None, "TH_HGB_M5_H6": -0.5}, "TH_LOGREG_M5_H6")):
+            with mock.patch.object(AG, "dev_skill", side_effect=lambda inst, key, ver, s=skills: s[key]):
+                g = AG.evidence([self._p("TH_LOGREG_M5_H6"), self._p("TH_HGB_M5_H6")], "SCALPING", "XAUUSD")["groups"][0]
+            self.assertEqual(g["speaker"], speaker)
 
     def test_excluded_ready_without_model_key_has_a_name(self):
         """chunk_23#24: an unrouted READY family record (no model_key) was listed as {'model': None}."""

@@ -141,5 +141,57 @@ class TestTrainhubInferenceHtfStale(InferenceCase):
         self.assertEqual(p["state"], "READY")
 
 
+# ------------------------------------------------------------------ D12 baseline / no-skill model never speaks for a group
+class TestAggregateBaselineNeverSpeaks(unittest.TestCase):
+    def _p(self, key, **kw):
+        from masterquo.modelhub import contract as C
+        d = {"instrument": "XAUUSD", "symbol": "XAUUSD-", "timeframe": "M5", "model_name": key.split("_M5")[0], "model_version": "v1",
+             "task_type": "CLASS_PROBABILITIES", "task": "DIRECTION_H6_M5", "horizon_bars": 6, "unit": "probability", "state": "READY",
+             "result": {"DOWN": 0.2, "FLAT": 0.3, "UP": 0.5}, "data_time": "2026-11-02T10:00:00Z",
+             "calibration": {"method": "t", "status": "CALIBRATED_DEV"}, "extra": {"model_key": key}}
+        d.update(kw)
+        return C.make(**d)
+
+    def _ev(self, skills: dict, preds: list[dict]) -> dict:
+        from masterquo.modelhub import aggregate as AG
+        with mock.patch.object(AG, "dev_skill", side_effect=lambda inst, key, ver: skills.get(key)):
+            return AG.evidence(preds, "SCALPING", "XAUUSD")
+
+    def test_baseline_does_not_speak_over_models_worse_than_it(self):
+        skills = {"TH_BASELINE_M5_H6": 0.0, "TH_LOGREG_M5_H6": -0.01}
+        for order in (["TH_BASELINE_M5_H6", "TH_LOGREG_M5_H6"], ["TH_LOGREG_M5_H6", "TH_BASELINE_M5_H6"]):
+            ev = self._ev(skills, [self._p(k) for k in order])
+            self.assertEqual(len(ev["groups"]), 1)
+            g = ev["groups"][0]
+            self.assertIsNone(g["speaker"])                                          # c8277f4: TH_BASELINE_M5_H6 (0.0 > -0.01)
+            self.assertIsNone(g["direction_edge"])
+            self.assertEqual(g["weight"], 0.0)
+            self.assertIn("bazow", g["reason"])
+            self.assertEqual([x["model"] for x in g["silenced_same_group"]], ["TH_BASELINE_M5_H6", "TH_LOGREG_M5_H6"])
+            self.assertEqual((g["group"], g["role"], g["use"]), ("M5_DIRECTION", "TIMING", "OBSERVATION"))
+
+    def test_model_that_beats_the_baseline_speaks(self):
+        skills = {"TH_BASELINE_M5_H6": 0.0, "TH_LOGREG_M5_H6": 0.02, "TH_HGB_M5_H6": -0.3}
+        g = self._ev(skills, [self._p(k) for k in skills])["groups"][0]
+        self.assertEqual((g["speaker"], g["dev_skill"], g["weight"]), ("TH_LOGREG_M5_H6", 0.02, 0.02))
+        self.assertEqual(g["direction_edge"], 0.3)
+        self.assertEqual([x["model"] for x in g["silenced_same_group"]], ["TH_BASELINE_M5_H6", "TH_HGB_M5_H6"])
+        self.assertNotIn("reason", g)
+
+    def test_baseline_alone_does_not_speak(self):
+        g = self._ev({"TH_BASELINE_M5_H6": None}, [self._p("TH_BASELINE_M5_H6")])["groups"][0]
+        self.assertIsNone(g["speaker"])                                              # c8277f4: the class-frequency baseline spoke
+        self.assertEqual([x["model"] for x in g["silenced_same_group"]], ["TH_BASELINE_M5_H6"])
+
+    def test_unmeasured_model_keeps_its_voice_over_the_baseline(self):
+        """dev skill unknown (gold_candles forecast, Studio import) is not 'worse than the baseline': it still speaks, with weight 0, before the
+        baseline and before a model measured as no better than the baseline."""
+        skills = {"TH_BASELINE_M5_H6": 0.0, "TH_HGB_M5_H6": -0.2}
+        gc = self._p("gold_candles_5m", model_name="gold_candles", task="CANDLE_CLOSE_DIRECTION_H1_M5", horizon_bars=1, extra={"model_key": "gold_candles_5m"})
+        g = self._ev(skills, [self._p("TH_BASELINE_M5_H6"), self._p("TH_HGB_M5_H6"), gc])["groups"][0]
+        self.assertEqual((g["speaker"], g["dev_skill"], g["weight"]), ("gold_candles_5m", None, 0.0))   # c8277f4: TH_BASELINE_M5_H6
+        self.assertEqual([x["model"] for x in g["silenced_same_group"]], ["TH_BASELINE_M5_H6", "TH_HGB_M5_H6"])
+
+
 if __name__ == "__main__":
     unittest.main()
