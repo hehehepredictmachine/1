@@ -285,7 +285,7 @@ class LabService:
                "quality": "OK" if all(v == "OK" for v in fq.values()) else "DEGRADED",
                "warnings": (["MODEL_TECHNICZNY_NA_DANYCH_SYNTETYCZNYCH – nie do decyzji"] if man.get("role") == "fixture_only" else []) +
                            ([] if man.get("verdict") == "HOLDOUT_PASSED" else [f"werdykt badania: {man.get('verdict')}"]) +
-                           # 1.46: library versions differ from training (manifest / unpickling) - shown, never a refusal
+                           # 1.46: library versions differ from training (manifest vs installed) - shown, never a refusal
                            (["ZALEZNOSCI_INNE_NIZ_PRZY_TRENINGU: " + "; ".join(man["dependency_drift"])[:300]] if man.get("dependency_drift") else []) +
                            (["OKNO_SEKWENCJI_Z_ROZGRZEWKA: braki w oknie zastąpione zerami – poza rozkładem treningu"] if seq_warm else []),
                "expires_at": iso(ts(as_of) + TF_SEC["M5"])}
