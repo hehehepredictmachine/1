@@ -8,11 +8,13 @@ Receivers (documented path source -> features -> model -> contract -> receiver -
   * SH setup (sh/service.cycle) - `family_context` for every evaluation (observation). In ASSIST only direction families
     (CLASS_PROBABILITIES) may HOLD a READY setup (READY -> WAIT) when P(opposite side) >= assist_hold_threshold; they never create or
     enlarge an entry. VOL_GARCH in ASSIST adds a volatility scenario to the risk view (sigma move over H bars); limits stay as configured.
+    Any other result type has no ASSIST receiver - set_use refuses the role (ASSIST_NO_RECEIVER, 1.46 arch I0395 / I0472).
   * panel / agent - catalog, status, last predictions.
 """
 from __future__ import annotations
 
 import json
+import logging
 import os
 import subprocess
 import sys
@@ -24,9 +26,20 @@ from . import base as B
 from . import registry
 
 VERSION = "PMW-FAM-SERVICE-1"
+log = logging.getLogger(__name__)
 # 1.46: families whose predict() needs the bars of every leg - _live() has no such path (only training reads the legs from the archive)
 NO_LIVE_PATH = {"PAIR_COINT": "brak ścieżki danych na żywo dla nóg pary (pair_bars) – relacja jest liczona tylko w treningu",
-                "STATARB": "brak ścieżki danych na żywo dla nóg koszyka (basket_bars) – reszty są liczone tylko w treningu"}
+                "STATARB": "brak ścieżki danych na żywo dla nóg koszyka (basket_bars) – reszty są liczone tylko w treningu",
+                # 1.46 arch (I0464): _live() has no position source (exposure, entry price, bars in position) - an active PPO artifact was
+                # BLOCKED_DATA forever, as if the data were only late
+                "RL_PPO": "brak źródła stanu pozycji na żywo (ekspozycja, cena wejścia, świece w pozycji) – propozycja PPO jest liczona tylko "
+                          "w treningu i walidacji"}
+# 1.46 arch (I0395 / I0472): what the role ASSIST of a family record really does. The only receivers of a family record's role are
+# setup_context (CLASS_PROBABILITIES -> HOLD READY -> WAIT; VOLATILITY -> volatility context of the SH view, information) and
+# decision.coordinator.evaluate_models (CLASS_PROBABILITIES, a REGRESSION with result.direction - no family publishes one - and
+# quant_hold). Every other result type had ASSIST accepted with no effect at all.
+ASSIST_EFFECT = {"CLASS_PROBABILITIES": "HOLD_DIRECTION", "VOLATILITY": "CONTEXT_VOL"}
+DELEGATED = ("TH_RF", "TH_XGB", "TH_SVM", "SEQ_GRU_EVENT")   # role / artifact owned by trainhub / MM - the family state is not read
 
 
 class FamilyService:
@@ -47,17 +60,40 @@ class FamilyService:
         return self.cfg_store.get().families
 
     # ------------------------------------------------------------------ catalog / status
+    def assist_effect(self, fid: str) -> str:
+        """1.46 arch (I0395 / I0472): HOLD_DIRECTION | CONTEXT_VOL | NONE - what the role ASSIST of this family's record can do."""
+        if fid in DELEGATED or fid in NO_LIVE_PATH:
+            return "NONE"                                # role owned elsewhere / no live record: ASSIST of the family state has no effect
+        return ASSIST_EFFECT.get(self.fams[fid].TASK_TYPE, "NONE")
+
+    def _event_gru_impl(self) -> tuple[str, str | None]:
+        """1.46 arch (I0477): the Event GRU computes only in the Quant thread (event_gru_provider) and the Quant loop runs only in a mode
+        other than OFF - 'AVAILABLE' without Quant promised a prediction that never came. Read only (status / panel / CLI / inventory);
+        predict() keeps reading the provider exactly as before; a failing probe is NO_SOURCE with its reason, never an exception."""
+        if getattr(self, "event_gru_provider", None) is None:
+            return "NO_SOURCE", "brak dostawcy Event GRU w tym procesie – inferencja działa tylko w wątku Quant działającego bota"
+        live = getattr(self, "event_gru_live", None)
+        if live is None:
+            return "AVAILABLE", None
+        try:
+            on = bool(live())
+        except Exception as exc:  # noqa: BLE001 - e.g. an unreadable quant settings file
+            return "NO_SOURCE", f"stan Quant nieczytelny ({type(exc).__name__}: {exc})"[:200]
+        return ("AVAILABLE", None) if on else ("NO_SOURCE", "Quant wyłączony (tryb OFF) – inferencja Event GRU działa w wątku Quant")
+
     def status(self, fid: str, inst: str) -> dict:
         f = self.fams[fid]
+        eff = self.assist_effect(fid)
+        if fid == "SEQ_GRU_EVENT":
+            ev = f.status_from_mm(inst)
+            impl, why = self._event_gru_impl()
+            return {"implementation": impl, "implementation_reason": why, "artifact": ev["artifact"], "use": "SHADOW" if ev.get("version") else "OFF",
+                    "mm": ev, "assist_gate_violation": None, "assist_effect": eff}
         impl, why = f.implementation()
         if fid in ("TH_RF", "TH_XGB", "TH_SVM"):
             th = f.trainhub_state(inst)
             return {"implementation": impl, "implementation_reason": why, "artifact": th["artifact"], "use": th["use"], "trainhub": th,
-                    "assist_gate_violation": None}                     # trainhub owns the role (no family gate here)
-        if fid == "SEQ_GRU_EVENT":
-            ev = f.status_from_mm(inst)
-            return {"implementation": "AVAILABLE", "artifact": ev["artifact"], "use": "SHADOW" if ev.get("version") else "OFF", "mm": ev,
-                    "assist_gate_violation": None}
+                    "assist_gate_violation": None, "assist_effect": eff}   # trainhub owns the role (no family gate here)
         st = self.store.state(fid, inst)
         runs = self.store.runs(fid, inst)
         active = next((r for r in runs if r["run_id"] == st.get("active")), None)
@@ -78,17 +114,18 @@ class FamilyService:
         return {"implementation": impl, "implementation_reason": why, "artifact": art, "use": use,
                 "active_run": st.get("active"), "runs": len(runs), "last_run": runs[-1]["run_id"] if runs else None,
                 "last_validation": (runs[-1].get("validation") or {}).get("status") if runs else None, "job": job,
-                "assist_gate_violation": gate}
+                "assist_gate_violation": gate, "assist_effect": eff}
 
     def catalog(self, inst: str) -> list[dict]:
         out = []
         for fid, f in self.fams.items():
+            eff = self.assist_effect(fid)
             try:
                 st = self.status(fid, inst)
             except Exception as exc:  # noqa: BLE001
                 st = {"implementation": "ERROR", "implementation_reason": str(exc)[:200], "artifact": "NOT_TRAINED", "use": "OFF",
-                      "assist_gate_violation": None}
-            out.append({**f.capabilities(), "status": st, "data_requirements": f.data_requirements()})
+                      "assist_gate_violation": None, "assist_effect": eff}
+            out.append({**f.capabilities(), "assist_effect": eff, "status": st, "data_requirements": f.data_requirements()})
         return out
 
     def _known(self, fid: str) -> None:
@@ -367,6 +404,16 @@ class FamilyService:
 
     def set_use(self, fid, inst, use) -> dict:
         self._known(fid)
+        if use == "ASSIST" and self.assist_effect(fid) == "NONE":
+            # 1.46 arch (I0395 / I0472): refused before anything is written (API _fam -> 409, CLI -> 3). The gate's own answer first, so
+            # an artifact that is not APPROVED / REAL is told exactly what it was told before. A role ASSIST saved earlier is not lowered
+            # (it has no effect anyway).
+            ok, why = self.store.assist_ok(fid, inst, self.store.state(fid, inst).get("active"))
+            if not ok:
+                raise ValueError(why)
+            raise ValueError(f"ASSIST_NO_RECEIVER: typ wyniku {self.fams[fid].TASK_TYPE} rodziny {fid} nie ma odbiorcy roli ASSIST "
+                             "(wstrzymanie READY -> WAIT działa tylko dla rozkładu kierunku, kontekst ryzyka dla zmienności) – rola bez skutku "
+                             "nie jest nadawana; użyj SHADOW")
         st = self.store.set_use(fid, inst, use)
         self.invalidate(fid, inst)
         return {"ok": True, "state": st}

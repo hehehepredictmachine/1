@@ -181,6 +181,7 @@ class Runtime:
         self.quant = QuantService(self)                                                             # 1.35 PMW Quant Core: own thread, SHADOW by default
         self.evaluation.listeners.append(self.quant.on_candidate)                                  # decision-time features + SHADOW assessment
         self.families.event_gru_provider = lambda inst: self.quant.event_gru.latest.get(inst)      # Event GRU: live path owned by Quant
+        self.families.event_gru_live = lambda: self.quant.mode() != "OFF"                          # 1.46 arch (I0477): status only (read)
         self.arc.quant = self.quant                                                                 # ASSIST only after validation + explicit activation
         self.sh.kronos = self.kronos                                                                # Kronos context in SCALPING / HEDGING
         from .tsfm.service import TsfmService
