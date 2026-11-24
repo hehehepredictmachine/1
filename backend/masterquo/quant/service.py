@@ -303,10 +303,12 @@ class QuantService:
             self._models[(inst, th)] = (ver, model, man)
         return ver, model, man
 
-    def assess(self, cd: dict, *, mode: str | None = None, log_row: bool = False, evidence: dict | None = None) -> dict:
+    def assess(self, cd: dict, *, mode: str | None = None, log_row: bool = False, evidence: dict | None = None,
+               legacy_without_regime: bool = False) -> dict:
         """Assessment of one candidate dict (evaluation SetupCandidate.to_dict()). Cheap: dot products on the published snapshot.
         1.46: features of the CURRENT semantics (features.CURRENT) go to the ledger row / TabICL; a MetaModel gets the input of ITS feature
-        version (features.build_for) - a FEAT-1 artifact exactly the 1.41 build2 input."""
+        version (features.build_for) - a FEAT-1 artifact exactly the 1.41 build2 input. legacy_without_regime (coordinator SH candidate):
+        before 1.46 that candidate had no regime, so a FEAT-1 artifact keeps getting it without one (D4 applies to FEAT-3 only)."""
         mode = mode or self.mode()
         now = self.clock()
         inst = str(cd.get("instrument") or self.instrument())
@@ -358,7 +360,8 @@ class QuantService:
             if fv == F.CURRENT:
                 mfeats = feats
             else:                                       # an artifact of an older feature version: its own input, never the new meaning
-                mfeats = F.build_for(fv, cd, preds)
+                lcd = {**cd, "market_regime": {**(cd.get("market_regime") or {}), "state": None}} if legacy_without_regime else cd
+                mfeats = F.build_for(fv, lcd, preds)
             try:
                 out = M.predict(model, mfeats)
             except M.MetaError as exc:
@@ -443,7 +446,9 @@ class QuantService:
     def coordinator_entry(self, path: str, *, cand: dict | None = None, setup: dict | None = None) -> dict | None:
         base = {"family": "quant:metamodel", "use": "ASSIST", "task_type": "EVENT_PROBABILITY", "data_time": iso_ts(self.clock())}
         if cand is not None:
-            a = self.assess(cand, mode="ASSIST")
+            # 1.46 (D4): the coordinator's SH candidate now carries the regime of its SH cycle (evaluation.contract.sh_candidate - as the
+            # ledger rows the MetaModel learns from); a FEAT-1 artifact keeps the input it had before (that candidate without regime)
+            a = self.assess(cand, mode="ASSIST", legacy_without_regime=(path == "SH"))
         else:
             maxage = float(self.settings.get().get("assessment_max_age_s") or 300)
             sid = str((setup or {}).get("strategy_id") or "")

@@ -237,6 +237,201 @@ class TestFeatureVersioning(unittest.TestCase):
         self.assertEqual((res[0]["n_rows"], res[0]["excluded_older_feature_version"]), (2, 3))
 
 
+# ================================================================================================ D4 (+ versions in the live assessment)
+class StubBridge:
+    synthetic = True
+
+    def bars(self, tf, n=None, include_forming=False):
+        return []
+
+
+def su_ready():
+    return {"strategy": "SCALPING", "signal_id": "SIG-D4", "symbol": "XAUUSD-", "instrument": "XAUUSD", "side": "BUY", "status": "READY",
+            "entry_ref": 2000.0, "sl": 1998.0, "tps": [{"price": 2002.5, "share": 0.5, "name": "TP1"}, {"price": 2004.0, "share": 0.5, "name": "TP2"}],
+            "horizon_minutes": 30, "created_at": 1_794_000_123.0, "costs": {"spread": 0.2, "round_trip_price": 0.3, "commission_known": True},
+            "score": {"value": 64}, "status_reason": ""}
+
+
+class CapturingQuant:
+    def __init__(self):
+        self.cands = []
+
+    def assist_active(self):
+        return True
+
+    def coordinator_predictions(self, inst):
+        return []
+
+    def coordinator_entry(self, path, cand=None, setup=None):
+        self.cands.append((path, cand))
+        return {"family": "quant:metamodel", "use": "ASSIST", "task_type": "EVENT_PROBABILITY", "state": "READY", "data_time": iso(time.time()),
+                "result": {"p": 0.6, "e_net_r": 0.2}, "quant_hold": None}
+
+
+class TestSHCandidateRegimeD4(unittest.TestCase):
+    """Quant training rows build the SH candidate with the regime of the SH snapshot (evaluation/service._sh); the coordinator built the
+    ASSIST candidate with EK.from_sh_setup(su) - no regime, so ctx:regime=* were in every training row and masks at the SH decision."""
+
+    def setUp(self):
+        self.td = TempData()
+        self.addCleanup(self.td.close)
+
+    def coordinator(self, q):
+        from masterquo.config import ConfigStore
+        from masterquo.db.database import Database
+        from masterquo.decision.coordinator import DecisionCoordinator
+        db = Database()
+        db.migrate()
+        c = DecisionCoordinator(db, ConfigStore(), families=SimpleNamespace(predictions=lambda inst: []), instrument_fn=lambda: "XAUUSD")
+        c.quant = q
+        return c
+
+    def test_one_factory_same_features_in_ledger_and_coordinator(self):
+        from masterquo.evaluation import contract as EK
+        from masterquo.quant import features as F
+        snap = {"regime": {"state": "TREND"}}
+        ledger_c = EK.sh_candidate(su_ready(), snap=snap).to_dict()               # what evaluation/service._sh logs
+        q = CapturingQuant()
+        rec = self.coordinator(q).record_sh(su_ready(), None, "PAPER", "acc", None, regime=snap["regime"])
+        self.assertIsNotNone(rec)
+        path, coord_c = q.cands[-1]
+        self.assertEqual(path, "SH")
+        self.assertEqual(coord_c["market_regime"]["state"], "TREND")
+        self.assertEqual(F.build3(coord_c, frozen_preds()), F.build3(ledger_c, frozen_preds()))
+        self.assertEqual(F.build3(coord_c, [])["ctx:regime=TREND"], 1.0)
+
+    def test_evaluation_ledger_uses_the_shared_factory(self):
+        from masterquo.evaluation import contract as EK
+        from masterquo.evaluation import service as ES
+        got = []
+        svc = ES.EvaluationService.__new__(ES.EvaluationService)
+        svc._log = lambda c, prob, extra: got.append(c)
+        with mock.patch.object(EK, "sh_candidate", wraps=EK.sh_candidate) as fac:
+            svc._sh(su_ready(), "XAUUSD", {"regime": {"state": "RANGE"}}, 1.0)
+        self.assertEqual(fac.call_count, 1)
+        self.assertEqual(got[0].market_regime["state"], "RANGE")
+
+    def test_sh_service_passes_the_cycle_regime(self):
+        from masterquo.sh import service as S
+        calls = []
+
+        def new(su, risk, mode, account_key, coord=None, *, regime=None):
+            calls.append(regime)
+
+        def old(su, risk, mode, account_key, coord=None):           # a receiver without the keyword stays valid
+            calls.append("old")
+        self.assertEqual(S._regime_kw(new, {"regime": {"state": "TREND"}}), {"regime": {"state": "TREND"}})
+        self.assertEqual(S._regime_kw(new, None), {"regime": None})
+        self.assertEqual(S._regime_kw(old, {"regime": {"state": "TREND"}}), {})
+        new(su_ready(), None, "PAPER", "a", None, **S._regime_kw(new, {"regime": {"state": "TREND"}}))
+        old(su_ready(), None, "PAPER", "a", None, **S._regime_kw(old, {"regime": {"state": "TREND"}}))
+        self.assertEqual(calls, [{"state": "TREND"}, "old"])
+
+    def test_sh_cycle_records_with_the_snapshot_regime(self):
+        from masterquo.config import ConfigStore
+        from masterquo.db.database import Database
+        from masterquo.sh import config as C
+        from masterquo.sh import service as S
+        from masterquo.sh.service import SHService
+        from test_sh_service import NOW, Bridge, Log, Modes, mk_setup
+        seen = []
+
+        class Arc:
+            def record_sh(self, su, risk, mode, account_key, coord=None, *, regime=None):
+                seen.append((su["signal_id"], regime))
+        svc = SHService(ConfigStore(), Bridge(None, "HEDGING"), Database(), None, Log(), Modes("SIGNALS"), clock=lambda: NOW)
+        svc.arc = Arc()
+        spec = svc.spec(svc.account())
+        s = mk_setup(spec, "SCALPING", "BUY", ref=2000.2, now=NOW)
+        q = {"bid": 2000.0, "ask": 2000.2, "spread": 0.2, "age_s": 0.3, "time": NOW}
+        with mock.patch.object(S.CX, "snapshot", side_effect=lambda *a, **k: {"vol": {"atr_m5": 1.5}, "regime": {"state": "TREND", "v": 2}}), \
+             mock.patch.object(S.SU, "evaluate", side_effect=lambda strat, *a, **k: dict(s) if strat == "SCALPING" else
+                               dict(s, status="NO_TRADE", strategy="HEDGING", signal_id="H")), \
+             mock.patch.object(S.RK, "evaluate", return_value=None):
+            svc.cycle("XAUUSD", {tf: [] for tf in ("M1", "M5", "M15", "H1")}, q, spec, svc.account(), "SIGNALS", NOW, C.load(), svc.executor(spec))
+        self.assertIn((s["signal_id"], {"state": "TREND", "v": 2}), seen)
+
+
+class StubRt:
+    def __init__(self):
+        self.bridge = StubBridge()
+
+
+class TestAssessFeatureVersions(unittest.TestCase):
+    """The live assessment: ledger row = FEAT-3 (with its version); a FEAT-1 artifact gets exactly the pre-1.46 input, a FEAT-3 artifact the
+    new one - for the coordinator SH candidate too (D4 regime only for FEAT-3)."""
+
+    def setUp(self):
+        self.td = TempData()
+        self.addCleanup(self.td.close)
+
+    def service(self):
+        from masterquo.quant.service import QuantService
+        q = QuantService(StubRt())
+        self.preds = [dict(p, available_at=iso(1_794_000_000.0)) for p in frozen_preds()[:7]]        # available before the decision
+        q.pub.current = lambda: {"generation": 7, "instrument": "XAUUSD", "eligible": self.preds, "excluded": [],
+                                 "snapshot": {"status": "OK", "data_kind": "REAL", "snapshot_id": "S"}}
+        q.tabicl.submit = lambda *a, **k: {"state": "DISABLED", "reason": "test"}
+        return q
+
+    def activate(self, task_hash, legacy: bool):
+        from masterquo.quant import metamodel as M
+        res = M.train(synth_rows(), task={"task_hash": task_hash, "event_id": "TP1_BEFORE_STOP"})
+        if legacy:
+            res = as_legacy_artifact(res)
+        M.activate("XAUUSD", task_hash, M.save("XAUUSD", res, spec={"task_hash": task_hash}))
+
+    def cand_dict(self, regime):
+        from masterquo.evaluation import contract as EK
+        return EK.sh_candidate(su_ready(), regime=regime).to_dict()
+
+    def run_assess(self, legacy: bool, *, via_coordinator: bool):
+        from masterquo.quant import events as QE
+        from masterquo.quant import metamodel as M
+        q = self.service()
+        cd = self.cand_dict({"state": "TREND"})
+        th = QE.spec_from_candidate(cd).task_hash()
+        self.activate(th, legacy)
+        seen = []
+        real = M.predict
+
+        def spy(model, feats):
+            seen.append(dict(feats))
+            return real(model, feats)
+        with mock.patch.object(M, "predict", side_effect=spy):
+            if via_coordinator:
+                e = q.coordinator_entry("SH", cand=cd)
+                self.assertEqual(e["state"], "READY", e)
+            else:
+                a = q.assess(cd, log_row=True)
+                self.assertEqual(a["status"], "READY", a)
+        return q, cd, seen[-1]
+
+    def test_feat1_artifact_gets_the_pre_146_input(self):
+        from masterquo.quant import features as F
+        _, cd, feats = self.run_assess(True, via_coordinator=True)
+        before = dict(cd, market_regime={"state": None, "source": "sh.context (RegimeMachine v2)"})      # EK.from_sh_setup(su) before 1.46
+        self.assertEqual(feats, F.build2(before, frozen_preds()[:7]))
+        self.assertNotIn("ctx:regime=TREND", feats)
+        self.assertEqual(feats["st:mm:kalman_cross:aligned"], 1.0)
+        self.assertIn("ctx:dxy_corr_72", feats)
+        _, cd, feats = self.run_assess(True, via_coordinator=False)                # ledger path: regime was there before too
+        self.assertEqual(feats, F.build2(cd, frozen_preds()[:7]))
+
+    def test_feat3_artifact_gets_the_fixed_input_and_the_row_records_its_version(self):
+        from masterquo.quant import features as F
+        _, cd, feats = self.run_assess(False, via_coordinator=True)
+        self.assertEqual(feats, F.build3(cd, frozen_preds()[:7]))
+        self.assertEqual(feats["ctx:regime=TREND"], 1.0)
+        self.assertEqual(feats["st:mm:kalman_cross:aligned"], 0.0)
+        self.assertNotIn("ctx:dxy_corr_72", feats)
+        q, cd, feats = self.run_assess(False, via_coordinator=False)
+        with q.ledger._lock:
+            row = q.ledger.c.execute("SELECT feature_version, features_json FROM rows").fetchone()
+        self.assertEqual(row[0], F.CURRENT)
+        self.assertEqual(json.loads(row[1]), F.build3(cd, frozen_preds()[:7]))
+
+
 # ================================================================================================ D11
 class TestMonteCarloAdapterD11(unittest.TestCase):
     """quant/adapters.analysis read st['last'] / st['result'] - keys MonteCarloService.status() never has: a dead read, a reason that did
