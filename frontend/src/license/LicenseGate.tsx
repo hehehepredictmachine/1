@@ -3,6 +3,7 @@
 // GET /api/v1/license/status (co 5 min i po każdym 402), POST /api/v1/license/activate, POST /api/v1/license/require (przed trybem FOREX).
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
 import { apiGet, apiSend, initSession } from "../api";
+import { BRAND } from "../brand";
 import LicenseScreen from "./LicenseScreen";
 import "./license.css";
 
@@ -48,7 +49,8 @@ export default function LicenseGate({ children }: { children: ReactNode }) {
     return () => { window.clearInterval(t); window.removeEventListener("pmw-license-required", lost); };
   }, [refresh]);
 
-  if (!st) return <div className="pmw-loading" role="status">{err ? `APOLLO23 · brak połączenia z lokalnym backendem (${err})` : "PEPEMARKETWIZARD · sprawdzanie licencji…"}</div>;
+  // 1.46: display name from brand.ts on the first screen (was the old PEPEMARKETWIZARD while the error variant already said APOLLO23)
+  if (!st) return <div className="pmw-loading" role="status">{err ? `${BRAND.toUpperCase()} · brak połączenia z lokalnym backendem (${err})` : `${BRAND.toUpperCase()} · sprawdzanie licencji…`}</div>;
   if (st.required && !st.valid) return <LicenseScreen status={st} onActivated={(x) => setSt(x)} />;
   return (
     <LicenseCtx.Provider value={{ st, refresh, openActivation: () => setModal(true) }}>

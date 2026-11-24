@@ -4,6 +4,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { apiGet, apiSend } from "../../api";
 import { BRAND, GAME_BRAND } from "../../brand";
+import { parseNumText } from "../../components/numText";
 import "./tlg.css";
 
 type Tab = "character" | "coach" | "quests" | "journal" | "calendar" | "skills" | "academy" | "simulator" | "lifestyle" | "leaderboard";
@@ -19,6 +20,8 @@ export default function TraderLifeGame({ onBack }: { onBack(): void }) {
   const [msg, setMsg] = useState<string>("");
   const reload = useCallback(() => apiGet("/api/v1/tlg/state").then(setSt).catch((e) => setMsg(String(e.message || e))), []);
   useEffect(() => { void reload(); }, [reload]);
+  // 1.46: act() resolves to null on an error (message already shown) – callers close forms / clear inputs / drop the session only
+  // for a non-null result (a failed save closed the journal form, cleared the coach text and hid a still ACTIVE simulator session)
   const act = async (p: Promise<any>, ok?: string) => {
     try { const r = await p; if (ok) setMsg(ok); await reload(); return r; } catch (e: any) { setMsg("Błąd: " + (e.message || e)); return null; }
   };
@@ -58,8 +61,12 @@ function CreateCharacter({ onDone }: { onDone(m: string): void }) {
   const [meta, setMeta] = useState<any>(null);
   const [f, setF] = useState({ username: "", class_id: "THE_ROOKIE", difficulty: "EASY", currency: "USD", virtual_capital: 10000 });
   const [err, setErr] = useState("");
-  useEffect(() => { apiGet("/api/v1/tlg/meta").then(setMeta).catch(() => undefined); }, []);
-  if (!meta) return null;
+  // 1.46: an error of /tlg/meta (e.g. 402 licence) left an empty page without a message – show it with a retry
+  const [metaErr, setMetaErr] = useState("");
+  const loadMeta = useCallback(() => { setMetaErr(""); apiGet("/api/v1/tlg/meta").then(setMeta).catch((e) => setMetaErr(String(e?.message || e))); }, []);
+  useEffect(loadMeta, [loadMeta]);
+  if (!meta) return metaErr ? <section className="panel tlg-create" data-testid="tlg-create-error"><p className="bad small">Nie udało się wczytać klas postaci: {metaErr}</p>
+    <button type="button" className="btn" onClick={loadMeta}>Spróbuj ponownie</button></section> : null;
   const save = async () => { try { await apiSend("POST", "/api/v1/tlg/profile", f); onDone("Postać utworzona."); } catch (e: any) { setErr(e.message); } };
   return (
     <section className="panel tlg-create" data-testid="tlg-create"><div className="panel-head"><b>Stwórz postać</b></div>
@@ -116,7 +123,7 @@ function Coach({ act }: { act: Act }) {
     <h4>Pamięć coacha (Twoja, edytowalna)</h4>
     <ul>{c.memory.map((m: any) => <li key={m.id}>{m.text} <button type="button" className="btn ghost" onClick={() => act(apiSend("DELETE", "/api/v1/tlg/coach/memory?memory_id=" + m.id)).then(load)}>usuń</button></li>)}</ul>
     <input value={t} onChange={(e) => setT(e.target.value)} placeholder="np. handluję tylko sesję londyńską" />
-    <button type="button" className="btn" onClick={() => act(apiSend("POST", "/api/v1/tlg/coach/memory", { text: t })).then(() => { setT(""); load(); })}>Zapamiętaj</button>
+    <button type="button" className="btn" onClick={() => act(apiSend("POST", "/api/v1/tlg/coach/memory", { text: t })).then((r) => { if (r) { setT(""); load(); } })}>Zapamiętaj</button>
     <button type="button" className="btn ghost" onClick={() => act(apiSend("DELETE", "/api/v1/tlg/coach/memory")).then(load)}>Wyczyść pamięć</button></section>);
 }
 
@@ -143,11 +150,12 @@ function Journal({ act }: { act: Act }) {
     {edit && <section className="panel"><div className="panel-head"><b>Wpis: {edit.ref}</b></div>
       {(["setup", "reason", "emotion_before", "emotion_after", "lesson"] as const).map((k) =>
         <label key={k}>{k} <input value={edit[k] || ""} onChange={(e) => setEdit({ ...edit, [k]: e.target.value })} /></label>)}
-      <label>Zgodnie z regułami <select value={String(edit.rule_compliance ?? "")} onChange={(e) => setEdit({ ...edit, rule_compliance: e.target.value === "" ? undefined : e.target.value === "true" })}>
+      {/* 1.46: "—" sends null - undefined was dropped by JSON.stringify and the stored true/false came back after saving */}
+      <label>Zgodnie z regułami <select value={String(edit.rule_compliance ?? "")} onChange={(e) => setEdit({ ...edit, rule_compliance: e.target.value === "" ? null : e.target.value === "true" })}>
         <option value="">—</option><option value="true">tak</option><option value="false">nie</option></select></label>
       <label>Ocena wykonania 0–10 <input type="number" min={0} max={10} value={edit.review_score ?? ""} onChange={(e) => setEdit({ ...edit, review_score: e.target.value === "" ? null : Number(e.target.value) })} /></label>
       <label>Błędy (po przecinku) <input value={(edit.mistakes || []).join(", ")} onChange={(e) => setEdit({ ...edit, mistakes: e.target.value.split(",").map((x) => x.trim()).filter(Boolean) })} /></label>
-      <button type="button" className="btn" onClick={() => { const { ref, ...body } = edit; void act(apiSend("PUT", "/api/v1/tlg/journal/" + encodeURIComponent(ref), body), "Wpis zapisany.").then(() => { setEdit(null); load(); }); }}>Zapisz</button></section>}
+      <button type="button" className="btn" onClick={() => { const { ref, ...body } = edit; void act(apiSend("PUT", "/api/v1/tlg/journal/" + encodeURIComponent(ref), body), "Wpis zapisany.").then((r) => { if (r) { setEdit(null); load(); } }); }}>Zapisz</button></section>}
     <section className="panel"><div className="panel-head"><b>Notatka: plan / analiza / przegląd tygodnia</b></div>
       <select value={note.kind} onChange={(e) => setNote({ ...note, kind: e.target.value })}><option value="PLAN">Plan dnia</option><option value="ANALYSIS">Analiza wykresu</option><option value="WEEKLY">Przegląd tygodnia</option></select>
       <textarea rows={4} value={note.text} onChange={(e) => setNote({ ...note, text: e.target.value })} placeholder="min. 40 znaków" />
@@ -182,7 +190,16 @@ function Academy({ act }: { act: Act }) {
   const [ans, setAns] = useState<Record<number, number[]>>({});
   const [risk, loadRisk] = useLoad<any>("/api/v1/tlg/academy/risk");
   const [ra, setRa] = useState("");
+  const [raErr, setRaErr] = useState("");
   if (!a) return null;
+  // 1.46: Number("7,78") = NaN -> JSON null -> a correct answer typed with a decimal comma was graded wrong; an empty field sent 0
+  const checkRisk = () => {
+    const x = parseNumText(ra);
+    if (x == null) { setRaErr(x === null ? "Wpisz odpowiedź (liczbę jednostek)." : `„${ra}” to nie jest liczba – np. 7,78 albo 7.78.`); return; }
+    setRaErr("");
+    void act(apiSend("POST", "/api/v1/tlg/academy/risk", { exercise_id: risk.exercise_id, answer: x }))
+      .then((r) => { if (r) { alert(r.correct ? "Poprawnie." : `Niepoprawnie – oczekiwano ${r.expected}`); setRa(""); loadRisk(); } });
+  };
   return (<div data-testid="tlg-academy">{a.levels.map((L: any) => <section className="panel" key={L.level}>
     <div className="panel-head"><b>Poziom {L.level} — {L.name}</b> <span className="small">{Math.round(L.progress * 100)}% {L.passed_quiz ? "· test zaliczony" : ""}</span></div>
     {L.lessons.map((ls: any) => <details key={ls.id}><summary>{ls.completed ? "✓ " : ""}{ls.title}</summary><p>{ls.body}</p><p className="small"><b>Przykład:</b> {ls.example}</p>
@@ -194,8 +211,8 @@ function Academy({ act }: { act: Act }) {
     <button type="button" className="btn" onClick={() => act(apiSend("POST", "/api/v1/tlg/academy/quiz/" + L.level, { answers: ans[L.level] || [] })).then((r) => { if (r) alert(`Wynik: ${r.correct}/${L.quiz.length} – ${r.passed ? "zaliczony" : "niezaliczony"}`); load(); })}>Sprawdź test</button>
   </section>)}
     {risk && <section className="panel"><div className="panel-head"><b>Ćwiczenie z ryzyka</b></div><p>{risk.question}</p>
-      <input value={ra} onChange={(e) => setRa(e.target.value)} /><button type="button" className="btn" onClick={() => act(apiSend("POST", "/api/v1/tlg/academy/risk", { exercise_id: risk.exercise_id, answer: Number(ra) }))
-        .then((r) => { if (r) alert(r.correct ? "Poprawnie." : `Niepoprawnie – oczekiwano ${r.expected}`); setRa(""); loadRisk(); })}>Sprawdź</button></section>}
+      <input value={ra} inputMode="decimal" onChange={(e) => setRa(e.target.value)} /><button type="button" className="btn" onClick={checkRisk}>Sprawdź</button>
+      {raErr && <p className="bad small">{raErr}</p>}</section>}
     <p className="small muted">{a.source}</p></div>);
 }
 
@@ -203,22 +220,34 @@ function Simulator({ act }: { act: Act }) {
   const [sid, setSid] = useState<number | null>(null);
   const [v, setV] = useState<any>(null);
   const [f, setF] = useState({ symbol: "", tf: "H1", size: 1, sl: "", tp: "" });
-  const run = async (p: Promise<any>) => { const r = await act(p); if (r && r.id) { setSid(r.id); setV(r); } };
+  const [ferr, setFerr] = useState("");
+  const run = async (p: Promise<any>) => { const r = await act(p); if (r && r.id) { setSid(r.id); setV(r); } return r; };
+  // 1.46: the session id lived only in this tab – after a tab switch the ACTIVE session stayed on the server unreachable; offer to resume it
+  const [sims, loadSims] = useLoad<any>("/api/v1/tlg/sim");
+  const resumable = (sims?.items || []).find((x: any) => x.status === "ACTIVE");
+  // 1.46: "2400,5" -> Number() = NaN -> JSON null -> the virtual position was opened WITHOUT SL/TP; comma accepted, unreadable text blocks the order
+  const open = (side: "BUY" | "SELL") => {
+    const sl = parseNumText(f.sl), tp = parseNumText(f.tp);
+    if (sl === undefined || tp === undefined) { setFerr(`Niepoprawna wartość ${sl === undefined ? "SL" : "TP"} – wpisz liczbę (np. 2400,5) albo zostaw pole puste.`); return; }
+    setFerr("");
+    void run(apiSend("POST", `/api/v1/tlg/sim/${sid}/open`, { side, size: f.size, sl, tp }));
+  };
   const last = v?.bars?.[v.bars.length - 1];
   return (<section className="panel" data-testid="tlg-sim"><div className="panel-head"><b>Symulator historyczny</b> <span className="small muted">{v?.isolation}</span></div>
     {!sid ? <div><input placeholder="symbol (domyślnie z ustawień)" value={f.symbol} onChange={(e) => setF({ ...f, symbol: e.target.value })} />
       <select value={f.tf} onChange={(e) => setF({ ...f, tf: e.target.value })}>{["M5", "M15", "H1", "H4", "D1"].map((t) => <option key={t}>{t}</option>)}</select>
-      <button type="button" className="btn" onClick={() => run(apiSend("POST", "/api/v1/tlg/sim", { symbol: f.symbol || undefined, tf: f.tf }))}>Start sesji</button></div>
+      <button type="button" className="btn" onClick={() => run(apiSend("POST", "/api/v1/tlg/sim", { symbol: f.symbol || undefined, tf: f.tf }))}>Start sesji</button>
+      {resumable && <button type="button" className="btn ghost" onClick={() => run(apiGet(`/api/v1/tlg/sim/${resumable.id}`))}>Wznów sesję #{resumable.id} ({resumable.symbol} {resumable.tf})</button>}</div>
       : v && <div>
         <p className="small">{v.symbol} {v.tf} · odsłonięte świece: {v.bars.length} · ostatnie zamknięcie: {fmt(last?.c, 5)} · wynik: {fmt(v.simulated_pnl)} · saldo wirtualne: {fmt(v.virtual_balance)}</p>
         <MiniChart bars={v.bars.slice(-120)} />
         <div className="tlg-row"><button type="button" className="btn" onClick={() => run(apiSend("POST", `/api/v1/tlg/sim/${sid}/step`, { n: 1 }))}>+1 świeca</button>
           <button type="button" className="btn" onClick={() => run(apiSend("POST", `/api/v1/tlg/sim/${sid}/step`, { n: 10 }))}>+10 świec</button>
           <input type="number" value={f.size} onChange={(e) => setF({ ...f, size: Number(e.target.value) })} title="wielkość wirtualna" />
-          <input placeholder="SL" value={f.sl} onChange={(e) => setF({ ...f, sl: e.target.value })} /><input placeholder="TP" value={f.tp} onChange={(e) => setF({ ...f, tp: e.target.value })} />
-          {(["BUY", "SELL"] as const).map((side) => <button key={side} type="button" className="btn ghost" onClick={() => run(apiSend("POST", `/api/v1/tlg/sim/${sid}/open`,
-            { side, size: f.size, sl: f.sl ? Number(f.sl) : null, tp: f.tp ? Number(f.tp) : null }))}>{side} (wirtualnie)</button>)}
-          <button type="button" className="btn ghost" onClick={() => run(apiSend("POST", `/api/v1/tlg/sim/${sid}/finish`)).then(() => setSid(null))}>Zakończ sesję</button></div>
+          <input placeholder="SL" inputMode="decimal" value={f.sl} onChange={(e) => setF({ ...f, sl: e.target.value })} /><input placeholder="TP" inputMode="decimal" value={f.tp} onChange={(e) => setF({ ...f, tp: e.target.value })} />
+          {(["BUY", "SELL"] as const).map((side) => <button key={side} type="button" className="btn ghost" onClick={() => open(side)}>{side} (wirtualnie)</button>)}
+          <button type="button" className="btn ghost" onClick={() => run(apiSend("POST", `/api/v1/tlg/sim/${sid}/finish`)).then((r) => { if (r) { setSid(null); loadSims(); } })}>Zakończ sesję</button></div>
+        {ferr && <p className="bad small">{ferr}</p>}
         <table className="tlg-table"><thead><tr><th>#</th><th>Strona</th><th>Wejście</th><th>SL</th><th>TP</th><th>Wyjście</th><th>Wynik</th><th /></tr></thead>
           <tbody>{v.trades.map((t: any) => <tr key={t.id}><td>{t.id}</td><td>{t.side}</td><td>{fmt(t.entry, 5)}</td><td>{fmt(t.sl, 5)}</td><td>{fmt(t.tp, 5)}</td>
             <td>{t.closed_idx == null ? "otwarta" : `${fmt(t.exit, 5)} (${t.reason})`}</td><td>{fmt(t.pnl)}</td>

@@ -56,6 +56,11 @@ export default function TrainingCenterPanel() {
   const saveComm = () => apiSend("PUT", "/api/v1/pepe-training/settings", comm || {}).then(() => { setComm(null); setMsg("Zapisano prowizję – użyje jej następny trening."); void load(); })
     .catch((e) => setMsg("BŁĄD: " + String(e?.message || e)));
   const fmtC = (x: number | null | undefined) => (x == null ? "z historii transakcji" : `${x} / lot / stronę`);
+  // 1.46: remove reported nothing – ok=false (the item has just started, it is no longer in the queue) and network errors were silent
+  // (the latter as an unhandled rejection)
+  const remove = (q: any) => apiSend("POST", "/api/v1/pepe-training/remove", { id: q.id })
+    .then((r: any) => { setMsg(r?.ok ? `Usunięto z kolejki: ${q.name}` : `${q.name} – nie ma go już w kolejce (trening wystartował albo się zakończył); trwający trening zatrzymasz przyciskiem ZATRZYMAJ.`); void load(); })
+    .catch((e) => setMsg("BŁĄD: " + String(e?.message || e)));
   const showLog = () => (log ? setLog(null) : apiGet<any>("/api/v1/pepe-training/log?lines=120").then((r) => setLog(r.center || [])).catch(() => setLog([])));
 
   const units = v?.units || [];
@@ -113,7 +118,7 @@ export default function TrainingCenterPanel() {
         </>) : <div className="dim">Nic się teraz nie trenuje.{v?.pipeline_running ? ` Trwa trening uruchomiony poza panelem (${v.pipeline_running}).` : ""}</div>}
         {!!v?.queue?.length && <ol className="ptc-queue">{v.queue.map((q: any) => (
           <li key={q.id}>{q.name}<button type="button" className="ptc-x" aria-label={"Usuń z kolejki: " + q.name}
-            onClick={() => apiSend("POST", "/api/v1/pepe-training/remove", { id: q.id }).then(load)}>✕</button></li>))}</ol>}
+            onClick={() => void remove(q)}>✕</button></li>))}</ol>}
       </section>
 
       <div className="ptc-sum">

@@ -9,11 +9,12 @@ import LicensePanel from "./LicensePanel";
 // 1.44.0: generator licencji tylko w buildzie właściciela – w buildzie klienta (PMW_EDITION=CLIENT) ten import znika przy kompilacji
 const LicenseGeneratorPanel = __PMW_EDITION__ === "OWNER" ? lazy(() => import("./LicenseGeneratorPanel")) : null;
 import TrainingCenterPanel from "./TrainingCenterPanel";
+import { BRAND } from "../../brand";
 import "./system.css";
 
 export type SysPanel = "settings" | "mode" | "stop" | "diagnostics" | "training" | "license";
 const TABS: [SysPanel, string][] = [["settings", "USTAWIENIA"], ["mode", "TRYB PRACY"], ["stop", "STOP"], ["diagnostics", "DIAGNOSTYKA"],
-  ["training", "CENTRUM TRENINGOWE PEPE"], ["license", "LICENCJA"]];
+  ["training", `CENTRUM TRENINGOWE ${BRAND.toUpperCase()}`], ["license", "LICENCJA"]];   // 1.46: display name, not the old "PEPE" (id "training" unchanged)
 
 export default function SystemDrawer({ panel, onPanel, onClose }: { panel: SysPanel; onPanel(p: SysPanel): void; onClose(): void }) {
   const ref = useRef<HTMLDivElement>(null);

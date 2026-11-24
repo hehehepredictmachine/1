@@ -18,6 +18,9 @@ const normHwid = (s: string) => s.replace(/\s+/g, "").toUpperCase();
 const today = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
 const when = (iso: string | null | undefined) => (iso ? new Date(iso).toLocaleString("pl-PL", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "");
 const errOf = (e: any) => String(e?.message || e);
+// 1.46: /check echoes "u" / "hw" of ANY pasted key (also an unsigned, crafted one) – an object or list there crashed the whole app
+// ("Objects are not valid as a React child"); only text is shown.
+const txt = (v: unknown): string | null => (typeof v === "string" ? v : null);
 const FIELDS = ["user", "hwid", "validity", "note", "keys", "key_file", "key", "crypto"];
 const splitErr = (e: any): [string, string] => { const m = errOf(e); const i = m.indexOf(": "); const f = m.slice(0, i); return i > 0 && FIELDS.includes(f) ? [f, m.slice(i + 2)] : ["", m]; };
 
@@ -231,8 +234,8 @@ export default function LicenseGeneratorPanel() {
         {chkRes && <dl className="sys-kv lic-res" data-testid="lic-check-out">
           <dt>Wynik</dt><dd><span className={cls("sys-st", chkRes.valid ? "ok" : "bad")}>{chkRes.valid ? "KLUCZ WAŻNY" : "KLUCZ NIEWAŻNY"}</span></dd>
           <dt>Podpis</dt><dd><span className={cls("sys-st", chkRes.signature_ok ? "ok" : "bad")}>{chkRes.signature_ok ? "POPRAWNY" : "NIEPRAWIDŁOWY"}</span></dd>
-          <dt>Użytkownik</dt><dd>{chkRes.user ?? "—"}</dd>
-          <dt>HWID</dt><dd className="lic-mono">{chkRes.hwid ?? (chkRes.format_ok ? "bez przypisania" : "—")}{chkRes.this_computer != null && <i className="dim"> · {chkRes.this_computer ? "ten komputer" : "inny komputer"}</i>}</dd>
+          <dt>Użytkownik</dt><dd>{txt(chkRes.user) ?? "—"}</dd>
+          <dt>HWID</dt><dd className="lic-mono">{txt(chkRes.hwid) ?? (chkRes.format_ok && chkRes.hwid == null ? "bez przypisania" : "—")}{chkRes.this_computer != null && <i className="dim"> · {chkRes.this_computer ? "ten komputer" : "inny komputer"}</i>}</dd>
           <dt>Wydana</dt><dd>{when(chkRes.iat_iso) || "—"}</dd>
           <dt>Wygasa</dt><dd>{chkRes.perpetual ? "bezterminowa" : chkRes.exp_iso ? `${when(chkRes.exp_iso)}${chkRes.expired ? " · WYGASŁA" : ""}` : "—"}</dd>
           {!!chkRes.errors.length && <><dt>Uwagi</dt><dd className="bad">{chkRes.errors.join(" · ")}</dd></>}</dl>}

@@ -33,7 +33,9 @@ export default function LicensePanel() {
       </section>
       <div className="lic-btns">
         <button type="button" className="act on" onClick={openActivation} data-testid="license-change">ZMIEŃ KLUCZ</button>
-        <button type="button" className="act" onClick={async () => { await refresh(true); setMsg("Sprawdzono licencję."); }}>SPRAWDŹ PONOWNIE</button>
+        {/* 1.46: refresh() returns null (and keeps the old state) when the bot cannot be reached – that is not "checked" */}
+        <button type="button" className="act" onClick={async () => { const x = await refresh(true);
+          setMsg(x ? "Sprawdzono licencję." : "Nie udało się sprawdzić licencji – brak połączenia z botem. Pokazany stan jest z ostatniego sprawdzenia."); }}>SPRAWDŹ PONOWNIE</button>
       </div>
       {msg && <p className="sys-note" role="status">{msg}</p>}
     </div>);
