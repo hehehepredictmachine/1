@@ -184,5 +184,78 @@ class TestTrainAllHelp(unittest.TestCase):
         self.assertNotIn("ignorowan", out)
 
 
+# ============================================================================================== I0658 / I0666 / I0012 model map + cards
+class TestModelMapFromRegistry(unittest.TestCase):
+    """I0666 (+I0673): the trainhub loop of tools/model_map.py was a hand list of 4 models (no TH_RF / TH_SVM). I0658: the trainer text said
+    `trainhub train|full` for every model although without --models only pipeline.DEFAULTS['models'] are trained. I0012: the map was a hand
+    list (29 rows, no Kronos/TSFM/MM/...), the family cards inherited TF/horizon of the family adapter (TH_XGB 'M5 / 6')."""
+
+    @classmethod
+    def setUpClass(cls):
+        import importlib
+        cls.td = _env.TempData()
+        import model_map
+        cls.MM = importlib.reload(model_map)
+        from masterquo.quant import inventory as QI
+        cls.inv = QI.build()
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.td.close()
+
+    def test_i0666_every_trainhub_model_has_an_element(self):
+        from masterquo.trainhub import learn
+        ids = {e["id"] for e in self.MM.ELEMENTS}
+        self.assertLessEqual(set(learn.MODELS), ids, set(learn.MODELS) - ids)
+
+    def test_i0658_trainer_text_says_how_non_default_models_are_trained(self):
+        from masterquo.trainhub import learn, pipeline
+        th = {e["id"]: e for e in self.MM.ELEMENTS if e["id"] in learn.MODELS}
+        self.assertEqual(set(th), set(learn.MODELS))
+        for mid, e in th.items():
+            if mid in pipeline.DEFAULTS["models"]:
+                self.assertIn("domyślny zestaw bez --models", e["trainer"], mid)
+            else:
+                self.assertIn(f"--models {mid}", e["trainer"], mid)
+                self.assertIn("--profile", e["trainer"], mid)
+                self.assertIn("NIE w domyślnym zestawie", e["trainer"], mid)
+
+    def test_i0012_every_registry_producer_is_in_the_map(self):
+        m = self.MM.build(self.inv)
+        self.assertEqual(m["schema"], "mq-model-map-2")
+        ids = [e["id"] for e in m["elements"]]
+        self.assertEqual(len(ids), len(set(ids)))
+        self.assertEqual(set(ids), {e["id"] for e in self.inv["entries"] if e["category"] != "GROUP"})
+        for cid in ("tsfm:tirex2", "trainhub:TH_RF", "trainhub:TH_SVM", "kronos:Kronos-small", "mm:event_engine_dir3", "quant:tabicl_v2"):
+            self.assertIn(cid, ids)
+        keys = {"id", "name", *self.MM.FIELDS}
+        for e in m["elements"] + m["outside_registry"]:
+            self.assertLessEqual(keys, set(e), e["id"])              # mq-model-map-1 element keys kept
+
+    def test_i0012_overlay_folded_by_canonical_id_and_registry_tf(self):
+        m = self.MM.build(self.inv)
+        by = {e["id"]: e for e in m["elements"]}
+        self.assertEqual(by["ml:legacy_s01_s12"]["legacy_ids"], ["LEGACY_ML_DT", "LEGACY_ML_XGB"])
+        self.assertEqual(by["trainhub:TH_XGB"]["legacy_ids"], ["TH_XGB"])
+        self.assertEqual(by["trainhub:TH_XGB"]["tf"], "M1, M5, M15, M30")          # registry, not the overlay text
+        self.assertIn("--models TH_XGB", by["trainhub:TH_XGB"]["trainer"])
+        self.assertEqual(by["lab:LOGREG"]["legacy_ids"], ["LAB_LOGREG"])
+        outside = {e["id"] for e in m["outside_registry"]}
+        self.assertEqual(outside, {"SCALP_PROFILE", "LAB_MARKOV", "LAB_ACD", "STRATEGIES_S01_S12"})
+        md = self.MM.to_markdown(m)
+        for e in m["elements"]:
+            self.assertIn(f"## {e['id']} – ", md)
+        self.assertIn("# Poza rejestrem kanonicznym", md)
+
+    def test_i0012_alias_family_cards_take_tf_and_horizon_from_registry(self):
+        import model_docs as MD
+        reg = MD._registry()
+        cat = {f["id"]: f for f in MD._catalog()}
+        self.assertEqual(MD._tf_h(cat["TH_XGB"], reg), "M1, M5, M15, M30 / h świec (per paczka)")
+        self.assertEqual(MD._tf_h(cat["SEQ_GRU_EVENT"], reg), "EVENT / 2 jednostki zdarzeń (16 zdarzeń/jednostka)")
+        self.assertEqual(MD._tf_h(cat["TS_ARIMA"], reg), "M5 / 1, 3, 5")                    # own family: unchanged
+        self.assertEqual(MD._tf_h(cat["MICROSTRUCTURE"], reg), "– / brak (pomiar stanu)")
+
+
 if __name__ == "__main__":
     unittest.main()

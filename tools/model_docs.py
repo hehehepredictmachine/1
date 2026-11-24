@@ -32,6 +32,25 @@ def _catalog():
     return FamilyService(ConfigStore()).catalog("XAUUSD")
 
 
+def _registry() -> dict:
+    """1.46 (I0012): canonical registry (quant/inventory.build(), offline) by canonical id - the source of TF / horizon of a family that
+    is only an ALIAS of another producer (TH_RF/TH_SVM/TH_XGB = trainhub, SEQ_GRU_EVENT = MM event engine)."""
+    from masterquo.quant import inventory as QI
+    return {e["id"]: e for e in QI.build()["entries"]}
+
+
+def _tf_h(f: dict, reg: dict, empty: str = "brak (pomiar stanu)") -> str:
+    """'TF / horizons' of a family card. An alias family (quant/ids resolves it to a non-family producer) takes both from the registry
+    entry of that producer - its adapter declares one illustrative TF/horizon (TH_XGB 'M5 / 6', SEQ_GRU_EVENT 'EVENT / 1') while the
+    producer trains per package / per event unit. A family of its own keeps its declared TF and horizons."""
+    from masterquo.quant import ids as I
+    cid = I.resolve(f["id"])
+    e = reg.get(cid) if cid and not cid.startswith("family:") else None
+    if e is not None:
+        return f"{', '.join(e.get('timeframes') or []) or f.get('tf') or '–'} / {e.get('horizon') or empty}"
+    return f"{f.get('tf') or '–'} / {', '.join(map(str, f.get('horizons') or [])) or empty}"
+
+
 def _req(d: dict | None) -> str:
     d = d or {}
     parts = [d.get("kind") or "–"]
@@ -50,11 +69,12 @@ def main() -> int:
     mat = REG.matrix()
     (ROOT / "docs" / "MODEL_DATA_MATRIX.json").write_text(json.dumps(mat, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     cat = _catalog()
+    reg = _registry()
     # ---------------------------------------------------------------- integration map
     L = ["# Mapa integracji modeli – 1.33.0 (PMW-FAM-1)", "", "Wygenerowane przez `tools/model_docs.py` z katalogu `FamilyService.catalog()`.", "",
          f"Role: {ROLE_RULES}", "", "| Rodzina | Nazwa | Zadanie / jednostka | TF / horyzonty | Środowisko | Zależności | Odbiorcy |", "|---|---|---|---|---|---|---|"]
     for f in cat:
-        L.append(f"| `{f['id']}` | {f['name']} | {f['task_type']} / {f['unit']} | {f.get('tf') or '–'} / {', '.join(map(str, f.get('horizons') or [])) or '–'} | "
+        L.append(f"| `{f['id']}` | {f['name']} | {f['task_type']} / {f['unit']} | {_tf_h(f, reg, '–')} | "
                  f"{f['runtime']} | {', '.join(f.get('deps') or []) or '–'} | {'<br>'.join(f.get('receivers') or [])} |")
     L += ["", "## Gdzie prognozy trafiają w działającym bocie", "",
           "* **SCALPING / HEDGING** – `SHService.evaluate` → `FamilyService.setup_context` (kontekst w setupie, `family_context`) i "
@@ -90,7 +110,7 @@ def main() -> int:
         L = [f"# Karta modelu – {f['id']}", "", f"**{f['name']}**", "",
              "| Pole | Wartość |", "|---|---|",
              f"| Rodzaj | {f['kind']} ({f.get('fit_label')}) |", f"| Zadanie | {f['task']} – typ PMW-PRED-2 `{f['task_type']}`, jednostka `{f['unit']}` |",
-             f"| Interwał / horyzonty | {f.get('tf') or '–'} / {', '.join(map(str, f.get('horizons') or [])) or 'brak (pomiar stanu)'} |",
+             f"| Interwał / horyzonty | {_tf_h(f, reg)} |",
              f"| Środowisko | {f['runtime']} ({', '.join(f.get('deps') or []) or 'bez dodatkowych bibliotek'}) |",
              f"| Dane | {_req(f.get('data_requirements'))} |", f"| Odbiorcy | {', '.join(f.get('receivers') or [])} |",
              f"| Role | {ROLE_RULES} |", "",
