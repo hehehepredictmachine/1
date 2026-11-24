@@ -1,6 +1,7 @@
 """One-shot worker: python -m deep_runtime.worker <request.json> <response.json>
 
-ops: health | train_seq | predict_seq | train_ppo | predict_ppo | nlp_predict. Inputs / outputs are files in the run directory given in
+ops: health | train_seq | predict_seq | train_ppo | predict_ppo | nlp_predict (experimental, NOT CONNECTED - no caller in the bot in
+1.46). Inputs / outputs are files in the run directory given in
 the request (npz arrays prepared by the bot with the shared feature code). Training never touches a broker connection; PPO acts only in
 the replay environment. Every error is returned as {"ok": false, "error": ...} with exit code 0 so the caller reads a reason.
 """
@@ -43,7 +44,7 @@ def main(argv=None) -> int:
         elif op in ("train_ppo", "predict_ppo"):
             from . import rl
             res = rl.train(req) if op == "train_ppo" else rl.predict(req)
-        elif op == "nlp_predict":
+        elif op == "nlp_predict":                         # experimental - no caller in the bot (1.46, I0223 / I0471)
             from . import nlp
             res = nlp.predict(req)
         else:

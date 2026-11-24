@@ -656,7 +656,7 @@ class FamiliesConfig(_Strict):
     pairs: list[list[str]] = Field(default_factory=list, description="[[instrumentA, instrumentB]] from the marketdata store")
     basket: list[str] = Field(default_factory=list, description=">= 3 instruments for STATARB")
     assist_hold_threshold: float = Field(0.60, gt=0.34, lt=1.0, description="ASSIST direction model can hold READY -> WAIT when P(opposite) >= this")
-    nlp_transformer_path: str | None = Field(None, description="local transformer checkpoint directory (licensed by the user); never downloaded")
+    nlp_transformer_path: str | None = Field(None, description="reserved - not used in 1.46 (no transformer inference path in the bot; NLP_SENTIMENT is TF-IDF + logistic regression); kept for config.json compatibility, never downloaded")
 
 
 class DecisionConfig(_Strict):

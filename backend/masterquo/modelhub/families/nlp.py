@@ -3,7 +3,10 @@
 Corpus: imported JSONL / CSV records {id, source, lang, text, label, topic?, published_at, first_seen_at, version}; deduplicated by a hash
 of normalised text before training and aggregation. Chronological split by first_seen_at (information is usable only from when it was
 seen). Baseline: TF-IDF (1-2 grams) + multinomial logistic regression, temperature calibrated on validation; metrics macro-F1, log loss,
-confusion. Optional local transformer (deep_runtime.nlp) only from a local checkpoint the user is licensed to use - never downloaded here.
+confusion. No transformer in 1.46 (I0223 / I0471): deep_runtime.nlp (worker op nlp_predict) has no caller in the bot, the config
+key nlp_transformer_path (section families) is only passed to the job config and never read, `transformers` is not in
+requirements-deep - the family is TF-IDF + logistic regression only. Connecting a transformer is a separate feature (checkpoint
+spec, label mapping).
 Runtime: the existing news module's recent headlines (headline only - marked) -> per-text sentiment + topic relevance (gold / USD / Fed /
 BTC keywords) + exponentially decayed aggregate by first_seen_at. Without a corpus: BLOCKED_DATA (waiting for data); it never creates
 orders from text.
@@ -92,7 +95,7 @@ def topics(text: str) -> dict:
 
 class NLP(B.Family):
     ID = "NLP_SENTIMENT"
-    NAME = "Sentyment tekstu – TF-IDF + regresja logistyczna (+ opcjonalny lokalny transformer)"
+    NAME = "Sentyment tekstu – TF-IDF + regresja logistyczna"
     KIND = "TRAINED"
     TASK_TYPE = "NLP_SENTIMENT"
     UNIT = "sentiment"
