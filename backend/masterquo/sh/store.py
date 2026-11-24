@@ -21,6 +21,7 @@ def pos_dump(p: Position) -> dict:
 
 
 def pos_load(d: dict) -> Position:
+    """The stored remaining is passed as is - also 0.0 of a closed position (Position fills only a missing value with the volume)."""
     d = dict(d)
     legs = [Leg(**x) for x in d.pop("legs")]
     seen, issued = set(d.pop("seen_events", [])), set(d.pop("issued", []))
@@ -30,17 +31,20 @@ def pos_load(d: dict) -> Position:
 
 
 def basket_dump(b: Basket) -> dict:
+    # exit_retries / exit_round / last_exit_try (close retries): extra keys - an older basket_load reads named keys only (rollback-safe)
     return {"basket_id": b.basket_id, "primary": pos_dump(b.primary), "cfg": vars(b.cfg), "money_per_price_per_lot": b.money_per_price_per_lot,
             "opened_at": b.opened_at, "state": b.state, "hedge": vars(b.hedge) if b.hedge else None, "activations": b.activations,
             "hedge_realized_money": b.hedge_realized_money, "seen": sorted(b.seen), "issued": sorted(b.issued), "transitions": b.transitions,
-            "policy": b.policy}
+            "policy": b.policy, "exit_retries": b.exit_retries, "exit_round": b.exit_round, "last_exit_try": b.last_exit_try}
 
 
 def basket_load(d: dict) -> Basket:
     b = Basket(basket_id=d["basket_id"], primary=pos_load(d["primary"]), cfg=HedgeConfig(**d["cfg"]),
                money_per_price_per_lot=d["money_per_price_per_lot"], opened_at=d["opened_at"], state=d["state"],
                hedge=Leg2(**d["hedge"]) if d.get("hedge") else None, activations=d["activations"],
-               hedge_realized_money=d["hedge_realized_money"], transitions=d.get("transitions") or [], policy=d.get("policy") or {})
+               hedge_realized_money=d["hedge_realized_money"], transitions=d.get("transitions") or [], policy=d.get("policy") or {},
+               exit_retries=int(d.get("exit_retries") or 0), exit_round=int(d.get("exit_round") or 0),
+               last_exit_try=float(d.get("last_exit_try") or 0.0))
     b.seen, b.issued = set(d.get("seen") or []), set(d.get("issued") or [])
     return b
 
