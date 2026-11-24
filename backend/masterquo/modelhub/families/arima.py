@@ -10,6 +10,11 @@ hour-of-day sin / cos) - future exog of a multi-step forecast is computed from t
 Artifacts are JSON (orders, transformation, parameters); at prediction the model is rebuilt on the last W observations and FILTERED
 with the stored parameters (state update without refitting). Baselines: zero return and random walk (identical for log returns).
 Intervals are model intervals of the return, not P(TP before SL).
+Direction (1.46, PMW-PRED-2 REGRESSION `direction`, read by the decision coordinator): UP when the 90 % model interval of the FIRST
+horizon lies above 0, DOWN when it lies below 0, otherwise FLAT (the interval is the neutral band). 1.45 / 1.46.0 records carried no
+direction, so the coordinator let a READY, fresh TS_ARIMA / TS_SARIMAX in decision.required_models PASS whatever the forecast said; with
+the direction a FLAT forecast does not confirm the side (MODEL_REQUIRED_NOT_CONFIRMING), an opposite one blocks (MODEL_REQUIRED_CONTRARY /
+ASSIST MODEL_ASSIST_HOLD) - only tightening, nothing that blocked before passes now. The artifact and the inference sample are unchanged.
 """
 from __future__ import annotations
 
@@ -85,6 +90,14 @@ def calendar_exog(ts: np.ndarray, profile_id: str) -> np.ndarray:
         h = (t % 86400) / 3600.0
         out[i, -2], out[i, -1] = math.sin(2 * math.pi * h / 24), math.cos(2 * math.pi * h / 24)
     return out
+
+
+DIRECTION_RULE = "90% przedział modelu dla pierwszego horyzontu vs 0: dolna granica > 0 -> UP, górna < 0 -> DOWN, inaczej FLAT"
+
+
+def direction(lo: float, hi: float) -> str:
+    """UP / DOWN / FLAT of a return forecast from its 90 % model interval (the interval containing 0 is the neutral band)."""
+    return "UP" if lo > 0 else "DOWN" if hi < 0 else "FLAT"
 
 
 def _one_step_eval(endog_all, start, order, trend, params, exog_all=None, seasonal=(0, 0, 0, 0), transform="RETURNS", logp=None) -> dict:
@@ -205,7 +218,8 @@ class ARIMA(B.Family):
         f = self._forecast(art, c)
         h1 = f[str(self.HORIZONS[0])]
         return {"mean": h1["mean"], "lo": h1["lo"], "hi": h1["hi"], "price_now": float(c[-1]),
-                "price_mean": float(c[-1] * math.exp(h1["mean"])), "horizons": f, "interval": "90% (model)", "transform": art["transform"]}
+                "price_mean": float(c[-1] * math.exp(h1["mean"])), "horizons": f, "interval": "90% (model)", "transform": art["transform"],
+                "direction": direction(h1["lo"], h1["hi"]), "direction_rule": DIRECTION_RULE}
 
 
 class SARIMAX(ARIMA):
@@ -286,6 +300,6 @@ class SARIMAX(ARIMA):
         if len(c) < art["window"] + 1:
             raise B.Unavailable("BLOCKED_DATA", f"za mało świec H1: {len(c)} < {art['window'] + 1}")
         f = self._forecast_x(art, c, np.asarray([b["t"] for b in bars], dtype=float))
-        h1 = f["1"]
+        h1 = f[str(self.HORIZONS[0])]
         return {"mean": h1["mean"], "lo": h1["lo"], "hi": h1["hi"], "price_now": float(c[-1]), "horizons": f, "interval": "90% (model)",
-                "exog_scenario": "CALENDAR_KNOWN"}
+                "exog_scenario": "CALENDAR_KNOWN", "direction": direction(h1["lo"], h1["hi"]), "direction_rule": DIRECTION_RULE}
