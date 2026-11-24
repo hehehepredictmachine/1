@@ -39,7 +39,7 @@ from . import events as EV
 from . import features as F
 
 log = logging.getLogger(__name__)
-VERSION = "PMW-QUANT-TABICL-1"
+VERSION = "PMW-QUANT-TABICL-2"        # 1.46 arch (I0538): strategy one-hot instead of a hash code
 MAX_COLUMNS = 48
 MIN_ROWS = 24                      # technical minimum for an in-context classifier (both classes needed) - NOT a validation gate
 RESULTS_MAX = 500                  # plan_hash -> newest results kept in memory
@@ -109,12 +109,18 @@ def _installed() -> dict:
 
 
 # ---------------------------------------------------------------------------------------------------------------- reference rows
+STRATEGY_PREFIX = "ctx:strategy="
+
+
 def strategy_features(engine: str | None, strategy: str | None) -> dict:
-    """Provenance of the row as features (the identity stays in the record): engine one-hot is already in FEAT-1; the strategy id becomes
-    a stable small integer code + family flags so different rules are not merged silently."""
+    """Provenance of the row as features (the identity stays in the record): engine one-hot is already in FEAT-1; the strategy id is a
+    one-hot column ctx:strategy=<id> (1 for this row; rows of other strategies get 0 in vector()) + family flags, so different rules are
+    not merged silently. 1.46 arch (I0538): it was ctx:strategy_code = sha256(id) % 997 - a categorical id given to TabICL as ONE ordinal
+    number (two unrelated rules 412 / 413 were 'neighbours')."""
     s = str(strategy or "")
-    return {"ctx:strategy_code": float(int(hashlib.sha256(s.encode()).hexdigest()[:4], 16) % 997),
-            "ctx:family_hedging": 1.0 if "HG" in s or "HEDG" in s.upper() else 0.0}
+    out = {STRATEGY_PREFIX + s: 1.0} if s else {}
+    out["ctx:family_hedging"] = 1.0 if "HG" in s or "HEDG" in s.upper() else 0.0
+    return out
 
 
 def _current(r: dict) -> bool:
@@ -163,7 +169,9 @@ def recon_rows(inst: str, key: str, now: float, *, real_only: bool = False) -> l
             if real_only and kind_of(r.get("data_kind")) != "REAL":
                 continue                               # 1.46: same data-kind rule as the live ledger rows
             if r.get("event_key") == key and r.get("resolve_ts") is not None and float(r["resolve_ts"]) <= now and r.get("y") in (0, 1):
-                out.append(r)
+                f = {k: v for k, v in (r.get("features") or {}).items() if k != "ctx:strategy_code"}     # I0538: file of TABICL-1
+                f.update(strategy_features(None, r.get("strategy")))
+                out.append({**r, "features": f})
     return out
 
 
@@ -192,10 +200,14 @@ def columns(rows: list[dict], max_cols: int = MAX_COLUMNS) -> list[str]:
 
 
 def vector(feats: dict, names: list[str]) -> list[float]:
+    """Missing = NaN (TabICL's missing value), except a strategy one-hot column: absent = another strategy = 0.0 (I0538)."""
     out = []
     for n in names:
         v = feats.get(n)
-        out.append(float(v) if isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v) else float("nan"))
+        if isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v):
+            out.append(float(v))
+        else:
+            out.append(0.0 if n.startswith(STRATEGY_PREFIX) and v is None else float("nan"))
     return out
 
 

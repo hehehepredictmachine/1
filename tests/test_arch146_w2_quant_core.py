@@ -319,5 +319,44 @@ class TestMetaMissingNeverSeen(unittest.TestCase):
         self.assertEqual(model["feature_names"], ["ctx:hour_sin"])
 
 
+# ================================================================================================ I0538 TabICL strategy encoding
+class TestTabICLStrategyEncoding(unittest.TestCase):
+    """ctx:strategy_code = sha256(strategy) % 997 gave TabICL a categorical id as one ordinal number. Now a one-hot column per strategy
+    (absent = 0, not NaN); a reconstruction file written by TABICL-1 is migrated when read (nothing deleted)."""
+
+    def setUp(self):
+        self.td = TempData()
+        self.addCleanup(self.td.close)
+
+    def test_one_hot_instead_of_a_hash_code(self):
+        from masterquo.quant import tabicl as T
+        f = T.strategy_features("SH_SCALPING", "SH_SCALPING/PMW_SC01")
+        self.assertNotIn("ctx:strategy_code", f)
+        self.assertEqual(f["ctx:strategy=SH_SCALPING/PMW_SC01"], 1.0)
+        self.assertEqual(T.strategy_features(None, "PMW_HG02")["ctx:family_hedging"], 1.0)
+        self.assertEqual(T.VERSION, "PMW-QUANT-TABICL-2")
+
+    def test_vector_fills_other_strategies_with_zero(self):
+        import math
+
+        from masterquo.quant import tabicl as T
+        self.assertEqual(T.vector({}, ["ctx:strategy=X"]), [0.0])
+        self.assertEqual(T.vector({"ctx:strategy=X": 1.0}, ["ctx:strategy=X"]), [1.0])
+        self.assertTrue(math.isnan(T.vector({}, ["ctx:hour_sin"])[0]))                    # other features: missing stays NaN
+
+    def test_old_reconstruction_file_is_migrated_on_read(self):
+        from masterquo.quant import tabicl as T
+        row = {"id": "R:PMW_SC01:M1:1:LONG", "tf": "M1", "decision_ts": 1.0, "resolve_ts": 2.0, "y": 1, "strategy": "PMW_SC01",
+               "features": {"ctx:strategy_code": 412.0, "ctx:family_hedging": 0.0, "plan:gain_r": 1.5}, "event_key": "K",
+               "provenance": "RECONSTRUCTED_HISTORY", "data_kind": "REAL_USER_DATA"}
+        T.recon_path("XAUUSD").write_text(json.dumps(row) + "\n", encoding="utf-8")
+        got = T.recon_rows("XAUUSD", "K", 10.0)
+        self.assertEqual(len(got), 1)
+        self.assertNotIn("ctx:strategy_code", got[0]["features"])
+        self.assertEqual(got[0]["features"]["ctx:strategy=PMW_SC01"], 1.0)
+        self.assertEqual(got[0]["features"]["plan:gain_r"], 1.5)
+        self.assertIn("ctx:strategy_code", T.recon_path("XAUUSD").read_text(encoding="utf-8"))   # the file itself is not rewritten
+
+
 if __name__ == "__main__":
     unittest.main()
