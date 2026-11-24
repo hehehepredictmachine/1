@@ -320,5 +320,64 @@ class TestWallsStoreRestart(unittest.TestCase):
             td.close()
 
 
+class TestS12HigherLowNotTautology(unittest.TestCase):
+    """I0828: warunek 'wyższy dołek' reakcji S12 RANGE_RECLAIM (min po pierwszym minimum > minimum) był tautologią - bramka NO_REACTION prawie
+    nigdy nie blokowała. Ścisła reguła działa PO arbitrze wariantów (arbiter i jego reguła konfliktu LONG/SHORT widzą te same fazy co
+    dotąd - ścisła reakcja liczona wcześniej mogłaby przepuścić inny wariant albo stronę przeciwną: nowe wejście)."""
+
+    @staticmethod
+    def _m1(lows):
+        from datetime import timedelta
+
+        import test_s12_family as SF
+        from masterquo.strategies.base import TFView
+        bars = [{"open_utc": SF.iso(SF.T0 + timedelta(minutes=k)), "o": lo + 0.3, "h": lo + 0.6, "l": lo, "c": lo + 0.3, "tv": 100, "closed": True}
+                for k, lo in enumerate(lows)]                  # doji-like bars: no candle reaction evidence
+        return TFView("M1", bars)
+
+    def test_monotonic_rise_after_the_low_is_not_a_higher_low(self):
+        from masterquo.strategies.registry import STRATEGIES
+        s = STRATEGIES["S12"]
+        rising = self._m1([2000.0, 1999.5, 1999.0, 1998.0, 1998.2, 1998.4, 1998.6, 1998.8])    # minimum at 3, then only higher lows
+        r = s._reaction(rising, 1, 7, 1997.0, [0.5] * 8)
+        self.assertFalse(r["sweep"])
+        self.assertFalse(r["higher_low"])
+        trough = self._m1([2000.0, 1999.5, 1999.0, 1998.0, 1998.6, 1998.3, 1998.7, 1998.9])    # a local low at 5 above the episode low
+        self.assertTrue(s._reaction(trough, 1, 7, 1997.0, [0.5] * 8)["higher_low"])
+
+    def _detect_with(self, longs, shorts):
+        import test_s12_family as SF
+        s, p = SF.s12()
+        v = SF.make_view(SF.build_reclaim(), SF.walls_snap([("LOWER", 1.0, 1998.0), ("UPPER", 1.0, 2010.0)]))
+        calls = iter([(longs, {}), (shorts, {})])
+        s._side = lambda view, p: next(calls)            # instance attribute: only this call of the shared singleton
+        try:
+            return {(d.direction, d.facts.get("variant")): d for d in s.detect(v, p)}
+        finally:
+            del s._side
+
+    @staticmethod
+    def _cand(variant, phase, direction="LONG", **extra):
+        from masterquo.strategies.base import Draft
+        d = Draft(strategy_id="S12", direction="LONG", timeframe="M1", phase=phase, structure_key=f"{variant}:k", event_key="e", anchor_time=None,
+                  entry_plan=None, invalidation_level=None, expires_bars=3 if phase == "TRIGGER" else 20,
+                  components={"structure": 0.8, "formation": 1.0, "trigger": 1.0 if phase == "TRIGGER" else 0.0}, facts={"variant": variant})
+        return {"variant": variant, "draft": d, **extra}
+
+    def test_strict_reaction_downgrades_the_published_draft_after_the_arbiter(self):
+        out = self._detect_with([self._cand("RANGE_RECLAIM", "TRIGGER", reaction_ok=False, trigger_closed=True),
+                                 self._cand("BREAKOUT_RETEST", "TRIGGER")], [])
+        self.assertNotIn(("LONG", "BREAKOUT_RETEST"), out)                  # the arbiter's choice is unchanged (no other variant let through)
+        d = out[("LONG", "RANGE_RECLAIM")]
+        self.assertEqual(d.phase, "EARLY")
+        self.assertIn("NO_REACTION", d.missing)
+        self.assertEqual((d.components["trigger"], d.components["formation"], d.expires_bars), (0.0, 0.4, 3))       # TTL never longer than the draft had
+
+    def test_the_opposite_side_stays_in_conflict(self):
+        out = self._detect_with([self._cand("RANGE_RECLAIM", "EARLY", reaction_ok=False, trigger_closed=False)],
+                                [self._cand("BREAKOUT_RETEST", "TRIGGER")])
+        self.assertEqual({d.phase for d in out.values()}, {"WATCH"})          # the SHORT trigger is NOT released by the stricter LONG
+
+
 if __name__ == "__main__":
     unittest.main()

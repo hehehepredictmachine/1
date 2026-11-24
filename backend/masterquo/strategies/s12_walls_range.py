@@ -174,15 +174,21 @@ class WallsRangeFamily(Strategy):
             c["draft"] = unmirror_draft(c["draft"], mv.center)
             _swap_pairs(c["draft"].facts)
             shorts.append(c)
+        by_draft = {id(c["draft"]): c for c in longs + shorts}
         out = self._arbiter(view, longs, shorts)
         for d in out:
+            _strict_reaction(d, by_draft.get(id(d)))
             d.strategy_id = self.id
             d.facts["checklist"] = checklist_rows(d, p)
         self.last_rejections = {"LONG": rej_l, "SHORT": rej_s}
         return out
 
     def detect_long(self, view: MarketView, p: dict) -> list[Draft]:
-        return [c["draft"] for c in self._side(view, p)[0]]
+        out = []
+        for c in self._side(view, p)[0]:
+            _strict_reaction(c["draft"], c)
+            out.append(c["draft"])
+        return out
 
     def _arbiter(self, view, longs, shorts):
         state = (view.regime or {}).get("state")
@@ -253,9 +259,14 @@ class WallsRangeFamily(Strategy):
                      if x["direction"] == "LONG" and x["type"] in REACTION_TYPES]
         ev = CN.evidence_events(pats)
         k_lo = k0 + m1.l[k0:i + 1].index(lo)
-        higher_low = i - k_lo >= 2 and min(m1.l[k_lo + 1:i + 1]) > lo
+        # 1.46 arch (I0828): `min(l after the first minimum) > lo` holds by the definition of the minimum whenever it is not repeated (a
+        # tautology - the NO_REACTION gate almost never blocked). A higher low is a LOCAL low after the episode low, above it and confirmed
+        # by the next bar (l[k] < l[k-1] and l[k] < l[k+1], k+1 <= i). The legacy value only feeds the phase the arbiter compares
+        # (_strict_reaction() applies the strict one AFTER the arbiter - see there).
+        higher_low = any(lo < m1.l[k] < m1.l[k - 1] and m1.l[k] < m1.l[k + 1] for k in range(k_lo + 1, i))
+        legacy = i - k_lo >= 2 and min(m1.l[k_lo + 1:i + 1]) > lo
         return {"sweep": sweep, "episode_low": lo, "candle_events": len(ev), "candle_types": sorted({x["type"] for x in pats}),
-                "higher_low": higher_low, "ok": sweep or bool(ev) or higher_low}
+                "higher_low": higher_low, "ok": sweep or bool(ev) or higher_low, "ok_legacy": sweep or bool(ev) or legacy}
 
     def _range_reclaim(self, view, p, rng, rp):
         if rng.get("status") != "OK":
@@ -291,6 +302,7 @@ class WallsRangeFamily(Strategy):
         reac = self._reaction(m1, k0, i, z["low"], a1)
         facts.update(sweep=reac["sweep"], episode_low_px=round(reac["episode_low"], 5), candle_evidence=reac["candle_types"], candle_events=reac["candle_events"],
                      higher_low=reac["higher_low"])
+        ok = reac["ok_legacy"]           # 1.46 arch (I0828): the pre-arbiter phase as before; the strict reaction after the arbiter
         buf = p["buffer_atr"] * a5
         lvl = z["high"] + buf
         trig = m1.c[i] > lvl and m1.c[i - 1] <= lvl
@@ -300,7 +312,7 @@ class WallsRangeFamily(Strategy):
         if not trig and (view.ask if view.ask is not None else m1.c[i]) > rng["mid"]:
             return None, ["PRICE_IN_MIDDLE"]                 # price left the zone without a reclaim close
         missing = []
-        if not reac["ok"]:
+        if not ok:
             missing.append("NO_REACTION")
         if not trig:
             missing.append("NO_CLOSED_TRIGGER")
@@ -348,12 +360,12 @@ class WallsRangeFamily(Strategy):
         if cp:
             facts["chart_pattern"] = cp
         blocking = [m for m in missing if m != "NO_CLOSED_TRIGGER"]
-        phase = "TRIGGER" if (trig and within and not blocking) else ("EARLY" if reac["ok"] or trig else "WATCH")
-        comps = {"structure": _rng_quality(rng), "formation": 1.0 if reac["ok"] else 0.4, "trigger": 1.0 if phase == "TRIGGER" else 0.0}
+        phase = "TRIGGER" if (trig and within and not blocking) else ("EARLY" if ok or trig else "WATCH")
+        comps = {"structure": _rng_quality(rng), "formation": 1.0 if ok else 0.4, "trigger": 1.0 if phase == "TRIGGER" else 0.0}
         key = f"RR:{rng['range_id']}:{m1.t[k0]}:{facts.get('walls_snapshot_id') or 'NOWALLS'}"
         d = self._draft(view, "RANGE_RECLAIM", phase, "M1", key, rng, z, sl, entry, tg, facts, missing, p, a5, components=comps,
                         trigger_level=lvl, time_exit=p["time_exit_m1"], inv=sl)
-        return {"variant": "RANGE_RECLAIM", "draft": d}, []
+        return {"variant": "RANGE_RECLAIM", "draft": d, "reaction_ok": reac["ok"], "trigger_closed": trig}, []
 
     def _wall_rejection(self, view, p, rng, rp):
         m5 = view.tfs["M5"]
@@ -547,6 +559,28 @@ class WallsRangeFamily(Strategy):
                      expires_bars=int(p["expires_bars"]) if phase == "TRIGGER" else 20, components=components, momentum_mode=momentum,
                      missing=list(dict.fromkeys(missing)), reason_codes=[f"S12_{name}", f"RANGE_{(rng or {}).get('state')}"], facts=facts,
                      horizon="SCALP" if tf == "M1" else "INTRADAY")
+
+
+_PHASE_RANK = {"WATCH": 0, "EARLY": 1, "TRIGGER": 2}
+
+
+def _strict_reaction(d: Draft, cand: dict | None) -> None:
+    """1.46 arch (I0828): RANGE_RECLAIM whose reaction holds only by the old tautological 'higher low' (no sweep, no candle evidence, no
+    real higher low) gets NO_REACTION and the phase / formation / trigger components the strict rule gives (TRIGGER -> EARLY with a
+    closed trigger, otherwise WATCH; never higher than the phase it has). Applied AFTER the arbiter on the draft it published: the
+    arbiter's choice between variants and its LONG/SHORT conflict rule see exactly the phases they saw before - a strict reaction
+    computed earlier would let another variant or the opposite side (no longer in conflict) through: new entries. Only lowers; the
+    draft keeps its expires_bars (a downgraded TRIGGER does not get the 20-bar TTL of an EARLY draft - its life is never longer)."""
+    if cand is None or cand.get("reaction_ok", True) or "NO_REACTION" in d.missing:
+        return
+    d.missing = list(dict.fromkeys([*d.missing, "NO_REACTION"]))
+    strict = "EARLY" if cand.get("trigger_closed") else "WATCH"
+    if _PHASE_RANK[strict] < _PHASE_RANK.get(d.phase, 0):
+        d.phase = strict
+    d.components = dict(d.components, formation=min(d.components.get("formation", 0.4), 0.4))
+    if d.phase != "TRIGGER":
+        d.components["trigger"] = 0.0
+    d.facts["reaction_rule"] = "STRICT_HIGHER_LOW_1_46"
 
 
 def _plan_ref(ep: dict, ref: float | None) -> dict:
