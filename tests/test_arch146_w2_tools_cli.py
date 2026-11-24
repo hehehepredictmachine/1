@@ -13,8 +13,9 @@ import sys
 import tempfile
 import time
 import unittest
-from contextlib import redirect_stdout
+from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
+from unittest import mock
 
 import _env
 
@@ -70,6 +71,59 @@ class TestNativeStatusBuild(unittest.TestCase):
         out = self._run("RESULT=PASS\n", +60)
         self.assertIsNone(out["terminal_build"])
         self.assertEqual(out["selftest_result"], "PASS")
+
+
+# ============================================================================================== I0137 `masterquo studio --port`
+class TestStudioCliArgs(unittest.TestCase):
+    """I0137: `studio --port` without a value / with a non-number ended in IndexError / ValueError; the branch skipped _load_dotenv()."""
+
+    def _main(self, *args):
+        from masterquo import __main__ as M
+        calls = []
+
+        class Gate:
+            locked = False
+
+            def __init__(self):
+                calls.append("gate")
+
+            def evaluate(self, refresh_net=False):
+                return {"message": ""}
+
+        def serve(port=None):
+            calls.append(("serve", port))
+            return 0
+
+        err = io.StringIO()
+        with mock.patch.object(M, "_load_dotenv", side_effect=lambda: calls.append("dotenv")), \
+                mock.patch("masterquo.licensing.gate.LicenseGate", Gate), mock.patch("masterquo.studio.app.serve", serve), \
+                redirect_stderr(err):
+            rc = M.main(["studio", *args])
+        return rc, calls, err.getvalue()
+
+    def test_port_without_value_is_exit_2_not_a_traceback(self):
+        rc, calls, err = self._main("--port")
+        self.assertEqual(rc, 2)
+        self.assertNotIn(("serve", None), calls)
+        self.assertIn("--port", err)
+
+    def test_non_numeric_and_out_of_range_port_is_exit_2(self):
+        for bad in ("abc", "70000", "-5", "8780.5"):
+            rc, calls, err = self._main("--port", bad)
+            self.assertEqual(rc, 2, bad)
+            self.assertFalse([c for c in calls if isinstance(c, tuple)], bad)
+            self.assertIn("--port", err, bad)
+
+    def test_valid_port_and_default_reach_serve_after_dotenv(self):
+        rc, calls, _ = self._main("--port", "8790")
+        self.assertEqual(rc, 0)
+        self.assertEqual(calls, ["dotenv", "gate", ("serve", 8790)])
+        rc, calls, _ = self._main("--port=8791")
+        self.assertEqual(calls[-1], ("serve", 8791))
+        rc, calls, _ = self._main()
+        self.assertEqual(calls, ["dotenv", "gate", ("serve", None)])
+        rc, calls, _ = self._main("--extra", "x", "--port", "8792")       # other arguments were ignored before - still ignored
+        self.assertEqual((rc, calls[-1]), (0, ("serve", 8792)))
 
 
 if __name__ == "__main__":

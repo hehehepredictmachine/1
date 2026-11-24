@@ -231,6 +231,27 @@ def cmd_profile(name: str) -> int:
     return 0
 
 
+def _studio_port(rest: list[str]) -> int | None:
+    """1.46 (I0137): `studio [--port N]` (also --port=N). Was read by hand (int(argv[argv.index('--port') + 1])) - a missing or non-numeric
+    value ended in a traceback. N: integer 0-65535 (0 = the Studio default, as serve() treated it before); other arguments are ignored
+    as before. ValueError carries the Polish message for the console (exit code 2)."""
+    ap = argparse.ArgumentParser(prog="masterquo studio", add_help=False, exit_on_error=False)
+    ap.add_argument("--port", default=None)
+    try:
+        ns, _ignored = ap.parse_known_args(rest)
+    except (argparse.ArgumentError, SystemExit):
+        raise ValueError("--port wymaga wartości: liczba całkowita 1-65535, np. --port 8780") from None
+    if ns.port is None:
+        return None
+    try:
+        p = int(ns.port)
+    except ValueError:
+        raise ValueError(f"--port musi być liczbą całkowitą 1-65535, podano {ns.port!r}") from None
+    if not 0 <= p <= 65535:
+        raise ValueError(f"--port poza zakresem 1-65535: {p}")
+    return p
+
+
 def main(argv=None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
     if argv[:1] == ["context-indicators"]:           # PMW-UPD-14: VAMD / bounded FD / Pullback+SMC / Buffer Inspector (lab/context_ind/cli.py)
@@ -271,6 +292,12 @@ def main(argv=None) -> int:
         from .montecarlo.cli import main as mc_main
         return mc_main(argv[1:])
     if argv[:1] == ["studio"]:                       # 1.33 Pepe Data & Training Studio - separate app (own port / data dir, no bot Runtime)
+        _load_dotenv()                               # 1.46 (I0137): like every other branch (.env MASTERQUO_DATA_DIR; the .bat sets its own first)
+        try:
+            port = _studio_port(argv[1:])
+        except ValueError as e:
+            print(f"[PepeTrainingStudio] {e}", file=sys.stderr)
+            return 2
         from .licensing.gate import LicenseGate      # 1.44.0: wersja klienta – Studio tylko z ważną licencją (aktywacja w głównej aplikacji)
         lg = LicenseGate()
         st = lg.evaluate(refresh_net=True)
@@ -278,7 +305,6 @@ def main(argv=None) -> int:
             print(f"[PepeTrainingStudio] Brak ważnej licencji: {st.get('message')} Aktywuj klucz w aplikacji Apollo23.", file=sys.stderr)
             return 6
         from .studio.app import serve
-        port = int(argv[argv.index("--port") + 1]) if "--port" in argv else None
         return serve(port)
     if argv[:1] == ["models"]:                       # 1.46 arch: ONE health check of every model producer (modelhub/check.py)
         from .modelhub.check import main as models_main
