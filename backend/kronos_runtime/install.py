@@ -131,6 +131,40 @@ def _fetch(url: str, part: Path, size: int | None, label: str, rep, step: int, r
     raise err if err else OSError("pobieranie nie powiodło się")
 
 
+def _redirect_host(url: str, timeout: float = 15.0) -> str | None:
+    """Host the source redirects `url` to (huggingface.co sends LFS / xet files to a CDN, e.g. us.aws.cdn.hf.co or
+    cas-bridge.xethub.hf.co) - one HEAD request without following the redirect; None when there is none or it cannot be read."""
+    import urllib.error
+    import urllib.request
+    from urllib.parse import urljoin, urlparse
+
+    class _NoRedirect(urllib.request.HTTPRedirectHandler):
+        def redirect_request(self, req, fp, code, msg, headers, newurl):
+            return None
+    try:
+        urllib.request.build_opener(_NoRedirect).open(
+            urllib.request.Request(url, method="HEAD", headers={"User-Agent": "PepeMarketWizard-kronos-setup"}), timeout=timeout)
+    except urllib.error.HTTPError as exc:
+        loc = exc.headers.get("Location") if exc.code in (301, 302, 303, 307, 308) and exc.headers else None
+        return urlparse(urljoin(url, loc)).hostname if loc else None
+    except Exception:  # noqa: BLE001 - the source itself is unreachable: no redirect to report
+        return None
+    return None
+
+
+def network_hosts(url: str, exc: Exception | None = None) -> list[str]:
+    """P003 (arch 1.46): the hosts a failed download needed - the source host and, when the source redirects the file (LFS / xet CDN),
+    the CDN host. A firewall / proxy that allows huggingface.co but blocks the CDN used to get the hint "odblokuj huggingface.co" only."""
+    from urllib.parse import urlparse
+    hosts = [urlparse(url).hostname]
+    final = getattr(exc, "url", None) or (exc.geturl() if hasattr(exc, "geturl") else None)
+    if final:
+        hosts.append(urlparse(final).hostname)
+    else:
+        hosts.append(_redirect_host(url))
+    return [h for i, h in enumerate(hosts) if h and h not in hosts[:i]]
+
+
 def download(weights_dir: str, status_file: str | None) -> int:
     rep = Reporter(status_file, 6)
     try:
@@ -162,7 +196,9 @@ def download(weights_dir: str, status_file: str | None) -> int:
         try:
             info = api.model_info(c["repo"], revision=c["revision"], files_metadata=True)
         except Exception as exc:  # noqa: BLE001
-            return result(False, _classify(exc), rep, error=f"{c['repo']}@{c['revision'][:12]}: {type(exc).__name__}: {exc}"[:400])
+            code = _classify(exc)
+            hosts = [lock.SOURCE.split("//", 1)[-1]] if code == "NETWORK" else None
+            return result(False, code, rep, error=f"{c['repo']}@{c['revision'][:12]}: {type(exc).__name__}: {exc}"[:400], hosts=hosts)
         if getattr(info, "sha", None) != c["revision"]:
             return result(False, "REVISION_MISMATCH", rep, error=f"{c['repo']}: źródło zwróciło commit {getattr(info, 'sha', None)} ≠ {c['revision']}")
         sib = {s.rfilename: s for s in (info.siblings or [])}
@@ -183,8 +219,9 @@ def download(weights_dir: str, status_file: str | None) -> int:
             t0 = time.time()
             p = dest / name
             part = dest / (name + ".part")
+            url = f"{lock.SOURCE}/{c['repo']}/resolve/{c['revision']}/{name}"
             try:
-                _fetch(f"{lock.SOURCE}/{c['repo']}/resolve/{c['revision']}/{name}", part, size, f"{c['repo']}/{name}", rep, step)
+                _fetch(url, part, size, f"{c['repo']}/{name}", rep, step)
                 part.replace(p)
             except Exception as exc:  # noqa: BLE001
                 code = _classify(exc)
@@ -194,7 +231,9 @@ def download(weights_dir: str, status_file: str | None) -> int:
                     code = "REPO_NOT_FOUND"
                 elif isinstance(exc, (OSError, TimeoutError)) and code == "DOWNLOAD_ERROR":
                     code = "NETWORK"
-                return result(False, code, rep, error=f"{c['repo']}/{name}: {type(exc).__name__}: {exc}"[:400])
+                hosts = network_hosts(url, exc) if code == "NETWORK" else None      # P003: the real host (CDN) of the failed file
+                where = f" (host: {', '.join(hosts)})" if hosts else ""
+                return result(False, code, rep, error=f"{c['repo']}/{name}{where}: {type(exc).__name__}: {exc}"[:400], hosts=hosts)
             lfs = getattr(s, "lfs", None)
             lfs_sha = (lfs.get("sha256") if isinstance(lfs, dict) else getattr(lfs, "sha256", None)) if lfs else None
             if lfs_sha:

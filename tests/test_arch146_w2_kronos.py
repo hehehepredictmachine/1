@@ -604,9 +604,8 @@ class TestI0035ScorecardHorizonFilter(_SvcCase):
 
 
 # ===================================================================================================== I0194 przypięte sha256 wag Kronos
-class TestI0194KronosPinnedSha(unittest.TestCase):
-    """Dziś sumy sha256 wag w lock.py czytał tylko test: instalator ufał metadanym LFS z HF, verify - własnemu manifestowi. Teraz pin jest
-    wymuszany w obu miejscach (wyjątek: manifest fixture testów, przyjmowany tylko z MQ_KRONOS_ALLOW_FIXTURE=1)."""
+class _HubCase(unittest.TestCase):
+    """Dubler huggingface_hub (moduł w sys.modules) + _fetch zapisujący bajty - kronos_runtime.install.download bez sieci."""
 
     CONTENT = {"config.json": b'{"d_model": 1}', "model.safetensors": b"\x01" * 4096, "README.md": b"---\nlicense: mit\n---\n"}
 
@@ -647,15 +646,20 @@ class TestI0194KronosPinnedSha(unittest.TestCase):
             Path(part).write_bytes(self.CONTENT[url.rsplit("/", 1)[1]])
         return hub, fetch
 
-    def _download(self, dest):
+    def _download(self, dest, fetch=None):
         from kronos_runtime import install as I
-        hub, fetch = self._hub()
+        hub, fetch0 = self._hub()
         out = io.StringIO()
-        with mock.patch.dict(sys.modules, {"huggingface_hub": hub}), mock.patch.object(I, "_fetch", side_effect=fetch), \
+        with mock.patch.dict(sys.modules, {"huggingface_hub": hub}), mock.patch.object(I, "_fetch", side_effect=fetch or fetch0), \
                 mock.patch.dict(os.environ, {"HF_HUB_OFFLINE": "0"}), contextlib.redirect_stdout(out):
             rc = I.download(str(dest), None)
         res = json.loads(next(x for x in out.getvalue().splitlines() if x.startswith("RESULT "))[7:])
         return rc, res
+
+
+class TestI0194KronosPinnedSha(_HubCase):
+    """Dziś sumy sha256 wag w lock.py czytał tylko test: instalator ufał metadanym LFS z HF, verify - własnemu manifestowi. Teraz pin jest
+    wymuszany w obu miejscach (wyjątek: manifest fixture testów, przyjmowany tylko z MQ_KRONOS_ALLOW_FIXTURE=1)."""
 
     def test_download_refuses_source_file_that_differs_from_the_pin(self):
         from kronos_runtime import manifest as M
@@ -692,6 +696,51 @@ class TestI0194KronosPinnedSha(unittest.TestCase):
     def test_official_installation_matches_the_pins(self):
         from kronos_runtime import manifest as M
         self.assertTrue(M.verify(os.environ["MQ_KRONOS_WEIGHTS_DIR"])["ok"])
+
+
+class TestP003KronosNetworkHost(_HubCase):
+    """Przy blokadzie hosta CDN (huggingface.co przekierowuje pliki LFS / xet np. na us.aws.cdn.hf.co) instalator kazał „odblokować
+    huggingface.co” i nie podawał faktycznego hosta. Teraz wynik pobierania ma hosts, a podpowiedź kronos_setup je wymienia."""
+
+    def test_download_reports_the_redirect_host(self):
+        import urllib.error
+        from kronos_runtime import install as I
+
+        def blocked(url, part, size, label, rep, step, retries=4):
+            if url.endswith("model.safetensors"):
+                raise urllib.error.URLError(OSError(11001, "getaddrinfo failed"))
+            Path(part).write_bytes(self.CONTENT[url.rsplit("/", 1)[1]])
+        with mock.patch.object(I, "_redirect_host", return_value="us.aws.cdn.hf.co") as probe:
+            rc, res = self._download(self.tmp / "w", fetch=blocked)
+        self.assertEqual((rc, res["code"]), (1, "NETWORK"))
+        self.assertEqual(res["hosts"], ["huggingface.co", "us.aws.cdn.hf.co"])
+        self.assertIn("us.aws.cdn.hf.co", res["error"])
+        self.assertTrue(probe.call_args[0][0].startswith("https://huggingface.co/NeoQuasar/"))
+
+    def test_redirect_probe_reads_the_location(self):
+        import urllib.error
+        from kronos_runtime import install as I
+        url = "https://huggingface.co/NeoQuasar/Kronos-small/resolve/x/model.safetensors"
+        err = urllib.error.HTTPError(url, 302, "Found", {"Location": "https://us.aws.cdn.hf.co/repos/ab/cd/file?x=1"}, None)
+        opener = types.SimpleNamespace(open=mock.Mock(side_effect=err))
+        with mock.patch("urllib.request.build_opener", return_value=opener):
+            self.assertEqual(I._redirect_host(url), "us.aws.cdn.hf.co")
+        with mock.patch("urllib.request.build_opener", return_value=types.SimpleNamespace(open=mock.Mock(side_effect=OSError("x")))):
+            self.assertIsNone(I._redirect_host(url))
+        final = urllib.error.HTTPError("https://cas-bridge.xethub.hf.co/f", 503, "busy", {}, None)
+        self.assertEqual(I.network_hosts(url, final), ["huggingface.co", "cas-bridge.xethub.hf.co"])
+
+    def test_setup_hint_names_the_hosts(self):
+        sys.path.insert(0, str(ROOT / "tools"))
+        import kronos_setup as KS
+        with mock.patch.dict(KS.CHILD, {"result": {"code": "NETWORK", "error": "URLError: getaddrinfo failed",
+                                                   "hosts": ["huggingface.co", "us.aws.cdn.hf.co"]}}):
+            code, msg = KS.child_error("")
+        self.assertEqual(code, "NETWORK")
+        self.assertIn("us.aws.cdn.hf.co", msg)
+        self.assertIn("odblokuj te hosty", msg)
+        with mock.patch.dict(KS.CHILD, {"result": {"code": "NETWORK", "error": "URLError"}}):        # starszy wynik bez hosts
+            self.assertIn("huggingface.co", KS.child_error("")[1])
 
 
 class TestI0197KronosDocs(unittest.TestCase):

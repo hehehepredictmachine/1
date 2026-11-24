@@ -142,7 +142,14 @@ def child_error(last: str) -> tuple[str | None, str]:
         return "APP_CONTROL_BLOCKED", ("Windows (Smart App Control / zasady kontroli aplikacji) zablokował bibliotekę środowiska modelu – "
                                        "to nie jest brak pakietu i ponowna instalacja tej samej wersji nie pomoże. Pozostałe modele i bot "
                                        "działają. Szczegóły: " + msg)
-    return code, (f"{HINT[code]}. " if code in HINT else "") + msg
+    hint = HINT.get(code)
+    hosts = [h for h in (r.get("hosts") or []) if isinstance(h, str) and h]
+    if code == "NETWORK" and hosts:
+        # P003 (arch 1.46): name the hosts the download really needed - huggingface.co redirects the weight files to a CDN
+        # (e.g. us.aws.cdn.hf.co / cas-bridge.xethub.hf.co); "odblokuj huggingface.co" alone did not help when only the CDN was blocked
+        hint = (f"brak połączenia z {', '.join(hosts)} (internet, zapora albo proxy) – odblokuj "
+                f"{'te hosty' if len(hosts) > 1 else 'ten host'} i powtórz")
+    return code, (f"{hint}. " if hint else "") + msg
 
 
 def default_weights_dir(root: Path) -> Path:
