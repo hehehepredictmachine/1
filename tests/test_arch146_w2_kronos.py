@@ -743,6 +743,75 @@ class TestP003KronosNetworkHost(_HubCase):
             self.assertIn("huggingface.co", KS.child_error("")[1])
 
 
+class TestI0127ResearchScriptsPortable(unittest.TestCase):
+    """tools/research/tsfm_eval miały wpisane ścieżki scratchpada innej sesji i /home/user/1/backend oraz `from common import *`."""
+
+    RESEARCH = ROOT / "tools" / "research"
+
+    def test_no_session_paths_and_no_star_imports(self):
+        import ast
+        files = sorted(self.RESEARCH.rglob("*.py"))
+        self.assertTrue(files)
+        for f in files:
+            text = f.read_text(encoding="utf-8")
+            for bad in ("/tmp/claude-", "/home/user/", "scratchpad"):
+                self.assertNotIn(bad, text, f"{f.name}: {bad}")
+            stars = [n.module for n in ast.walk(ast.parse(text)) if isinstance(n, ast.ImportFrom) and any(a.name == "*" for a in n.names)]
+            self.assertEqual(stars, [], f.name)
+
+    def test_ruff_pyflakes_clean(self):
+        import shutil
+        import subprocess
+        try:
+            r = subprocess.run([sys.executable, "-m", "ruff", "check", "--select", "F", "--output-format", "concise", str(self.RESEARCH)],
+                               capture_output=True, text=True, timeout=120)
+        except (OSError, subprocess.TimeoutExpired):
+            self.skipTest("ruff niedostępny")
+        if r.returncode not in (0, 1) or ("No module named ruff" in r.stderr and not shutil.which("ruff")):
+            self.skipTest("ruff niedostępny")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+
+    def test_prep_and_common_work_on_given_folders(self):
+        sys.path.insert(0, str(self.RESEARCH / "tsfm_eval"))
+        try:
+            import common
+            import prep
+        finally:
+            sys.path.remove(str(self.RESEARCH / "tsfm_eval"))
+        self.assertEqual(common.BACKEND, ROOT / "backend")
+        with tempfile.TemporaryDirectory() as d:
+            csv_path = Path(d) / "m1.csv"
+            t0 = datetime(2025, 10, 1)
+            lines = []
+            for i in range(3 * 24 * 60):
+                t = t0 + timedelta(minutes=i)
+                c = 2000 + (i % 97) * 0.1
+                lines.append(f"{t:%Y.%m.%d},{t:%H:%M},{c - 0.2:.2f},{c + 0.5:.2f},{c - 0.5:.2f},{c:.2f}")
+            csv_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+            with contextlib.redirect_stdout(io.StringIO()):
+                prep.main(["--csv", str(csv_path), "--out", d])
+            t, o, h, low, c = common.load(d, "M5")
+            self.assertEqual(len(t), 3 * 24 * 12)
+            orig = common.origins(t, 12, ctx=100)
+            r = common.score("naive", [c[i] for i in orig], orig, h, low, c, 12)
+            self.assertEqual((r["n"], r["skill_vs_naive"]), (len(orig), 0.0))
+            out = common.save([r], str(Path(d) / "res.json"), "unused.json")
+            self.assertEqual(json.loads(out.read_text(encoding="utf-8"))[0]["model"], "naive")
+
+    def test_eval_kronos_takes_paths_from_arguments(self):
+        sys.path.insert(0, str(self.RESEARCH / "tsfm_eval"))
+        try:
+            import eval_kronos
+        finally:
+            sys.path.remove(str(self.RESEARCH / "tsfm_eval"))
+        with contextlib.redirect_stdout(io.StringIO()) as out, self.assertRaises(SystemExit) as cm:
+            eval_kronos.main(["--help"])
+        self.assertEqual(cm.exception.code, 0)
+        self.assertIn("--weights", out.getvalue())
+        with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
+            eval_kronos.main([])                                                       # --data / --weights są wymagane
+
+
 class TestI0197KronosDocs(unittest.TestCase):
     def test_installer_and_runtime_test_describe_the_pinned_pair(self):
         from kronos_runtime import install as I
