@@ -75,9 +75,8 @@ RULES = ("data_quality", "risk_engine", "news", "regime_v2", "structure_v2", "sm
 # architecture task). Metadata only: they get a row in quant/inventory.py and in `models check`; resolve() / canonical() / dedup()
 # DO NOT see them (adding them there could rename Quant feature columns - quant/features.py names columns after the canonical id).
 # cid -> (name, category, env, files, quant role, adapter or None, reason when there is no adapter / note)
+# 1.46 w2 (I0206): tsfm:tirex2 left this list - it is a row of sh/models.REGISTRY now (one inventory row, metadata in quant/inventory._OVR)
 EXTRA_PRODUCERS: dict[str, tuple] = {
-    "tsfm:tirex2": ("TiRex-2 (TSFM, prognoza ceny M5/M15)", "MODEL_PRETRAINED", ".venv_tirex2", ["backend/masterquo/tsfm/", "backend/tsfm_runtime/"],
-                    "BASE_FORECAST", "modelhub.adapters.all_predictions", "rekordy z model_id tsfm:tirex2 (TsfmService, jak Chronos-2 / Granite TTM)"),
     "quant:tabicl_v2": ("TabICLv2 (estymator confidence kandydata, in-context)", "MODEL_PRETRAINED", ".venv_tabicl",
                         ["backend/masterquo/quant/tabicl.py", "backend/tabicl_runtime/"], "SETUP_EVENT", None,
                         "wynik per kandydat w pamięci QuantService (nieutrwalany) – brak samodzielnej predykcji"),

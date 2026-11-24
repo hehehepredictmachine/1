@@ -47,8 +47,12 @@ _OVR: dict[str, dict] = {
     "rule:regime_v2": {"role": "CONTEXT_FEATURE", "adapter": A_EXT, "unit": "state", "task_type": "STATE", "tfs": ["M5", "M15", "H1"]},
     "rule:structure_v2": {"role": "CONTEXT_FEATURE", "adapter": A_EXT, "unit": "state", "task_type": "STATE", "tfs": ["M5", "M15", "H1"]},
     "rule:smc_pullback": {"role": "CONTEXT_FEATURE", "adapter": None, "na": "stan SMC w context_ind – brak stabilnego akcesora poza panelem; cecha strukturalna z structure_v2"},
-    "rule:vamd": {"role": "CONTEXT_FEATURE", "adapter": None, "na": "VAMD liczony per wykres w context_ind (panel); bez akcesora snapshotu – nie jest modelem „Quant Ultimate Momentum Pro”"},
-    "rule:fractal": {"role": "CONTEXT_FEATURE", "adapter": None, "na": "Katz FD liczony per wykres w context_ind; bez akcesora snapshotu"},
+    "rule:vamd": {"role": "CONTEXT_FEATURE", "adapter": None, "na": "VAMD liczony per wykres w context_ind (panel); bez akcesora snapshotu – nie jest modelem „Quant Ultimate Momentum Pro”",
+                  "notes": "dwie parametryzacje: SH = profil DEFAULT (zamrożony, sh/context.py), panel/SI = skalibrowany profil context_ind "
+                           "(profile_hash w odpowiedzi; panel pokazuje obok wartości DEFAULT używane przez SH)"},
+    "rule:fractal": {"role": "CONTEXT_FEATURE", "adapter": None, "na": "Katz FD liczony per wykres w context_ind; bez akcesora snapshotu",
+                     "notes": "dwie parametryzacje: SH = profil DEFAULT (zamrożony, sh/context.py), panel/SI = skalibrowany profil context_ind "
+                              "(profile_hash w odpowiedzi; panel pokazuje obok wartości DEFAULT używane przez SH)"},
     "rule:atr_vol": {"role": "CONTEXT_FEATURE", "adapter": A_EXT, "unit": "price", "task_type": "STATE", "tfs": ["M1", "M5"]},
     "rule:candles_patterns": {"role": "CONTEXT_FEATURE", "adapter": None, "na": "formacje opisowe (role świec) – kontekst panelu, bez liczbowego wyjścia"},
     "rule:liquidity": {"role": "CONTEXT_FEATURE", "adapter": None, "na": "poziomy płynności (strefy) – w mapie stref; cecha odległości dostępna przez quant.snapshot"},
@@ -98,6 +102,10 @@ _OVR: dict[str, dict] = {
                          "tfs": ["M5", "M15"], "env": ".venv_granite", "files": ["backend/masterquo/tsfm/", "backend/tsfm_runtime/"],
                          "notes": "ibm-granite/granite-timeseries-ttm-r2 (TTM R2 512-96, 0,8M); prognoza punktowa (bez kwantyli); nieskalibrowana; "
                                   "1.40 zamiast FinCast (FinCast: RETIRED, historia zachowana)"},
+    # 1.46 w2 (I0206): TiRex-2 is a row of sh/models.REGISTRY (was quant/ids.EXTRA_PRODUCERS) - same metadata as before
+    "tsfm:tirex2": {"role": "BASE_FORECAST", "adapter": "modelhub.adapters.all_predictions", "unit": "price", "task_type": "REGRESSION", "task": "TSFM_CLOSE_H*",
+                    "tfs": ["M5", "M15"], "env": ".venv_tirex2", "files": ["backend/masterquo/tsfm/", "backend/tsfm_runtime/"],
+                    "notes": "rekordy z model_id tsfm:tirex2 (TsfmService, jak Chronos-2 / Granite TTM); kwantyle; nieskalibrowane na danych brokera"},
     "kronos:Kronos-small": {"role": "BASE_FORECAST", "adapter": A_EXISTING, "unit": "price", "task_type": "REGRESSION", "task": "KRONOS_CLOSE_PATH_H*",
                             "tfs": ["M1", "M5", "M15", "H1"], "env": ".venv_kronos", "files": ["backend/masterquo/kronos/", "backend/kronos_runtime/"],
                             "notes": "pojedyncza ścieżka nie jest prawdopodobieństwem; pretrained ≠ dostrojony do brokera"},
@@ -139,9 +147,8 @@ def _sh_rows() -> list[dict]:
                           variants=list(I.GROUPS[sid]), source_registry=["sh.models.REGISTRY"], adapter=None))
             continue
         cid = I.resolve(sid) or f"sh:{sid}"
-        cat = {"DETERMINISTIC": "RULE_OR_MEASUREMENT", "TRAINED": "MODEL_TRAINED", "EXTERNAL": "AGENT"}[it["kind"]]
-        if sid in ("kronos", "chronos2", "granite_ttm"):
-            cat = "MODEL_PRETRAINED"
+        # 1.46 w2 (I0008): one kind -> category map (PRETRAINED in sh/models), no hard-coded exception by id
+        cat = {"DETERMINISTIC": "RULE_OR_MEASUREMENT", "TRAINED": "MODEL_TRAINED", "PRETRAINED": "MODEL_PRETRAINED", "EXTERNAL": "AGENT"}[it["kind"]]
         out.append(_e(cid, name=it["name"], category=cat, output=it["output"], owner_train=it.get("train"), source_registry=["sh.models.REGISTRY"],
                       receivers=[f"SH:{it['roles']['SCALPING']}/{it['roles']['HEDGING']}"], dependencies=[f"grupa korelacji {it['group']}"],
                       _sh=it))
