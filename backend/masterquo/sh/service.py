@@ -593,9 +593,12 @@ class SHService:
         if arc is not None and mode != "SIGNALS":     # PMW-ARC-1: intent (dedup) + shared atomic risk reservation of BOTH paths
             rec = (getattr(arc, "by_source", {}) or {}).get(su["signal_id"]) or \
                 (arc.last.get("SH") if (arc.last.get("SH") or {}).get("source_id") == su["signal_id"] else None)
+            # w2 (I0774, tightening only): a HEDGING basket on a hedging account may later open its hedge leg - the entry needs room for
+            # both positions in the shared cap (2 slots while in flight); the later hedge-leg check is unchanged (+1, its own intent)
+            two = su["strategy"] == "HEDGING" and (self.bridge.account_status() or {}).get("margin_mode") == "HEDGING"
             op = arc.intents.open(path="SH", mode=mode, account_key=self.bridge.account_key, subject=pid, symbol=spec.symbol, side=su["side"],
                                   volume=float(risk["volume"]), risk_money=risk.get("risk_money"), record_id=(rec or {}).get("record_id"),
-                                  equity=(getattr(self.bridge, "account", None) or {}).get("equity"))
+                                  equity=(getattr(self.bridge, "account", None) or {}).get("equity"), **({"positions": 2} if two else {}))
             if op["status"] == "DUPLICATE":
                 return {"status": "DUPLICATE", "reason": "INTENT_ALREADY_EXISTS"}
             if op["status"] == "BLOCKED":

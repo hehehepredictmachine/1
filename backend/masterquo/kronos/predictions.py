@@ -16,7 +16,7 @@ spread, costs or positions - the context says so.
 """
 from __future__ import annotations
 
-from ..modelhub import contract as C
+from ..contracts import prediction as C
 
 
 def model_name() -> str:

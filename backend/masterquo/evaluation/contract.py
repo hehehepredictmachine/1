@@ -203,6 +203,16 @@ def _sh_data_quality(su: dict) -> dict:
     return {"status": "OK", "data_as_of": None, "reasons": []}
 
 
+def _atr_feature(v) -> dict:
+    """w2 (I0017): {'atr_m5': ATR M5 at the decision} when the setup carries a finite positive one, else {} - never 0 / invented.
+    Before, no live candidate carried an ATR: ctx:risk_atr and fcp:*:d_atr / band_atr existed only in reconstructed TabICL rows."""
+    try:
+        x = float(v)
+    except (TypeError, ValueError):
+        return {}
+    return {"atr_m5": x} if math.isfinite(x) and x > 0 else {}
+
+
 def from_sh_setup(su: dict, *, regime: dict | None = None) -> SetupCandidate:
     """SCALPING / HEDGING setup (status READY carries levels) -> candidate. Weights = the strategy's partial shares."""
     side = {"BUY": "LONG", "SELL": "SHORT"}.get(su.get("side"), su.get("side"))
@@ -219,7 +229,8 @@ def from_sh_setup(su: dict, *, regime: dict | None = None) -> SetupCandidate:
         targets=[{"price": float(t["price"]), "weight": s / tot, "basis": t.get("name")} for t, s in zip(tps, sh)],
         horizon_s=60.0 * float(su.get("horizon_minutes") or 30), stage="CONFIRMED" if su.get("status") == "READY" else str(su.get("status")),
         market_regime={"state": (regime or {}).get("state"), "source": "sh.context (RegimeMachine v2)"},
-        features={"net_rr": su.get("net_rr"), "mode": su.get("mode"), "model_mode": su.get("model_mode")},
+        features={"net_rr": su.get("net_rr"), "mode": su.get("mode"), "model_mode": su.get("model_mode"),
+                  **_atr_feature(((su.get("pack") or {}).get("features") or {}).get("atr_m5"))},
         features_as_of=float(su.get("created_at") or 0.0),
         # 1.46 arch (I0052): data quality, not the setup status - a WAIT setup got "DATA_WAIT" (a data reason that does not concern the
         # data); the setup status stays in `stage`. The SH data check is the setup's checklist item 'data' (sh/setup.py, FAIL -> INVALID
@@ -260,7 +271,8 @@ def from_scalp_plan(plan: dict, *, status: str, reasons: list, instrument: str, 
         timeframe="M1", decision_ts=ts, direction=side, entry_type=plan.get("entry_mode") or "MARKET",
         entry_price=float(entry) if entry is not None else float("nan"), stop_loss=float(plan["sl"]), targets=tg, horizon_s=float(horizon_s),
         stage=status, market_regime={"state": (regime or {}).get("state"), "source": "scalp (kontekst M15/M30/H1)"},
-        features={"range_id": plan.get("range_id"), "confirmation": plan.get("confirmation"), "tv_ratio": plan.get("tv_ratio")},
+        features={"range_id": plan.get("range_id"), "confirmation": plan.get("confirmation"), "tv_ratio": plan.get("tv_ratio"),
+                  **_atr_feature((plan.get("range") or {}).get("atr_m5"))},
         features_as_of=ts, data_quality={"status": "OK", "data_as_of": None, "reasons": []},
         execution_context={"spread": plan.get("spread_fill"), "quote_age_s": None, "cost_price": extra_cost, "commission_known": commission_known},
         engine_probability=None, source_ref={"scalp_setup_id": plan.get("setup_id"), "scalp_status": status, "scalp_reasons": list(reasons)[:4]})

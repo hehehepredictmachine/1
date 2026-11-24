@@ -20,7 +20,7 @@ SH condition (kronos/predictions.py); in the coordinator Kronos is recorded as O
 """
 from __future__ import annotations
 
-from ..modelhub import contract as C
+from ..contracts import prediction as C
 from .service import NAMES
 
 USE_PL = {"OBSERVE": "tylko obserwacja (SHADOW) – bez wpływu na decyzje i zlecenia",

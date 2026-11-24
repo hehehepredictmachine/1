@@ -6,8 +6,11 @@ existed - the family adapter SEQ_GRU_EVENT returned None and the MM service only
 a panel request). A missing source is a state with a reason, never a value; every adapter failure becomes an ERROR record, never silence.
 
 Setup-scoped models (sh_tp_model, legacy_ml, scalp_B, ml_scalp, nss, indicator_context) have no standalone prediction: their output
-exists per strategy candidate and reaches the evaluation ledger. They are listed by `setup_scoped()` with the live probe state - no
-invented standalone record.
+exists per strategy candidate (its plan / setup record). sh_tp_model, legacy_ml and scalp_B reach the evaluation ledger as the
+assessment probability; indicator_context (P(TP1 first) in its frozen policy) is kept in the scalp_shadow plan and, when READY_INFERENCE,
+as payload.observations.indicator_context of the evaluation ledger row - an observation for calibration / monitoring, never the
+assessment probability (w2 I0166). ml_scalp and nss keep their own sample / inference stores. They are listed by `setup_scoped()` with
+the live probe state - no invented standalone record.
 """
 from __future__ import annotations
 

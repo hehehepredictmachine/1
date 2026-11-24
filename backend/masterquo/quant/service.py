@@ -61,6 +61,12 @@ def qdir() -> Path:
     return p
 
 
+def with_label_policy(items: list[dict]) -> list[dict]:
+    """w2 (I0031): the outcome definition of Quant ledger rows in the API view (never stored): the EventSpec simulation of the
+    assessment's task (quant/events.simulate - BE after TP2, candle spread), named by its task hash."""
+    return [{**x, "label_policy": "QUANT_EVENTSPEC" + (f"/{x['task_hash']}" if x.get("task_hash") else "")} for x in items]
+
+
 class Settings(JsonSettingsStore):
     """data/quant/settings.json - policy RELOAD_ALWAYS (settings_store.py): every get() reads the disk, so `quant mode` from the CLI (another
     process) is seen by the running bot at once. 1.46 arch (I0097): reads / writes and the read-modify-write sequences of set_mode /
