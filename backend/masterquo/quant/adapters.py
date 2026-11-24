@@ -433,13 +433,16 @@ class EventGRU:
         res = {"DOWN": float(P[0]), "FLAT": float(P[1]), "UP": float(P[2])}
         tot = sum(res.values())
         # 1.46 arch (I0796): NaN passed `abs(tot - 1) > 1e-6` (False for NaN) and the READY record raised ContractError in _p - the whole
-        # extended branch (rules, analysis, MM, lab, scalp A) was lost. Every class must be a finite probability and the sum 1 (never
-        # renormalised silently); otherwise an ERROR record - for NaN / Inf one that marks the generation incomplete, as the lost branch did
-        # (quant/service.cycle: the coordinator then reads no records, exactly as before).
-        if not all(math.isfinite(x) and 0.0 <= x <= 1.0 for x in res.values()) or not math.isfinite(tot) or abs(tot - 1.0) > 1e-6:
+        # extended branch (rules, analysis, MM, lab, scalp A) was lost. Every class must be a finite probability in [0, 1] and the sum 1
+        # (never renormalised silently); otherwise an ERROR record. Where the old code raised (it took the READY branch - sum within 1e-6
+        # or NaN - with a class NaN / Inf / outside [0, 1]) the record marks the generation incomplete, as the lost branch did
+        # (quant/service.cycle: the coordinator then reads no records, exactly as before); a wrong sum stays the old ERROR record.
+        old_ready_branch = not (abs(tot - 1.0) > 1e-6)
+        if not old_ready_branch or not all(math.isfinite(x) and 0.0 <= x <= 1.0 for x in res.values()):
             bad = not all(math.isfinite(x) for x in res.values())
-            p = self._none(inst, "ERROR", f"rozkład poza kontraktem ({'NaN/Inf' if bad else f'suma {tot:.8f}'})", aid,
-                           incomplete="EVENT_GRU_NOT_FINITE" if bad else None)
+            why = "NaN/Inf" if bad else (f"suma {tot:.8f}" if not old_ready_branch else "klasa poza [0, 1]")
+            p = self._none(inst, "ERROR", f"rozkład poza kontraktem ({why})", aid,
+                           incomplete="EVENT_GRU_INVALID_DISTRIBUTION" if old_ready_branch else None)
         else:
             t_end = float(u["t_end"][-1])
             p = _p(canonical_id=self.CID, instrument=inst, timeframe="EVENT", model_name=self.CID, model_version=aid, task_type="CLASS_PROBABILITIES",

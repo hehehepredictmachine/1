@@ -357,8 +357,17 @@ class TestEventGru(unittest.TestCase):
         from masterquo.quant import adapters as A
         g, r = self.predict(symbol_info={"point": 0.01}, probs=(float("nan"), 0.5, 0.5))
         self.assertEqual(r["state"], "ERROR")
-        self.assertEqual(r[A.INCOMPLETE_KEY], "EVENT_GRU_NOT_FINITE")
+        self.assertEqual(r[A.INCOMPLETE_KEY], "EVENT_GRU_INVALID_DISTRIBUTION")
         self.assertIs(g.latest["XAUUSD"], r)
+
+    def test_incomplete_marker_exactly_where_the_old_code_raised(self):
+        from masterquo.quant import adapters as A
+        _, r = self.predict(symbol_info={"point": 0.01}, probs=(-0.1, 0.6, 0.5))           # sum 1, class < 0: ContractError before
+        self.assertEqual((r["state"], r.get(A.INCOMPLETE_KEY)), ("ERROR", "EVENT_GRU_INVALID_DISTRIBUTION"))
+        _, r = self.predict(symbol_info={"point": 0.01}, probs=(0.2, 0.3, 0.6))            # sum 1.1: the old ERROR record, generation complete
+        self.assertEqual((r["state"], r.get(A.INCOMPLETE_KEY)), ("ERROR", None))
+        _, r = self.predict(symbol_info={"point": 0.01}, probs=(float("inf"), 0.3, 0.6))   # sum inf: also the old ERROR record
+        self.assertEqual((r["state"], r.get(A.INCOMPLETE_KEY)), ("ERROR", None))
 
     def test_extended_keeps_the_other_records_when_the_gru_raises(self):
         from masterquo.quant import adapters as A
@@ -404,11 +413,11 @@ class TestIncompleteGenerationCoordinatorUnchanged(QuantCycleFixture, unittest.T
         from masterquo.quant import adapters as A
         q = self.service()
         rec = ready_pred("trainhub:TH_LOGREG")
-        bad = A.EventGRU()._none("XAUUSD", "ERROR", "rozkład NaN", "EG1", incomplete="EVENT_GRU_NOT_FINITE")
+        bad = A.EventGRU()._none("XAUUSD", "ERROR", "rozkład NaN", "EG1", incomplete="EVENT_GRU_INVALID_DISTRIBUTION")
         with mock.patch.object(MA, "all_predictions", return_value=[]), mock.patch.object(A, "extended", return_value=[rec, bad]):
             p = q.cycle()
         self.assertFalse(p["complete"])
-        self.assertEqual(p["incomplete_reasons"], ["EVENT_GRU_NOT_FINITE"])
+        self.assertEqual(p["incomplete_reasons"], ["EVENT_GRU_INVALID_DISTRIBUTION"])
         self.assertEqual([x["canonical_id"] for x in p["eligible"]], ["trainhub:TH_LOGREG"])
         self.assertEqual(q.coordinator_predictions("XAUUSD"), [])                       # as when the branch raised: nothing for REQUIRED / ASSIST
         self.assertEqual([x["canonical_id"] for x in q._eligible_at(time.time())[0]], ["trainhub:TH_LOGREG"])
