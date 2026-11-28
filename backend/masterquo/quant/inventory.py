@@ -197,12 +197,17 @@ def _sh_rows() -> list[dict]:
     return out
 
 
-def _family_rows() -> list[dict]:
+def _family_rows(probe_deep: bool = True) -> list[dict]:
     from ..modelhub.families import registry
     out = []
     for fid, f in registry().items():
         cid = I.resolve(fid)
-        impl, why = f.implementation()
+        if not probe_deep and getattr(f, "RUNTIME", None) == "DEEP":
+            from ..modelhub.families import deep as DP
+            ok, why = DP.available_cached(f.DEPS)             # the catalog view never starts the .venv_deep health process
+            impl, why = ("AVAILABLE", None) if ok else ("MISSING_DEPENDENCY", why)
+        else:
+            impl, why = f.implementation()
         if cid and not cid.startswith("family:"):
             continue                                         # alias of trainhub / mm producer - folded into that entry
         role = {"RL_ACTION": "NOT_A_VOTE", "PAIR_RELATION": "CONTEXT_FEATURE", "MICROSTRUCTURE": "CONTEXT_FEATURE", "FILTER_STATE": "CONTEXT_FEATURE",
@@ -418,8 +423,9 @@ def _live_outputs(entries: list[dict], rt) -> None:
             e["live_output"] = "NOT_APPLICABLE"
 
 
-def build(rt=None, inst: str = "XAUUSD") -> dict:
-    entries = _sh_rows() + _trainhub_rows() + _family_rows() + _lab_rows()
+def build(rt=None, inst: str = "XAUUSD", *, probe_deep: bool = True) -> dict:
+    """probe_deep=False (panel catalog): deep families use the cached .venv_deep health only - no health process is started."""
+    entries = _sh_rows() + _trainhub_rows() + _family_rows(probe_deep) + _lab_rows()
     merges = []
     for r in _mm_rows():
         if "_merge" in r:

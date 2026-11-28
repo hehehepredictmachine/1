@@ -236,8 +236,9 @@ class TestSyntheticNlpCorpus(unittest.TestCase):
         from masterquo.modelhub.families import nlp as NL
         seen = {}
 
-        def imp(p):
+        def imp(p, data_kind=None):           # 1.46 arch I0469/I0470: import_file takes the corpus provenance
             seen["rows"] = [json.loads(ln) for ln in Path(p).read_text(encoding="utf-8").splitlines()]
+            seen["data_kind"] = data_kind
 
         tmp = Path(tempfile.mkdtemp(prefix="mq_t_nlp_"))
         try:

@@ -146,7 +146,7 @@ def _canonical_rows(rt, inst: str, rows: list[dict]) -> list[dict]:
     ready = {p.get("canonical_id") for p in cur.get("eligible") or []}
     excluded = {p.get("canonical_id"): (p.get("eligibility") or {}).get("reason") for p in cur.get("excluded") or []}
     out = []
-    for e in QI.build(None, inst)["entries"]:
+    for e in QI.build(None, inst, probe_deep=False)["entries"]:
         cid = e["id"]
         if cid in have or e.get("code_state") in ("NO_SPEC", "NOT_IMPLEMENTED", "GROUP"):
             continue

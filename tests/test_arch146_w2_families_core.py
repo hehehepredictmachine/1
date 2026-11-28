@@ -495,6 +495,7 @@ class TestFamiliesCliImportCorpus(unittest.TestCase):
 class TestCatalogLocationsAndCoverage(unittest.TestCase):
     def setUp(self):
         tmp = _env.TempData()
+        self.td = tmp
         self.addCleanup(tmp.close)
 
     def test_data_quality_location_names_live_code(self):
@@ -540,7 +541,12 @@ class TestCatalogLocationsAndCoverage(unittest.TestCase):
         fam = SimpleNamespace(store=SimpleNamespace(state=lambda fid, inst: dict(st)), job=lambda fid, inst: None,
                               last_prediction=lambda fid, inst: last.get(fid))
         rt = SimpleNamespace(families=fam)
-        with mock.patch.object(D, "health", side_effect=AssertionError("the catalog never starts the .venv_deep health process")):
+        # also with the deep environment present (MQ_DEEP_PYTHON set - the full suite runs with it): before, quant/inventory._family_rows
+        # called Family.implementation() -> deep.health() and the canonical rows were dropped (AssertionError caught by the catalog)
+        fake_py = Path(self.td.dir) / "python_deep"
+        fake_py.write_text("", encoding="utf-8")
+        with mock.patch.object(D, "health", side_effect=AssertionError("the catalog never starts the .venv_deep health process")), \
+                mock.patch.object(D, "python", return_value=str(fake_py)), mock.patch.dict(D._HEALTH, clear=True):
             rows = {r["id"]: r for r in C.build(rt, INST)["items"]}
             self.assertEqual(rows["family:SEQ_LSTM"]["state"], "READY")
             self.assertEqual(rows["family:SEQ_GRU"]["state"], "BLOCKED_DATA")             # active, no record yet - never READY

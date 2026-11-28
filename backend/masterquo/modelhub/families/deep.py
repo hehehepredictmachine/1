@@ -183,6 +183,20 @@ def health_age() -> float | None:
     return None if not at else time.time() - at
 
 
+def available_cached(deps: tuple[str, ...]) -> tuple[bool, str | None]:
+    """Like available() but never starts the .venv_deep health process: the cached result of the last check, or 'not probed' (1.46 arch:
+    the panel catalog / inventory view must not run the deep worker synchronously - FamilyService refreshes the cache in its thread)."""
+    if python() is None:
+        return False, "brak środowiska .venv_deep (instalacja: 34_DEEP_INSTALUJ.bat)"
+    h = _HEALTH.get("value") if _HEALTH.get("at") else None
+    if h is None:
+        return False, "stan .venv_deep nie był jeszcze sprawdzony w tym procesie (widok katalogu nie uruchamia procesu zdrowia)"
+    if not h.get("ok"):
+        return False, f"worker .venv_deep: {h.get('error')}"
+    miss = [d for d in deps if not h.get(d)]
+    return (not miss), ("brak w .venv_deep: " + ", ".join(miss)) if miss else None
+
+
 def available(deps: tuple[str, ...]) -> tuple[bool, str | None]:
     if python() is None:
         return False, "brak środowiska .venv_deep (instalacja: 34_DEEP_INSTALUJ.bat)"
