@@ -69,9 +69,13 @@ _OVR: dict[str, dict] = {
     "rule:vamd": {"role": "CONTEXT_FEATURE", "adapter": None,
                   "na": "VAMD liczony na żywo w migawce SH (sh.context: ctx.vamd_m5 / ctx.vamd_m1) i per wykres w context_ind (panel); bez adaptera "
                         "Quant (PMW-PRED-2) – nie jest modelem „Quant Ultimate Momentum Pro”",
+                  "notes": "dwie parametryzacje: SH = profil DEFAULT (zamrożony, sh/context.py), panel/SI = skalibrowany profil context_ind "
+                           "(profile_hash w odpowiedzi; panel pokazuje obok wartości DEFAULT używane przez SH)",
                   "receivers": ["sh.setup (warunek potwierdzenia CONTINUATION: znak vamd_m5)", "sh.tpmodel (cechy vamd_m5 / vamd_m1)", "context_ind (panel)"]},
     "rule:fractal": {"role": "CONTEXT_FEATURE", "adapter": None,
                      "na": "Katz FD liczony na żywo w migawce SH (sh.context: ctx.fd_zone_m5) i per wykres w context_ind; bez adaptera Quant (PMW-PRED-2)",
+                     "notes": "dwie parametryzacje: SH = profil DEFAULT (zamrożony, sh/context.py), panel/SI = skalibrowany profil context_ind "
+                              "(profile_hash w odpowiedzi; panel pokazuje obok wartości DEFAULT używane przez SH)",
                      "receivers": ["sh.setup (warunek potwierdzenia CONTINUATION: fd_zone_m5 ≠ CHOP)", "sh.tpmodel (cechy fd_trend / fd_chop z fd_zone_m5)",
                                    "context_ind (panel)"]},
     "rule:atr_vol": {"role": "CONTEXT_FEATURE", "adapter": A_EXT, "unit": "price", "task_type": "STATE", "tfs": ["M1", "M5"],
@@ -140,6 +144,10 @@ _OVR: dict[str, dict] = {
                          "notes": "ibm-granite/granite-timeseries-ttm-r2 (TTM R2 512-96, 0,8M); prognoza punktowa (bez kwantyli); nieskalibrowana; "
                                   "1.40 zamiast FinCast (FinCast: RETIRED, historia zachowana); "
                                   "interwały = dozwolone w ustawieniach TSFM (domyślnie włączone M5, M15)"},
+    # 1.46 w2 (I0206): TiRex-2 is a row of sh/models.REGISTRY (was quant/ids.EXTRA_PRODUCERS) - same metadata as before
+    "tsfm:tirex2": {"role": "BASE_FORECAST", "adapter": "modelhub.adapters.all_predictions", "unit": "price", "task_type": "REGRESSION", "task": "TSFM_CLOSE_H*",
+                    "tfs": ["M5", "M15"], "env": ".venv_tirex2", "files": ["backend/masterquo/tsfm/", "backend/tsfm_runtime/"],
+                    "notes": "rekordy z model_id tsfm:tirex2 (TsfmService, jak Chronos-2 / Granite TTM); kwantyle; nieskalibrowane na danych brokera"},
     "kronos:Kronos-small": {"role": "BASE_FORECAST", "adapter": A_EXISTING, "unit": "price", "task_type": "REGRESSION", "task": "KRONOS_CLOSE_PATH_H*",
                             "tfs": list(_KRONOS_TF), "env": ".venv_kronos", "files": ["backend/masterquo/kronos/", "backend/kronos_runtime/"],
                             "notes": "pojedyncza ścieżka nie jest prawdopodobieństwem; pretrained ≠ dostrojony do brokera; "
@@ -179,9 +187,8 @@ def _sh_rows() -> list[dict]:
                           variants=list(I.GROUPS[sid]), source_registry=["sh.models.REGISTRY"], adapter=None))
             continue
         cid = I.resolve(sid) or f"sh:{sid}"
-        cat = {"DETERMINISTIC": "RULE_OR_MEASUREMENT", "TRAINED": "MODEL_TRAINED", "EXTERNAL": "AGENT"}[it["kind"]]
-        if sid in ("kronos", "chronos2", "granite_ttm"):
-            cat = "MODEL_PRETRAINED"
+        # 1.46 w2 (I0008): one kind -> category map (PRETRAINED in sh/models), no hard-coded exception by id
+        cat = {"DETERMINISTIC": "RULE_OR_MEASUREMENT", "TRAINED": "MODEL_TRAINED", "PRETRAINED": "MODEL_PRETRAINED", "EXTERNAL": "AGENT"}[it["kind"]]
         # 1.46 arch (I0544): a trained / pretrained producer needs a validation for its role (was the NOT_APPLICABLE default of _e)
         out.append(_e(cid, name=it["name"], category=cat, output=it["output"], owner_train=it.get("train"), source_registry=["sh.models.REGISTRY"],
                       validation="NOT_VALIDATED" if cat in VALIDATION_CATEGORIES else None,

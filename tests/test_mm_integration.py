@@ -28,6 +28,19 @@ from masterquo.mm.ledger import Ledger
 from masterquo.mm.orchestrator import GRAPH
 
 BACKEND = _env.ROOT / "backend"
+
+
+def _cl_kernel_text(src: str) -> str:
+    """state_stack.cl without // comments and without any whitespace (the compiled text, independent of layout)."""
+    return re.sub(r"\s+", "", re.sub(r"//[^\n]*", "", src))
+
+
+def _mqh_kernel_text(src: str) -> str:
+    """The joined "..." literals of the MQL5 constant PMW_STACK_CL, without any whitespace."""
+    m = re.search(r'const\s+string\s+PMW_STACK_CL\s*=((?:\s*"(?:[^"\\]|\\.)*")+)\s*;', src)
+    if not m:
+        raise AssertionError("PMW_STACK_CL not found in PMW_StateStack.mqh")
+    return re.sub(r"\s+", "", "".join(re.findall(r'"((?:[^"\\]|\\.)*)"', m.group(1))))
 MQL5 = [p for d in ("mql5/MasterModels", "mql5/MathFidelity") for p in (_env.ROOT / d).rglob("*") if p.suffix in (".mq5", ".mqh")]
 
 
@@ -125,8 +138,9 @@ class TestArtifactsLedgerDrift(unittest.TestCase):
         self.td.close()
 
     def test_artifact_immutability_promotion_rollback(self):
-        a1 = AR.save("XAUUSD", "unit_model", {"w": np.arange(4.0)}, {"status": "VALIDATED_SHADOW", "data_kind": "REAL_USER_DATA"})
-        a2 = AR.save("XAUUSD", "unit_model", {"w": np.arange(4.0) + 1}, {"status": "VALIDATED_SHADOW", "data_kind": "REAL_USER_DATA"})
+        ok = {"status": "VALIDATED_SHADOW", "data_kind": "REAL_USER_DATA", "gates": {"g": True}}           # 1.46 arch I0545: gates passed
+        a1 = AR.save("XAUUSD", "unit_model", {"w": np.arange(4.0)}, ok)
+        a2 = AR.save("XAUUSD", "unit_model", {"w": np.arange(4.0) + 1}, ok)
         a3 = AR.save("XAUUSD", "unit_model", {"w": np.zeros(2)}, {"status": "CANDIDATE"})
         AR.promote_shadow("XAUUSD", "unit_model", a1, "first")
         AR.promote_shadow("XAUUSD", "unit_model", a2, "second")
@@ -186,13 +200,9 @@ class TestNativeContracts(unittest.TestCase):
         self.td.close()
 
     def _perfect_native(self) -> dict:
-        ref = self.ref
-        k = [ln.split(",") for ln in (ref / "mm_ref_kalman.csv").read_text().splitlines()[1:] if ln]
-        g = [ln.split(",") for ln in (ref / "mm_ref_gpr.csv").read_text().splitlines()[1:] if ln]
-        b = [ln.split(",") for ln in (ref / "mm_ref_breakout.csv").read_text().splitlines()[1:] if ln]
-        f = lambda x: None if x == "nan" else float(x)                                  # noqa: E731
-        return {"kalman": [[int(r[0])] + [f(x) for x in r[1:7]] + [r[7]] for r in k], "gpr": [[int(r[0])] + [f(x) for x in r[1:]] for r in g],
-                "hdc": {"all_pass": True}, "breakout": [[int(r[0]), r[1], float(r[2]), float(r[3])] for r in b]}
+        # 1.46 arch (I0490/I0497/I0505/I0506/I0508/I0511): the native JSON has more sections (gpr_tune, hdc words, hdc_acc, breakout_modes,
+        # tsvp, stack) and a missing one is a FAIL - the perfect native is the format contract of fixtures.expected_native
+        return FX.expected_native(self.ref)
 
     def test_parity_statuses(self):
         nat = Path(self.td.dir) / "PMW_MM_NATIVE.txt"
@@ -253,6 +263,11 @@ class TestStaticIsolation(unittest.TestCase):
         for k in ("__kernel void stack_push", "__kernel void stack_corr"):
             self.assertIn(k, cl)
             self.assertIn(k, mq)
+        # 1.46 (I0510): the kernel BODIES must be the same text, not only the names (a changed operator in one copy went unnoticed)
+        self.assertEqual(_cl_kernel_text(cl), _mqh_kernel_text(mq))
+        mutated = cl.replace("acc += a * b", "acc += a + b")
+        self.assertNotEqual(mutated, cl)
+        self.assertNotEqual(_cl_kernel_text(mutated), _mqh_kernel_text(mq))
 
     def test_runner_and_registry_wiring(self):
         from masterquo.sh import models as SM

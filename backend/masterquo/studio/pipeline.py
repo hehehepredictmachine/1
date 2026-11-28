@@ -260,15 +260,17 @@ def stage_build_dataset(ctx: Ctx) -> dict:
         info = {"rows": len(bars), "tf": tf}
         if task["adapter"] == "DETERMINISTIC":
             import csv
-            feats = deterministic_features(task, bars, st)
+            cfg = ctx.cfg_store.get() if ctx.cfg_store is not None else None      # the BOT's config.json (read-only), None without it
+            feats = deterministic_features(task, bars, st, cfg)
             with (tmp / "features.csv").open("w", encoding="utf-8", newline="") as f:
                 w = csv.DictWriter(f, fieldnames=list(feats[0].keys()) if feats else ["t"])
                 w.writeheader()
                 for r in feats:
                     w.writerow(r)
             info["feature_rows"] = len(feats)
+            extra = {"session_profile": avwap_session_profile(task, cfg)} if task["model_id"] == "IND_AVWAP_SESSION" else {}
             atomic_json(pkg.dir / "feature_schema.json", {"indicator": task["model_id"], "columns": list(feats[0].keys()) if feats else [],
-                                                          "causal": "każdy wiersz liczony wyłącznie z zamkniętych świec <= t"})
+                                                          "causal": "każdy wiersz liczony wyłącznie z zamkniętych świec <= t", **extra})
             atomic_json(pkg.dir / "label_schema.json", {"task": "NOT_APPLICABLE"})
         else:
             atomic_json(pkg.dir / "label_schema.json", {"task": task["task_id"], "family": task["model_id"]})
@@ -281,8 +283,23 @@ def stage_build_dataset(ctx: Ctx) -> dict:
     return info
 
 
-def deterministic_features(task: dict, bars: list[dict], st) -> list[dict]:
-    """Causal per-bar features with the bot's own indicator code."""
+def avwap_session_profile(task: dict, cfg=None) -> str:
+    """1.46 (I0690): the session profile of IND_AVWAP_SESSION = the BOT's rule (indicators/service.py _profile_id: config.json
+    zones.session_profile[instrument], else LAB_XAU_REFERENCE_V1). 1.45/1.46.0 used a fixed reference profile per instrument - after a
+    profile change in the bot the Studio export differed from the bot's own feature. Without a bot config: the reference profile of
+    the instrument (as before). A profile the session engine does not know is BLOCKED (the bot cannot compute it either)."""
+    from ..analytics import session_engine as SE
+    if cfg is None:
+        return "LAB_XAU_REFERENCE_V1" if task["instrument"] == "XAUUSD" else "LAB_BTC_REFERENCE_V1"
+    zones = getattr(cfg, "zones", None)
+    prof = (getattr(zones, "session_profile", None) or {}).get(task["instrument"]) or "LAB_XAU_REFERENCE_V1"
+    if prof not in SE.PROFILES:
+        raise Blocked("BLOCKED_DATA", f"profil sesji '{prof}' z konfiguracji bota (zones.session_profile) nie istnieje w silniku sesji")
+    return prof
+
+
+def deterministic_features(task: dict, bars: list[dict], st, cfg=None) -> list[dict]:
+    """Causal per-bar features with the bot's own indicator code (cfg = the bot's AppConfig, read-only; None without it)."""
     out = []
     if task["model_id"] == "IND_SEMIVAR":
         # 1.46: the bot's own PMW-IND-SEMIVAR-1 code (returns + window): 1.45.0 re-implemented it with a made-up first return 0.0 and a window
@@ -302,7 +319,7 @@ def deterministic_features(task: dict, bars: list[dict], st) -> list[dict]:
     elif task["model_id"] == "IND_AVWAP_SESSION":
         from ..analytics import session_engine as SE
         from ..indicators.avwap import Accumulator
-        prof = "LAB_XAU_REFERENCE_V1" if task["instrument"] == "XAUUSD" else "LAB_BTC_REFERENCE_V1"
+        prof = avwap_session_profile(task, cfg)
         acc, cur = None, None
         for b in bars:
             ws = [w for w in SE.windows(prof, b["t"], 1, 0) if w["start"].timestamp() <= b["t"] < w["end"].timestamp()]

@@ -584,8 +584,8 @@ class TestNoSpecRows(unittest.TestCase):
     def _nospec_ids(self):
         from masterquo.mm import inventory as MI
         from masterquo.quant import ids as I
-        from masterquo.quant import inventory as QI
-        mm = [f"mm:{m['id']}" for m in MI.MODULES if not m.get("spec") and m["id"] not in QI._MM_TO_CANON]
+        # merge with quant_inventory (I0009): the MM -> canonical alias table is quant/ids (I.resolve), no private copy in inventory
+        mm = [f"mm:{m['id']}" for m in MI.MODULES if not m.get("spec") and not I.resolve(m["id"])]
         return mm + [cid for cid, v in I.EXTRA_PRODUCERS.items() if v[1] == "NO_SPEC"]
 
     def test_every_registry_no_spec_row(self):

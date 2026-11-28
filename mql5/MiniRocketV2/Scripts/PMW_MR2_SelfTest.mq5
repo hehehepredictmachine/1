@@ -76,7 +76,7 @@ void OnStart()
             for(int f = 0; f < F; f++)
                if(hits[f] != MR2RdI4(buf, secs[sh].offset + 4 * (w * F + f))) { mism++; if(firstRow < 0) { firstRow = w; firstF = f; } }
            }
-         Check(mism == 0, StringFormat("FROZEN_STATE_PARITY hit counts (%d windows): mismatches=%d first=(%d,%d)", n, mism, firstRow, firstF));
+         Check(mism == 0, StringFormat("NATIVE_FROZEN_STATE_PARITY hit counts (%d windows): mismatches=%d first=(%d,%d)", n, mism, firstRow, firstF));
         }
      }
    Log(StringFormat("PMW_MR2_SELFTEST RESULT=%s failures=%d build=%d", g_fail == 0 ? "PASS" : "FAIL", g_fail, (int)TerminalInfoInteger(TERMINAL_BUILD)));

@@ -58,8 +58,8 @@ def main(argv: list[str]) -> int:
     s.add_argument("--attention", choices=("LINEAR", "SLIDING", "HYBRID"), help="tryb uwagi MQ_SPIKE_BRAIN_FINANCE_V1")
     s.add_argument("--transform", help="MQ_MINIROCKET_UNIVARIATE_V2 dla MQ_MINIROCKET_RIDGE_V2")
     s.add_argument("--out")
-    s = sub.add_parser("minirocket", help="MiniRocket V2: export-native / export-fixture / parity / native-status (export-train: NOT_IMPLEMENTED)")
-    s.add_argument("action", choices=("export-native", "export-fixture", "parity", "native-status", "export-train"))
+    s = sub.add_parser("minirocket", help="MiniRocket V2: export-native / export-fixture / export-train / parity / native-status")
+    s.add_argument("action", choices=("export-native", "export-fixture", "export-train", "parity", "native-status"))
     s.add_argument("--asset", choices=INSTR, default="XAUUSD")
     s.add_argument("--model-id", help="candidate_id MQ_MINIROCKET_RIDGE_V2 (export-native)")
     s.add_argument("--output", default="./exports/minirocket")
@@ -68,6 +68,7 @@ def main(argv: list[str]) -> int:
     s.add_argument("--reference-python", help="interpreter z przypiętym sktime (uruchomienie referencji na żywo)")
     s.add_argument("--native-scores", help="mr2_infer_scores.csv z terminala (HEAD_PARITY)")
     s.add_argument("--native-status-file", help="native_status.json z 27_MINIROCKET_NATIVE.bat")
+    s.add_argument("--profile", choices=tuple(T.PROFILES), default="standard", help="export-train: budżet wierszy FIT (mr_max_fit_rows) jak w train")
     s = sub.add_parser("benchmark", help="pomiar CPU rodzin (Python); native mierzy skrypt MQL5 w terminalu")
     s.add_argument("--families", default="MQ_SPIKE_BRAIN_FINANCE_V1,MQ_MINIROCKET_RIDGE_V2")
     s.add_argument("--profile", choices=("cpu",), default="cpu")
@@ -248,12 +249,6 @@ def main(argv: list[str]) -> int:
             return 0
         if a.c == "minirocket":
             from . import minirocket_v2 as MR
-            if a.action == "export-train":
-                # 1.46 arch (I0114): PMW_MR2_Fit.mq5 names this action, but the lab protocol has no function returning the TRAIN rows
-                # (X, Y, R) of a candidate - choosing them here would be a guess (NO_SPEC); the file writer MR.export_train stays for it
-                print("[BLAD] NOT_IMPLEMENTED: minirocket export-train – protokół lab nie udostępnia wierszy TRAIN kandydata (X, Y, R); "
-                      "natywny Fit (PMW_MR2_Fit.mq5) nie ma pliku wejściowego. Użyj export-native (model wytrenowany w Pythonie).")
-                return 2
             if a.action == "parity":
                 rep = MR.parity(Path(a.fixtures), a.reference_python, Path(a.native_scores) if a.native_scores else None,
                                 Path(a.output) if a.native_scores else None, Path(a.native_status_file) if a.native_status_file else None)
@@ -262,6 +257,19 @@ def main(argv: list[str]) -> int:
                 return 0 if all(v != "FAIL" and not str(v).startswith("FAIL") for v in rep["results"].values()) else 3
             if a.action == "native-status":
                 _print(MR.native_status(Path(a.native_status_file) if a.native_status_file else None))
+                return 0
+            if a.action == "export-train":
+                from . import si_families as SFm
+                d = T.latest_dataset(a.asset, T.TASK_MOVE)
+                if d is None:
+                    print(f"[BLAD] BLOCKED_NO_DATASET dla {T.TASK_MOVE}: python -m masterquo structure-intelligence dataset --asset {a.asset}")
+                    return 2
+                rep = SFm.export_native_train(a.asset, d, a.profile, Path(a.output) / "PMW_MR2_TRAIN.bin")
+                _print(rep)
+                if rep["status"] != "OK":
+                    return 2
+                print("[INFO] Skopiuj PMW_MR2_TRAIN.bin do <MT5 Data Folder>\\MQL5\\Files\\PMW\\ i uruchom skrypt PMW_MR2_Fit "
+                      "(natywny Fit tylko zapisuje native_fit.txt – bez aktywacji modelu).")
                 return 0
             if a.action == "export-fixture":
                 z = __import__("numpy").load(Path(a.fixtures) / "sktime_fixture.npz")
@@ -360,7 +368,9 @@ def main(argv: list[str]) -> int:
                          "attention": "HYBRID"})
             out["tasks"]["PMW-UPD-09:QUOTE_EVENT_V1"] = {k: rq.get(k) for k in ("run_id", "status", "candidates", "role")}
             from . import minirocket_v2 as MR
-            out["minirocket_parity"] = MR.parity(Path(__file__).resolve().parents[3] / "tests" / "fixtures" / "minirocket")["results"]
+            par = MR.parity(Path(__file__).resolve().parents[3] / "tests" / "fixtures" / "minirocket")
+            out["minirocket_parity"] = par["results"]
+            out["minirocket_parity_scope"] = par["scope"]          # 1.46: Python vs sktime / oracle, not native evidence
             for ex in T.EXPERIMENTS:                                                     # PMW-UPD-08 experiments (ticks missing -> BLOCKED only here)
                 try:
                     r3 = T.train_experiment(a.asset, dsd, ex, ["LOGREG", "XGB"], a.profile, db=Database())

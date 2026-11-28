@@ -420,14 +420,27 @@ class ScalpService:
         except Exception as exc:  # noqa: BLE001 - observation only
             return {"status": "ERROR", "reason": f"{type(exc).__name__}: {exc}"[:200]}
 
+    def _worker_down(self) -> dict | None:
+        """The analytics worker (.venv_candles) is not running -> the exact reason (disabled candle forecasts, missing environment, first
+        start, restart after an error). 1.46 (I0615): the same condition as before (no service or no process = UNAVAILABLE) - only the
+        reason is precise; the worker is NOT started from here (that would add an input of the Quant MetaModel = a possible new entry)."""
+        if not self.forecast:
+            return {"code": "NO_FORECAST_SERVICE", "reason": "proces analityki (.venv_candles) nie działa – brak usługi prognoz"}
+        if self.forecast.proc:
+            return None
+        fn = getattr(self.forecast, "worker_unavailable", None)
+        why = fn() if callable(fn) else None
+        return why or {"code": "WORKER_NOT_RUNNING", "reason": "proces analityki (.venv_candles) nie działa"}
+
     def setup_quality(self, plan: dict) -> dict:
         """Task-B model (P(TP1 before SL)) for this setup through the analytics worker - only when a compatible model is active."""
         reg = self.registry()
         act = (reg.get("runs") or {}).get(reg.get("active") or "", {})
         if not act.get("setup_model"):
             return {"status": "UNAVAILABLE", "reason": "brak aktywnego modelu jakości setupu (zadanie B) – trening na danych rzeczywistych", "pass": False}
-        if not self.forecast or not self.forecast.proc:
-            return {"status": "UNAVAILABLE", "reason": "proces analityki (.venv_candles) nie działa", "pass": False}
+        why = self._worker_down()
+        if why:
+            return {"status": "UNAVAILABLE", "reason": why["reason"], "reason_code": why["code"], "pass": False}
         try:
             return self.forecast._ask({"cmd": "setup_quality", "features": plan.get("features") or {}}, 10)
         except Exception as exc:
@@ -491,8 +504,9 @@ class ScalpService:
         if not reg.get("active"):
             return {"status": "UNAVAILABLE", "reason": "NO_MODEL – brak wytrenowanego modelu zadania A (1/3/5 min); trening: 17_TRENING_SCALP_ML.bat",
                     "trade_assessment": {"status": "UNAVAILABLE", "reason": "model B (jakość setupu) – brak danych z replayu na rzeczywistej historii"}}
-        if not self.forecast or not self.forecast.proc:
-            return {"status": "UNAVAILABLE", "reason": "proces analityki (.venv_candles) nie działa"}
+        why = self._worker_down()
+        if why:
+            return {"status": "UNAVAILABLE", "reason": why["reason"], "reason_code": why["code"]}
         try:
             m1 = self.bridge.bars("M1", 400, include_forming=False)
             pt = float((self.bridge.symbol_info or {}).get("point") or 0.01)

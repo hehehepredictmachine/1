@@ -11,7 +11,6 @@ Nothing is filled or repaired: invalid geometry is rejected at ingest and listed
 """
 from __future__ import annotations
 
-from collections import Counter
 from datetime import datetime, timezone
 
 from .store import TF_SECONDS, iso
@@ -30,31 +29,24 @@ def check_rows(rows: list[tuple]) -> tuple[list[tuple], list[dict]]:
 
 
 def classify_gaps(times: list[int], step: int) -> dict:
-    gaps = []
-    for a, b in zip(times, times[1:]):
-        if b - a > step:
-            gaps.append((a, b))
-    days = {datetime.fromtimestamp(t, timezone.utc).date() for t in times}
-    starts = Counter(((a + step) % 86400) // step * step for a, b in gaps if b - a <= 3 * 3600 + step and (b - a) // step - 1 > 3)
-    recurring = {k for k, v in starts.items() if days and v >= max(3, 0.3 * len(days))}
+    """1.46 (I0051): the shared classifier data/quality.classify_gap_series with the parameters of this report (unchanged): weekend = covers
+    a Saturday (hourly probe) and >= 20 h; session break = recurring start on >= max(3, 30 % of days) and <= 3 h; <= 3 missing bars = short."""
+    from ..data.quality import classify_gap_series
+    r = classify_gap_series(times, step, weekend_min_s=20 * 3600, weekend_probe_s=3600, break_max_s=3 * 3600, recurring_min_days=3,
+                            recurring_share=0.3, recurring_min_missing=3, short_max_missing=3)
     out = {"WEEKEND": 0, "SESSION_BREAK": 0, "NO_TICKS_SHORT": 0, "MISSING": 0, "missing_bars": 0, "missing_list": [],
-           "session_break_times_utc": sorted(f"{k // 3600:02d}:{k % 3600 // 60:02d}" for k in recurring)}
-    for a, b in gaps:
-        miss = (b - a) // step - 1
+           "session_break_times_utc": sorted(f"{k // 3600:02d}:{k % 3600 // 60:02d}" for k in r["recurring"])}
+    names = {"WEEKEND": "WEEKEND", "BREAK": "SESSION_BREAK", "SHORT": "NO_TICKS_SHORT"}
+    for a, b, kind, miss in r["gaps"]:
+        if kind != "MISSING":
+            out[names[kind]] += 1
+            continue
         da, db = datetime.fromtimestamp(a, timezone.utc), datetime.fromtimestamp(b, timezone.utc)
-        covers_sat = any((datetime.fromtimestamp(a + k * 3600, timezone.utc)).weekday() == 5 for k in range(0, int((b - a) // 3600) + 1))
-        if covers_sat and b - a >= 20 * 3600:
-            out["WEEKEND"] += 1
-        elif ((a + step) % 86400) // step * step in recurring and b - a <= 3 * 3600 + step:
-            out["SESSION_BREAK"] += 1
-        elif miss <= 3:
-            out["NO_TICKS_SHORT"] += 1
-        else:
-            out["MISSING"] += 1
-            out["missing_bars"] += int(miss)
-            if len(out["missing_list"]) < 100:
-                out["missing_list"].append({"after_utc": iso(a), "next_utc": iso(b), "missing_bars": int(miss), "weekday": da.strftime("%a"),
-                                            "next_weekday": db.strftime("%a")})
+        out["MISSING"] += 1
+        out["missing_bars"] += int(miss)
+        if len(out["missing_list"]) < 100:
+            out["missing_list"].append({"after_utc": iso(a), "next_utc": iso(b), "missing_bars": int(miss), "weekday": da.strftime("%a"),
+                                        "next_weekday": db.strftime("%a")})
     return out
 
 

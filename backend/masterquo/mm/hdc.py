@@ -201,6 +201,30 @@ class Classifier:
         return n
 
 
+def from_state(state: dict, names: list[str]) -> tuple[Space, Encoder, Classifier]:
+    """1.46 arch (I0351): (Space, Encoder, Classifier) of an hdc_dir3 artifact (state.npz written by mm/jobs.py job_hdc: roles, levels, tie,
+    acc, lo, hi, meta = [D, seed, L, C]). The codebooks are regenerated from the seed and must equal the stored ones bit for bit: another
+    basis (other numpy PCG64 stream, other feature list) would silently give other predictions -> ValueError HDC_ARTIFACT_BASIS_MISMATCH.
+    Loading gives no live inference path by itself (the artifact stays a validation reference until a consumer is wired)."""
+    meta = np.asarray(state["meta"]).reshape(-1)
+    if meta.shape != (4,):
+        raise ValueError("HDC_ARTIFACT_META_INVALID")
+    D, seed, L, C = (int(x) for x in meta)
+    sp = Space(D, seed=seed)
+    enc = Encoder(sp, names, levels=L)
+    if not (np.array_equal(sp.tie, np.asarray(state["tie"])) and np.array_equal(enc.roles, np.asarray(state["roles"]))
+            and np.array_equal(enc.levels, np.asarray(state["levels"]))):
+        raise ValueError("HDC_ARTIFACT_BASIS_MISMATCH")
+    lo, hi = np.asarray(state["lo"], float), np.asarray(state["hi"], float)
+    acc = np.asarray(state["acc"])
+    if lo.shape != (len(enc.names),) or hi.shape != lo.shape or acc.shape != (C, D) or C < 2:
+        raise ValueError("HDC_ARTIFACT_SHAPE_INVALID")
+    enc.lo, enc.hi = lo, hi
+    clf = Classifier(sp, C)
+    clf.acc = acc.astype(np.int32)
+    return sp, enc, clf
+
+
 def measure_update_latency(space: Space, enc: Encoder, X: np.ndarray, y: np.ndarray, n: int = 300) -> dict:
     clf = Classifier(space, int(y.max()) + 1)
     for i in range(min(50, len(X))):                                   # warm-up

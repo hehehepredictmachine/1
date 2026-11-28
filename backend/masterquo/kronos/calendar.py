@@ -10,6 +10,12 @@ therefore already inside the data):
 Future times are generated bar by bar after the last closed bar, skipping CLOSED slots (daily break, weekend). An AMBIGUOUS slot inside
 the horizon, a history shorter than MIN_DAYS or no open slot within MAX_SKIP_DAYS -> no timestamps, with the reason: the forecast is
 suspended for that data instead of pretending the closed market is a continuous stream of candles.
+Arch 1.46 I0853: the FIRST date of the history is usually partial (it starts with the first bar) - its slots before the first bar were
+counted as "traded dates" without a bar, so with a short history (2-3 dates of a weekday) such a slot looked AMBIGUOUS. The corrected
+occupancy (state(..., exclude_first_partial=True): only dates whose slot overlaps [first bar, last bar]) is used by the LIVE service
+(future(..., resolve_first_day=True)) ONLY to resolve a slot that the original rule calls AMBIGUOUS and the corrected one OPEN; the
+forecast then carries info["first_day_resolved"] and the bot uses it only for information / the ASSIST hold (kronos.predictions,
+decision_limited). Every other slot, the gap count of the data quality check and the walk-forward validation keep the original rule.
 """
 from __future__ import annotations
 
@@ -46,13 +52,16 @@ class Calendar:
             return False, f"historia {self.coverage_days:.1f} dnia < {MIN_DAYS:.0f} dni – nie da się ustalić tygodniowego kalendarza sesji"
         return True, None
 
-    def state(self, t_raw: int) -> tuple[str, float | None]:
+    def state(self, t_raw: int, *, exclude_first_partial: bool = False) -> tuple[str, float | None]:
         day = int(t_raw) // DAY
         wd = (day + 3) % 7
         slot = (int(t_raw) % DAY) // self.slot
         # only dates on which this slot had already happened when the history ends count (the current, unfinished day does not
         # count for its later slots - otherwise every future slot of today would look "half open")
-        nd = sum(1 for d in self.dates_wd.get(wd, ()) if d * DAY + slot * self.slot <= (self.last or 0))
+        # exclude_first_partial (arch 1.46 I0853): symmetrically, the first, partial date counts only for slots that end after the first bar
+        lo = (self.first or 0) if exclude_first_partial else None
+        nd = sum(1 for d in self.dates_wd.get(wd, ()) if d * DAY + slot * self.slot <= (self.last or 0)
+                 and (lo is None or d * DAY + (slot + 1) * self.slot > lo))
         if nd == 0:
             return "CLOSED", 0.0                                     # this weekday never traded in the measured history
         occ = self.counts.get((wd, slot), 0) / nd
@@ -62,18 +71,25 @@ class Calendar:
             return "CLOSED", occ
         return "AMBIGUOUS", occ
 
-    def future(self, last_open_raw: int, tf_sec: int, n: int) -> tuple[list[int] | None, dict]:
-        """Server-time opens of the next n bars after the last closed bar, or (None, info with the reason)."""
+    def future(self, last_open_raw: int, tf_sec: int, n: int, *, resolve_first_day: bool = False) -> tuple[list[int] | None, dict]:
+        """Server-time opens of the next n bars after the last closed bar, or (None, info with the reason).
+        resolve_first_day (live service only, arch 1.46 I0853): an AMBIGUOUS slot that is OPEN without the partial first date is taken as
+        OPEN and listed in info["first_day_resolved"]; whenever the original rule gives timestamps, the result is identical."""
         ok, why = self.usable()
         if not ok:
             return None, {"status": "CALENDAR_INSUFFICIENT", "reason": why}
-        out, skipped = [], 0
+        out, skipped, resolved = [], 0, []
         t = int(last_open_raw) + tf_sec
         limit = int(last_open_raw) + MAX_SKIP_DAYS * DAY + n * tf_sec
         while len(out) < n:
             if t > limit:
                 return None, {"status": "CALENDAR_NO_SESSION", "reason": f"brak otwartego slotu sesji w ciągu {MAX_SKIP_DAYS} dni po ostatniej świecy"}
             st, occ = self.state(t)
+            if st == "AMBIGUOUS" and resolve_first_day:
+                st2, occ2 = self.state(t, exclude_first_partial=True)
+                if st2 == "OPEN":
+                    st, occ = st2, occ2
+                    resolved.append(_fmt(t))
             if st == "OPEN":
                 out.append(t)
             elif st == "AMBIGUOUS":
@@ -83,8 +99,10 @@ class Calendar:
             else:
                 skipped += 1
             t += tf_sec
-        return out, {"status": "OK", "skipped_closed_slots": skipped, "crosses_break": skipped > 0,
-                     "coverage_days": round(self.coverage_days, 1)}
+        info = {"status": "OK", "skipped_closed_slots": skipped, "crosses_break": skipped > 0, "coverage_days": round(self.coverage_days, 1)}
+        if resolved:
+            info["first_day_resolved"] = resolved
+        return out, info
 
     def expected_missing(self, t_raws: list[int], tf_sec: int) -> dict:
         """Gaps inside the context: consecutive bars further apart than one bar, counted only on OPEN slots (a weekend or the daily
