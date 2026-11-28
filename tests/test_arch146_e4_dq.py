@@ -719,5 +719,76 @@ class TestShDataQualitySameAsBefore(unittest.TestCase):
             self.assertGreater(st[k], 0, st)
 
 
+# ============================================================================================ Quant snapshot QC
+def _quant_bars(rnd, tf, n, faults, *, text=False):
+    from masterquo.timeutil import TF_SECONDS
+    sec = TF_SECONDS.get(tf, 60)
+    t0 = 1_793_000_000 // sec * sec + rnd.choice((0, 2 * 86400, 4 * 86400))
+    bad = (NAN, INF, -INF, -1.0, 0.0, None, True, False, "2400.5") + (("abc",) if text else ())
+    out = []
+    for t in _times(rnd, n, sec, t0, faults, floats=True):
+        o, h, lo, c = _price_tuple(rnd, faults, bad=bad)
+        src = "RESAMPLED" if rnd.random() < 0.1 else "NATIVE"
+        out.append({"t": t, "close_t": t + sec, "available_at": t + sec, "o": o, "h": h, "l": lo, "c": c, "tick_volume": 10,
+                    "spread_points": rnd.choice((None, 12, 15)), "source": src, "complete": rnd.choice((None, True, False)),
+                    "revision": rnd.choice((None, 0, 1))})
+    return out
+
+
+class TestQuantSnapshotQcSameAsBefore(unittest.TestCase):
+    def test_qc_random_series(self):
+        from masterquo.quant import snapshot as S
+        rnd = random.Random(420)
+        statuses = Counter()
+        for case in range(500):
+            tf = rnd.choice(("M1", "M3", "M5", "M15", "M30", "H1", "H4", "D1"))
+            bars = _quant_bars(rnd, tf, rnd.choice((0, 1, 2, 30, 120, 400)), case % 4 != 0, text=case % 25 == 0)
+            mg = rnd.choice((20, 5))
+            got, exp = _outcome(S.qc, bars, tf, max_gap_report=mg), _outcome(_legacy_quant_qc, bars, tf, max_gap_report=mg)
+            self.assertEqual(got, exp, f"case {case}")
+            statuses[got[0] if got[0] == "raise" else re.search(r"'status': '(\w+)'", got[1]).group(1)] += 1
+        for st in ("OK", "BLOCK", "MISSING"):
+            self.assertGreater(statuses[st], 0, statuses)                  # the random set reaches every outcome
+
+    def test_weekend_d1_series(self):
+        """Clean D1 / H4 of a market closed at the weekend: weekend gaps are session breaks, not missing bars (as before)."""
+        from masterquo.quant import snapshot as S
+        for tf, sec in (("D1", 86400), ("H4", 14400)):
+            t, bars = 1_793_000_000 // 86400 * 86400, []
+            while len(bars) < 300:
+                if datetime.fromtimestamp(t, UTC).weekday() < 5:
+                    bars.append({"t": float(t), "close_t": float(t + sec), "available_at": float(t + sec), "o": 2400.0, "h": 2401.0, "l": 2399.0,
+                                 "c": 2400.5, "tick_volume": 1, "spread_points": 10, "source": "NATIVE", "complete": None, "revision": 0})
+                t += sec
+            self.assertEqual(S.qc(bars, tf), _legacy_quant_qc(bars, tf))
+            self.assertEqual(S.qc(bars, tf)["status"], "OK")
+
+    def test_quote_state_in_build(self):
+        from masterquo.quant import snapshot as S
+
+        class Bridge:
+            tfs = ("M1",)
+
+            def __init__(self, quote):
+                self.q = quote
+
+            def bars(self, tf, limit, include_forming=False):
+                return [{"open_utc": 1_793_000_000 + 60 * i, "o": 1.0, "h": 2.0, "l": 0.5, "c": 1.5, "closed": True} for i in range(5)]
+
+            def quote_status(self):
+                return self.q
+        rnd = random.Random(421)
+        for case in range(200):
+            age = rnd.choice((None, 0.0, 9.99, 10.0, 10.01, 60.0, NAN, -1.0))
+            quote = rnd.choice((None, {}, {"age_seconds": age}))
+            mx = rnd.choice((10.0, 5.0))
+            snap = S.build(Bridge(quote), instrument="XAUUSD", tfs=("M1",), now=1_793_000_000 + 600, quote_max_age_s=mx)
+            exp = "MISSING"
+            if quote:
+                a = quote.get("age_seconds")
+                exp = "OK" if a is not None and a <= mx else "STALE"
+            self.assertEqual(snap["quote_state"], exp, case)
+
+
 if __name__ == "__main__":
     unittest.main()
