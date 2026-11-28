@@ -178,6 +178,31 @@ class TestTrainAllHelp(unittest.TestCase):
         tasks, _ = self._tasks("--skip-candles", "--skip-ml", "--skip-lab")
         self.assertEqual(tasks, "none")
 
+    def test_help_and_docstring_match_the_runner_scalp_bc_come_with_scalp_a(self):
+        # uwaga recenzenta: pomoc i docstring twierdziły, że scalp_B/C trenuje tylko `training run` bez --tasks - nieprawda:
+        # runner.build_plan dokłada scalp_B/C do zadań, gdy jest scalp_A (jeden proces scalp_train), --skip-candles pomija wszystkie trzy
+        from masterquo import train_all as TA
+        from masterquo.training import runner as R
+        plan, _ = R.build_plan(instruments=["XAUUSD"], profile="TEST_INSTALACJI", symbols={}, commissions={}, months=None, synthetic=True,
+                               tasks=[t for t, _ in TA.TRAIN_ALL_TASKS])
+        always = ("export", "quality", "activate", "bot")
+        self.assertIn("scalp_B", plan["requested_tasks"])
+        self.assertIn("scalp_C", plan["requested_tasks"])
+        outside = [k for k, _ in R.TASKS if k not in plan["requested_tasks"] and k not in always]
+        self.assertEqual(outside, ["sh_models", "sh_pack", "monte_carlo", "master_models"])
+        self.assertEqual(list(TA.NOT_IN_TRAIN_ALL), outside)
+        sub = self._help("train-all")
+        rest = sub.split("trenuje też:", 1)[1].split(".", 1)[0]            # zadania tylko `training run` bez --tasks
+        self.assertEqual([x.strip() for x in rest.split(",")], outside)
+        self.assertNotIn("scalp_B", rest)
+        self.assertIn("scalp_A (+ scalp_B/C", sub)
+        self.assertRegex(sub, r"--skip-candles\s+pomiń forecast, scalp_A/B/C, indicator_context")
+        doc = " ".join((TA.__doc__ or "").split())
+        self.assertNotIn("scalp_B / scalp_C, sh_models", doc)
+        self.assertIn("scalp_B / scalp_C are produced together with scalp_A", doc)
+        self.assertIn("only sh_models, sh_pack, monte_carlo and master_models", doc)
+        self.assertIn("--skip-candles (forecast + scalp_A/B/C + indicator_context)", doc)
+
     def test_deprecated_flags_warn_and_change_nothing(self):
         tasks, out = self._tasks("--mt5-wait", "60", "--scalp-months", "3")
         self.assertEqual(tasks, ",".join(TODAY_TASKS))

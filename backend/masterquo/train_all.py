@@ -3,16 +3,17 @@
 working for own scripts).
 
 1.46 (I0132): it is NOT what 22_TRENUJ_WSZYSTKIE_MODELE.bat does - the .bat calls `training run` without --tasks (every task of
-training/runner.TASKS). train-all passes --tasks TRAIN_ALL_TASKS (10 model tasks; export, quality, activation and the bot reload always run);
-scalp_B / scalp_C, sh_models, sh_pack, monte_carlo and master_models are trained only by `training run` without --tasks. The subset is
-unchanged since 1.15 (extending it = which artifacts may be activated, an owner decision).
+training/runner.TASKS). train-all passes --tasks TRAIN_ALL_TASKS (10 model tasks; export, quality, activation and the bot reload always run).
+scalp_B / scalp_C are produced together with scalp_A (one scalp_train process: runner.build_plan adds them whenever scalp_A is requested;
+--skip-candles skips all three), so only sh_models, sh_pack, monte_carlo and master_models (NOT_IN_TRAIN_ALL) are trained by `training run`
+without --tasks and never by train-all. The subset is unchanged since 1.15 (extending it = which artifacts may be activated, an owner decision).
 Same mechanism as 00_TRENING_START.bat / TRENUJ_OBA.bat (masterquo/training): XAUUSD first, then BTC; export of the exact
 broker symbol -> quality -> the subset -> activation of admitted models only -> reload of a running bot (never a second bot).
 Documented argument compatibility:
   --commission X     commission of XAUUSD per lot side (was used for every instrument - now XAUUSD only)
   --commission-btc   commission of BTC (otherwise from the account's deal history; unknown -> BTC scalp/ML skipped with reason)
   --months           history of the single export
-  --ml-days, --lab-bars, --min-events, --ml-no-approx, --skip-candles (forecast + scalp_A + indicator_context),
+  --ml-days, --lab-bars, --min-events, --ml-no-approx, --skip-candles (forecast + scalp_A/B/C + indicator_context),
   --skip-ml (ml + ml_scalp), --skip-lab (lab + neural_scalp + structure_intelligence + flow_context + context_indicators),
   --quick (= profile TEST_INSTALACJI), --demo (synthetic terminal; technical models, never activated)
   --scalp-months, --mt5-wait: deprecated, accepted and IGNORED (a console warning says so)
@@ -29,6 +30,9 @@ from .localapi import Bot  # noqa: F401 - 1.46 arch (I0075/I0080): the local-API
 TRAIN_ALL_TASKS = (("forecast", "skip_candles"), ("scalp_A", "skip_candles"), ("ml", "skip_ml"), ("lab", "skip_lab"),
                    ("indicator_context", "skip_candles"), ("ml_scalp", "skip_ml"), ("neural_scalp", "skip_lab"),
                    ("structure_intelligence", "skip_lab"), ("flow_context", "skip_lab"), ("context_indicators", "skip_lab"))
+# tasks of training/runner.TASKS that train-all never trains (only `training run` without --tasks, as 22_TRENUJ_WSZYSTKIE_MODELE.bat does);
+# scalp_B / scalp_C are NOT here - runner.build_plan adds them to scalp_A (a test keeps this list equal to what the runner leaves out)
+NOT_IN_TRAIN_ALL = ("sh_models", "sh_pack", "monte_carlo", "master_models")
 DEPRECATED_FLAGS = (("--scalp-months", "scalp_months"), ("--mt5-wait", "mt5_wait"))     # parsed for compatibility, never read
 
 

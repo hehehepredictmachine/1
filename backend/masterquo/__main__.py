@@ -397,11 +397,12 @@ def main(argv=None) -> int:
     sr.add_argument("--cost-stress", type=float, default=1.0, help="mnożnik kosztów zmiennych (np. 1.5 = +50%%)")
     sr.add_argument("--margin-mode", choices=["HEDGING", "NETTING"], default="HEDGING")
     sr.add_argument("--variants", action="store_true", help="porównanie wariantów z config/scalp_variants_v1.json (win ratio i expectancy obok siebie)")
-    # 1.46 (I0132): help = the real subset (22_*.bat runs `training run` with every task)
-    from .train_all import TRAIN_ALL_TASKS
-    _ta_txt = ("podzbiór `training run` (XAUUSD, potem BTC): " + ", ".join(t for t, _ in TRAIN_ALL_TASKS) + " (+ eksport, kontrola, aktywacja, "
-               "bot). Pozostałe zadania (scalp_B/C, sh_models, sh_pack, monte_carlo, master_models) trenuje `training run` bez --tasks – "
-               "tak robi 22_TRENUJ_WSZYSTKIE_MODELE.bat")
+    # 1.46 (I0132): help = the real subset (22_*.bat runs `training run` with every task); scalp_B/C come with scalp_A (one scalp_train)
+    from .train_all import NOT_IN_TRAIN_ALL, TRAIN_ALL_TASKS
+    _ta_txt = ("podzbiór `training run` (XAUUSD, potem BTC): "
+               + ", ".join("scalp_A (+ scalp_B/C – ten sam proces scalp_train)" if t == "scalp_A" else t for t, _ in TRAIN_ALL_TASKS)
+               + " (+ eksport, kontrola, aktywacja, bot). Tylko `training run` bez --tasks (tak robi 22_TRENUJ_WSZYSTKIE_MODELE.bat) "
+               "trenuje też: " + ", ".join(NOT_IN_TRAIN_ALL) + ".")
     ta = sub.add_parser("train-all", help=_ta_txt, description=_ta_txt)
     ta.add_argument("--months", type=int, default=None, help="historia (miesiące) – jeden eksport dla wszystkich rodzin modeli")
     ta.add_argument("--scalp-months", type=int, default=None, help="(przestarzałe, ignorowane – historia jest wspólna: --months)")
@@ -413,7 +414,7 @@ def main(argv=None) -> int:
     ta.add_argument("--min-events", type=int, default=None)
     ta.add_argument("--mt5-wait", type=float, default=None, help="(przestarzałe, ignorowane – połączenie MT5 sprawdza `training run`)")
     ta.add_argument("--ml-no-approx", action="store_true", help="nie używaj próbek odtworzonych z historii (APPROX) w treningu ML")
-    ta.add_argument("--skip-candles", action="store_true", help="pomiń forecast, scalp_A, indicator_context")
+    ta.add_argument("--skip-candles", action="store_true", help="pomiń forecast, scalp_A/B/C, indicator_context")
     ta.add_argument("--skip-ml", action="store_true", help="pomiń ml, ml_scalp")
     ta.add_argument("--skip-lab", action="store_true", help="pomiń lab, neural_scalp, structure_intelligence, flow_context, context_indicators")
     ta.add_argument("--quick", action="store_true", help="test ścieżki: mniej rodzin modeli")
