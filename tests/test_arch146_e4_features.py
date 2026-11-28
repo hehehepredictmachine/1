@@ -3,6 +3,9 @@
 * features/schemas.py PMW-FEAT-SCHEMAS-1: rejestr 25 schematów cech (id, wersja, właściciel = moduł buildera, lista cech, fingerprint =
   hash WYJŚCIA buildera na zamrożonym fixture PMW-FEAT-FIXTURE-1). Buildery zostają u właścicieli bez zmian. Zmiana buildera bez nowej
   wersji (nowego id) = test czerwony.
+* ledgers/view.py PMW-LEDGER-VIEW-1: widok obejmuje wszystkie magazyny z ETAP2 §5 (evaluation, quant/ledger, mm ledger, decision/ledger,
+  scalp, ml + pliki) - AUX_ADAPTERS: ledger decyzji PMW-ARC-1, rejestry holdoutu i prób, ledgery plikowe; tylko odczyt, bez migracji,
+  writery bez zmian (wiersze testowe zapisują WŁASNE writery właścicieli tam, gdzie to możliwe).
 Wszystko tylko odczyt / liczenie na danych SYNTETYCZNYCH - bez MT5, bez zleceń, bez zapisu do data/.
 """
 from __future__ import annotations
@@ -194,6 +197,193 @@ class TestFeatureSchemaRegistry(_Data):
         reg = FS.registry()
         self.assertEqual([r["id"] for r in reg], [s.id for s in FS.SCHEMAS])
         self.assertTrue(all(r["fingerprint"] for r in reg))
+
+
+# ============================================================================================== ledgers: PMW-LEDGER-VIEW-1 coverage
+T0 = 1_790_000_000.0                                                    # 2026-09-21 UTC (fixed)
+# ETAP2 §5 'ledgery: evaluation, quant/ledger, mm ledger, decision/ledger, scalp, ml (+ pliki)' -> ledgers of the view
+ETAP2_STORES = {"evaluation": {"evaluation"}, "quant/ledger": {"quant_rows", "quant_assessments"}, "mm ledger": {"mm_predictions"},
+                "decision/ledger": {"decision_records", "execution_intents", "risk_reservations"},
+                "scalp": {"scalp_shadow", "ml_scalp_predictions", "ml_scalp_samples", "nss_inferences", "forecast_shadow"},
+                "ml": {"ml_predictions", "ml_samples", "eval_ledger"},
+                "pliki": {"asge_trials", "structure_intelligence_holdout", "flow_context_holdout", "context_ind_events"}}
+
+
+def _iso(t: float) -> str:
+    from datetime import UTC, datetime
+    return datetime.fromtimestamp(t, UTC).isoformat().replace("+00:00", "Z")
+
+
+def _insert(db, table: str, **vals) -> None:
+    for c in db.query(f'PRAGMA table_info("{table}")'):
+        if c["name"] in vals or not c["notnull"] or c["dflt_value"] is not None or (c["pk"] and "INT" in (c["type"] or "").upper()):
+            continue
+        vals[c["name"]] = 0 if (c["type"] or "").upper() in ("INTEGER", "REAL", "INT", "FLOAT") else "x"
+    db.execute(f'INSERT INTO "{table}"({", ".join(vals)}) VALUES ({", ".join("?" * len(vals))})', tuple(vals.values()))
+
+
+def _tree(root: Path) -> dict:
+    """sha256 of every file except SQLite's WAL sidecars (-wal / -shm): any reader of a WAL database - also mode=ro - may create them
+    (the locking protocol), they hold no data of their own once the writer closed (checked separately: the -wal is empty)."""
+    import hashlib
+    return {str(p.relative_to(root)): hashlib.sha256(p.read_bytes()).hexdigest() for p in sorted(root.rglob("*"))
+            if p.is_file() and not p.name.endswith(("-wal", "-shm"))}
+
+
+class TestLedgerViewStores(_Data):
+    """ETAP2 §5: the view covers every ledger store (it lacked the decision ledger, the holdout / trial registries and the file ledgers)."""
+
+    def test_view_covers_every_store_of_etap2_section5(self):
+        from masterquo.ledgers import view as LV
+        names = set(LV.ALL_ADAPTERS)
+        for store, ledgers in ETAP2_STORES.items():
+            self.assertLessEqual(ledgers, names, store)
+        self.assertEqual(len(LV.ADAPTERS), 19)                             # the prediction / outcome ledgers of I0028 unchanged
+        self.assertEqual({a.group for a in LV.ADAPTERS.values()}, {"prediction"})
+        self.assertEqual(set(LV.AUX_ADAPTERS) & set(LV.ADAPTERS), set())
+        self.assertEqual({a.group for a in LV.AUX_ADAPTERS.values()}, {"decision", "holdout", "trials", "events"})
+        # ETAP1 'ledgery': 11 forecast + 4 outcome tables, 3 holdout / trial registries, the decision tables (0025_decision_arc.sql)
+        tables = {a.table for a in LV.ALL_ADAPTERS.values() if a.reader is None and set(a.stores) & {"main", "ml"}}
+        self.assertLessEqual({"eval_ledger", "lab_holdout_access", "lab_trials", "decision_records", "execution_intents", "risk_reservations",
+                              "ml_predictions", "scalp_shadow", "ai_signals", "si_outcomes", "ml_scalp_samples"}, tables)
+        from masterquo.db.database import Database
+        have = {r["name"] for r in Database().query("SELECT name FROM sqlite_master WHERE type='table'")}
+        self.assertLessEqual(tables, have)                                 # every adapter reads a table the migrations create
+        self.assertEqual(set(LV.RUN_MODES), {"LIVE_SHADOW", "LIVE", "WALK_FORWARD", "REPLAY", "OFFLINE_VALIDATION"})
+
+    def test_file_store_paths_are_the_writers_paths_and_the_view_creates_nothing(self):
+        import mq_instruments as mi
+        from masterquo.ledgers import view as LV
+        st = {s.id: s for s in LV.stores()}
+        for n in LV.AUX_ADAPTERS:
+            self.assertEqual(list(LV.records(n)), [], n)
+        LV.status()
+        self.assertEqual(list(self.data.rglob("*")), [])                  # registry + reads: no file, no folder (writers' roots mkdir)
+        from masterquo.lab import structure_task as STK
+        from masterquo.lab.context_ind import task as CT
+        from masterquo.lab.flow_context import task as FT
+        from masterquo.wf32_services import Wf32Services
+        self.assertEqual(st["apollo_trials"].path, Wf32Services(None).trials.path)
+        for inst in mi.profiles():
+            self.assertEqual(st[f"structure_intelligence:{inst}"].path, STK.root(inst) / "registry.json")
+            self.assertEqual(st[f"flow_context:{inst}"].path, FT.root(inst) / "registry.json")
+            self.assertEqual(st[f"context_ind:{inst}"].path, CT.root(inst) / "ledger")
+            self.assertEqual((st[f"context_ind:{inst}"].fmt, st[f"flow_context:{inst}"].fmt), ("jsonl_dir", "json"))
+
+    def _fill(self):
+        """Rows written by the owners' own writers where they can run offline (RiskBook / IntentLedger, reserve_holdout, TrialLedger,
+        the lab registry writers); plain inserts / the documented JSONL format otherwise."""
+        import json
+        from types import SimpleNamespace
+
+        from masterquo.apollo import asge as ASG
+        from masterquo.config import AppConfig
+        from masterquo.db.database import Database
+        from masterquo.decision.ledger import IntentLedger, RiskBook
+        from masterquo.lab import structure_task as STK
+        from masterquo.lab.context_ind import task as CT
+        from masterquo.lab.flow_context import task as FT
+        from masterquo.ml import scalp_task as stk
+        from masterquo.ml.router import ml_store
+        from masterquo.wf32_services import Wf32Services
+        db = Database()
+        cfg = AppConfig()
+        book = RiskBook(db, SimpleNamespace(get=lambda: cfg), sh_limits=dict, clock=lambda: T0)
+        il = IntentLedger(db, book)
+        a = il.open(path="ACTIVE", mode="PAPER", account_key=None, subject="SU-1", symbol="XAUUSD-", side="BUY", volume=0.1, risk_money=25.0,
+                    record_id="DR-1", equity=10_000.0)
+        il.sent(a["intent"]["intent_id"], "ATT-1")
+        il.outcome(a["intent"]["intent_id"], {"status": "FILLED", "price": 2650.1, "volume": 0.1, "ticket": 7})
+        b = il.open(path="SH", mode="PAPER", account_key=None, subject="PL-2", symbol="XAUUSD-", side="SELL", volume=0.2, risk_money=30.0,
+                    record_id="DR-2", equity=10_000.0)
+        il.outcome(b["intent"]["intent_id"], {"status": "REJECTED", "reason": "INVALID_STOPS"})
+        _insert(db, "execution_intents", intent_id="INT-X", dedup_key="k-x", created_at=_iso(T0), updated_at=_iso(T0), path="ACTIVE",
+                kind="ENTRY", mode="PAPER", state="WEIRD")
+        _insert(db, "decision_records", record_id="DR-1", created_at=_iso(T0), path="ACTIVE", source_id="D-1", strategy_id="XAU-S01",
+                symbol="XAUUSD-", mode="PAPER", direction="LONG", base_verdict="ENTER", final_verdict="ENTER", reason_codes='["OK"]',
+                models_json='[{"model_id": "ml:legacy", "role": "SHADOW"}]', inputs_hash="ih1", record_json="{}")
+        stk.reserve_holdout(db, "XAUUSD", _iso(T0 - 86400), _iso(T0), "mh1", "SCALP_TASK")
+        btc_db, _ = ml_store("BTC")
+        stk.reserve_holdout(btc_db, "BTC", _iso(T0 - 86400), _iso(T0), "mh2", "SCALP_TASK")
+        btc_db.close()
+        _insert(db, "lab_holdout_access", at=_iso(T0), asset="XAUUSD", horizon="M5x12", protocol_id="P1", holdout_hash="hh", candidate_id="C1",
+                result='{"brier": 0.24}')
+        _insert(db, "lab_trials", trial_id="TR-1", created_at=_iso(T0), asset="BTC", horizon="M5x12", model_family="LOGREG", protocol_id="P1",
+                data_hash="dh", config="{}", seeds="[11]", status="DONE", metrics='{"logloss": 0.69}')
+        led = Wf32Services(None).trials
+        led.add({"ir": {"k": 1}, "ir_hash": "IR1", "data_hash": "DH1", "status": "SHADOW_CHALLENGER", "reasons": [], "dev_trades": 40,
+                 "dev_mean_net_r": 0.12, "positive_folds": 2, "holdout_mean_net_r": 0.05, "hurdle_net_r": 0.03, "version": ASG.VERSION})
+        with open(led.path, "a", encoding="utf-8") as fh:
+            fh.write('{"torn": ')                                            # a crash while writing: skipped by the writer and the view
+        STK._update_reg("XAUUSD", lambda reg: reg.setdefault("holdout_access", {}).update(
+            {"RUN1-LOGREG": {"candidate_id": "RUN1-LOGREG", "protocol_id": "SI-PROTO-1.0.0", "ledger": {"status": "FRESH"}, "metrics": [],
+                             "at": _iso(T0), "model_hash": "smh", "role": "SHADOW"}}))
+        FT._save_reg("BTC", {"runs": {}, "shadow": {}, "history": [], "holdout_access": {
+            "R2-XGB": {"candidate_id": "R2-XGB", "ledger": {"status": "REUSED_PERIOD_EXPLORATORY"}, "metrics": {"m": 1}, "at": _iso(T0 + 60)}}})
+        d = CT.root("XAUUSD") / "ledger"
+        d.mkdir(parents=True, exist_ok=True)
+        e = {"event_id": "EV-1", "seq": 1, "kind": "BOS_UP", "bar": 40, "available_at": T0 + 300, "price": 2651.2}
+        (d / "M5_ph1.jsonl").write_text(json.dumps(dict(e, ledger_id="XAUUSD|M5|ph1|E1|EV-1", epoch=1, event_key="k#1")) + "\n", encoding="utf-8")
+        (d / "epochs.json").write_text('{"M5": 1}', encoding="utf-8")
+        db.close()
+
+    def test_every_aux_adapter_maps_writer_rows_to_the_canonical_record(self):
+        from masterquo.ledgers import view as LV
+        self._fill()
+        by = {}
+        for name in LV.AUX_ADAPTERS:
+            recs = list(LV.records(name))
+            self.assertTrue(recs, name)
+            for r in recs:
+                self.assertLessEqual(set(LV.REQUIRED), set(r), name)
+                self.assertIn(r["outcome_status"], LV.OUTCOME_STATUSES, name)
+                self.assertIn(r["run_mode"], LV.RUN_MODES, name)
+                self.assertEqual((r["pred_id"], r["view"], r["ledger"]), (f"{name}:{r['source_key']}", "PMW-LEDGER-VIEW-1", name))
+                self.assertIsNotNone(r["decision_ts"], name)
+            by[name] = recs
+        it = {r["prediction"]["path"] + ":" + r["status_raw"]: r for r in by["execution_intents"]}
+        self.assertEqual((it["ACTIVE:FILLED"]["outcome_status"], it["SH:REJECTED"]["outcome_status"]), ("SCORED", "EXCLUDED"))
+        self.assertEqual(it["ACTIVE:FILLED"]["link_ids"]["source_ref"], "ATT-1")
+        self.assertEqual(it["ACTIVE:FILLED"]["outcome"]["status"], "FILLED")
+        self.assertEqual((it["ACTIVE:WEIRD"]["outcome_status"], it["ACTIVE:WEIRD"]["status_note"]), ("INVALID", "UNKNOWN_STATUS:WEIRD"))
+        rs = {r["prediction"]["path"]: r for r in by["risk_reservations"]}
+        self.assertEqual({k: (v["status_raw"], v["outcome_status"]) for k, v in rs.items()},
+                         {"ACTIVE": ("CONSUMED", "SCORED"), "SH": ("RELEASED", "EXCLUDED")})
+        self.assertEqual(rs["ACTIVE"]["decision_ts"], T0)
+        dr = by["decision_records"][0]
+        self.assertEqual((dr["side"], dr["run_mode"], dr["prediction"]["models"][0]["model_id"]), ("LONG", "LIVE", "ml:legacy"))
+        self.assertEqual({r["instrument"]: r["status_raw"] for r in by["eval_ledger"]}, {"XAUUSD": "FRESH", "BTC": "FRESH"})
+        self.assertEqual([r["instrument"] for r in LV.records("eval_ledger", instrument="BTC")], ["BTC"])
+        self.assertEqual([r["source_key"] for r in by["asge_trials"]], ["T00001"])          # the torn line is skipped
+        self.assertEqual(by["asge_trials"][0]["metrics"]["dev_trades"], 40)
+        self.assertEqual([(r["instrument"], r["status_raw"]) for r in by["structure_intelligence_holdout"]], [("XAUUSD", "FRESH")])
+        self.assertEqual([r["source_key"] for r in LV.records("flow_context_holdout", instrument="BTC")], ["R2-XGB"])
+        self.assertEqual(list(LV.records("flow_context_holdout", instrument="XAUUSD")), [])
+        ev = by["context_ind_events"][0]
+        self.assertEqual((ev["timeframe"], ev["fingerprint"], ev["decision_ts"], ev["task"]), ("M5", "ph1", T0 + 300, "STRUCTURE_EVENT_BOS_UP"))
+        self.assertEqual(by["lab_trials"][0]["metrics"], {"logloss": 0.69})
+        st = LV.status()
+        self.assertEqual(set(st["ledgers"]), set(LV.ALL_ADAPTERS))
+        self.assertEqual(st["ledgers"]["execution_intents"], {"SCORED": 1, "EXCLUDED": 1, "INVALID": 1})
+
+    def test_reading_never_changes_a_store(self):
+        import sqlite3
+
+        from masterquo.ledgers import view as LV
+        self._fill()
+        before = _tree(self.data)
+        for name in LV.ALL_ADAPTERS:
+            list(LV.records(name))
+        LV.status()
+        self.assertEqual(_tree(self.data), before)                        # bytes of every store identical, no file added
+        self.assertEqual([p.name for p in self.data.rglob("*-wal") if p.stat().st_size], [])    # nothing pending: no write happened
+        main = next(s for s in LV.stores() if s.id == "main")
+        c = LV.connect_ro(main.path)
+        try:
+            with self.assertRaises(sqlite3.OperationalError):
+                c.execute("UPDATE execution_intents SET state='FILLED'")
+        finally:
+            c.close()
 
 
 if __name__ == "__main__":
