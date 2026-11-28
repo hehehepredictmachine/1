@@ -160,7 +160,12 @@ def models(rt, inst: str) -> dict:
     for r in mx["rows"]:
         kind = r["kind"]
         row = {**r, "requires_training": kind == "TRAINED"}
-        if kind != "TRAINED":
+        if kind == "PRETRAINED":                         # 1.46 w2 (I0008): pretrained weights - no training in the bot (was 'requires training')
+            opt = r.get("owner_train") or r.get("train")
+            row.update(training="nie wymaga treningu w bocie (model przetrenowany)" + (f"; dostrajanie opcjonalne: {opt}" if opt else ""),
+                       readiness="READY" if r["status"] == "READY" else ("SHADOW" if r["status"] == "SHADOW_ONLY" else "NIEGOTOWY"),
+                       blockers=[] if r["status"] in ("READY", "SHADOW_ONLY") else [r["reason"]])
+        elif kind != "TRAINED":
             row.update(training="nie wymaga treningu", readiness="DETERMINISTIC_OK" if r["status"] in ("DETERMINISTIC_OK", "SHADOW_ONLY") else r["status"],
                        blockers=[] if r["status"] in ("DETERMINISTIC_OK", "SHADOW_ONLY") else [r["reason"]])
         else:

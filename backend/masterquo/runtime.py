@@ -145,7 +145,7 @@ class Runtime:
         self.engine.liquidity = self.liquidity
         self.scalp.liquidity = self.liquidity
         from .sh.service import SHService
-        self.sh = SHService(self.cfg, self.bridge, self.db, self.bus, self.log, self.modes)     # PMW-SH-1 SCALPING / HEDGING
+        self.sh = SHService(self.cfg, self.bridge, self.db, self.bus, self.log, self.modes, news=self.news)   # PMW-SH-1 (w2: macro gate)
         from .sh.pack.engine import PackEngine
         self.sh.pack = PackEngine()                                                               # 1.38: 20 variants in the SAME SH cycle
         from .evaluation.service import EvaluationService
@@ -219,6 +219,8 @@ class Runtime:
                                     lambda inst: _tsfm_pred.kronos_rows(self.kronos, inst)]          # Kronos: recorded as OBSERVE only
         from .modelhub import adapters as _model_adapters
         self.sh.predictions_provider = lambda inst: _model_adapters.all_predictions(self, inst)       # other models, for agreement / conflict only
+        from .sh import models as _sh_models
+        self.sh.models_provider = _sh_models.MatrixCache(self)          # w2 (I0004): live model rows for su['models'] (cached, off the SH thread)
         self.evaluation.zone_provider = self.zones
         self.evaluation.regime_sources = {"ACTIVE": lambda: getattr(getattr(self.engine.active, "view", None), "regime", None),
                                           "SH": lambda: (self.sh.snapshot or {}).get("regime")}             # O4: both definitions

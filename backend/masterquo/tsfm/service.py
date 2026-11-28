@@ -36,7 +36,7 @@ from pathlib import Path
 
 from .. import paths
 from ..kronos import quality as Q                   # 1.46: unused `kronos.calendar as CAL` import removed (the borrowed helpers use their own)
-from ..kronos.service import KronosService
+from ..kronos.service import KronosService, scorecard_horizon
 from ..timeutil import TF_SECONDS, iso, parse_iso, utcnow
 from .settings import (
     MODEL_IDS,
@@ -198,6 +198,8 @@ class ModelWorker:
         self.set_state("STARTING", STATUS_PL["STARTING"])
         env = dict(os.environ, PYTHONPATH=str(paths.ROOT_DIR / "backend"), PYTHONIOENCODING="utf-8", HF_HUB_OFFLINE="1",
                    HF_HUB_DISABLE_TELEMETRY="1", MASTERQUO_DATA_DIR=str(paths.data_dir()))
+        from ..licensing import edition as _ed
+        _ed.warn_model_test_hooks(self.svc.applog, "TSFM", env)            # arch 1.46 I0116: information only (env unchanged)
         errlog = self.errlog = open(paths.logs_dir() / f"tsfm_{self.mid}_worker.log", "a", encoding="utf-8")
         try:
             self.proc = subprocess.Popen([py, "-m", "tsfm_runtime.worker", "--model", self.mid], cwd=str(paths.ROOT_DIR / "backend"), env=env,
@@ -291,6 +293,8 @@ class ModelWorker:
 
 
 class TsfmService:
+    # w2 (I0095): optional dependency wired by runtime.py after construction - class default (None = absent), read as self.x
+    governor = None
     # the data helpers of the Kronos service (same bridge, same symbol mapping, same calendar / meta caches) - one implementation
     symbol = KronosService.symbol
     data_kind = KronosService.data_kind
@@ -341,7 +345,7 @@ class TsfmService:
         """CPU threads of a model process: the explicit setting, else the resource profile (Memory Governor), else all cores but one."""
         if c.cpu_threads:
             return int(c.cpu_threads)
-        gov = getattr(self, "governor", None)
+        gov = self.governor
         if gov is not None:
             return gov.threads_for(mid)
         return max(1, (os.cpu_count() or 2) - 1)
@@ -559,7 +563,7 @@ class TsfmService:
         s = self.settings.get()
         c = s.models[mid]
         w = self.workers[mid]
-        gov = getattr(self, "governor", None)
+        gov = self.governor
         loaded = bool(w.proc and w.proc.poll() is None and w.load_info)
         if gov is not None:
             essential = any(c.use[pth].use in ("ASSIST", "REQUIRED") for pth in PATHS)          # 1.42.6: model w decyzjach
@@ -615,7 +619,7 @@ class TsfmService:
             return None
         w.timings.append(float(r.get("ms") or 0))
         w.last_ok = w.last_used = time.monotonic()
-        gov = getattr(self, "governor", None)
+        gov = self.governor
         if gov is not None:
             gov.record(mid, ms=r.get("ms"))
         fc = self._forecast(job, r, y_raw, off, H, s, cinfo, ctx)
@@ -788,18 +792,24 @@ class TsfmService:
         except Exception:  # noqa: BLE001 - unknown pin: no filter (as before)
             lfp = None
         fsql, farg = (" AND fingerprint=?", (lfp,)) if lfp else ("", ())
+        # arch 1.46 I0035: only the CURRENT horizon H of this timeframe (other horizons counted in other_horizons, never averaged in)
+        H = scorecard_horizon(self.settings.get(), tf)
+        hsql, harg = (" AND horizon_bars=?", (H,)) if H else ("", ())
         out = {}
         for label, kinds in (("REAL", ("MT5", "MT5_DEMO", "MT5_REAL")), ("SYNTHETIC", ("SYNTHETIC",))):
             ph = ",".join("?" * len(kinds))
             rows = self.db.query(f"SELECT * FROM tsfm_forecasts WHERE model_id=? AND instrument=? AND timeframe=? AND outcome_status='SETTLED' "
-                                 f"AND data_kind IN ({ph}){fsql} ORDER BY id DESC LIMIT 5000", (mid, inst, tf, *kinds, *farg))
+                                 f"AND data_kind IN ({ph}){fsql}{hsql} ORDER BY id DESC LIMIT 5000", (mid, inst, tf, *kinds, *farg, *harg))
             pend = self.db.one(f"SELECT COUNT(*) AS n FROM tsfm_forecasts WHERE model_id=? AND instrument=? AND timeframe=? AND outcome_status='PENDING' "
-                               f"AND data_kind IN ({ph}){fsql}", (mid, inst, tf, *kinds, *farg))["n"]
+                               f"AND data_kind IN ({ph}){fsql}{hsql}", (mid, inst, tf, *kinds, *farg, *harg))["n"]
+            other = {str(r["horizon_bars"]): r["n"] for r in self.db.query(
+                f"SELECT horizon_bars, COUNT(*) AS n FROM tsfm_forecasts WHERE model_id=? AND instrument=? AND timeframe=? AND outcome_status='SETTLED' "
+                f"AND data_kind IN ({ph}){fsql} AND horizon_bars<>? GROUP BY horizon_bars", (mid, inst, tf, *kinds, *farg, H or -1))}
             if not rows:
-                out[label] = {"settled": 0, "pending": pend, "fingerprint": lfp}
+                out[label] = {"settled": 0, "pending": pend, "fingerprint": lfp, "horizon_bars": H, "other_horizons": other}
                 continue
             rows = rows[::-1]
-            h = rows[0]["horizon_bars"] or 1
+            h = H or rows[0]["horizon_bars"] or 1
             nonover = rows[::h]
             hits = [r["direction_hit"] for r in rows if r["direction_hit"] is not None]
             cov = [r["covered_80"] for r in rows if r["covered_80"] is not None]
@@ -810,7 +820,7 @@ class TsfmService:
                           "non_overlapping": {"n": len(nonover), "mae_h": _mean(r["abs_err_h"] for r in nonover),
                                               "naive_mae_h": _mean(r["naive_abs_err_h"] for r in nonover)},
                           "note": "kolejne prognozy co świecę mają nakładające się horyzonty – wiarygodniejszy jest podzbiór bez nakładania i raport walidacji",
-                          "fingerprint": lfp}
+                          "fingerprint": lfp, "horizon_bars": H, "other_horizons": other}
         return out
 
     # ================================================================== views

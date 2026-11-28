@@ -13,7 +13,8 @@ chunk_40#6   scalp training: the commission (account currency) is converted to q
              the account currency differs; no tick value -> COMMISSION_CURRENCY_UNKNOWN.
 chunk_40#9   session_check: the gold weekend break is not assumed for BTC (NOT_VERIFIED_BROKER_SESSIONS).
 chunk_41#2   Kronos selftest(reference=True) restores the device (RoPE caches reset on that report-only path); install.verify reports the
-             LOAD state. (The live predict() GPU -> CPU fallback, chunk_41#1, is unchanged from 1.45 - rule 1.)
+             LOAD state. (The live predict() GPU -> CPU fallback, chunk_41#1, was kept as in 1.45 here - rule 1; fixed in arch 1.46
+             I0193 / I0755 with its decision limits: tests/test_arch146_w2_kronos.py.)
 chunk_41#3   SDformerFlow resume writes a NEW version folder (never into the active version); nothing to do -> NOTHING_TO_DO.
 chunk_41#5   SDformerFlow: a cancel inside an epoch keeps the last COMPLETE checkpoint.
 chunk_41#9   SDformerFlow: trained_until = last TARGET bar of the training samples; the validation tail starts after an embargo.

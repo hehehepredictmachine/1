@@ -531,7 +531,9 @@ class TestEventGruReadyPath(unittest.TestCase):
         st = {**m.state(), "scaler_med": np.zeros(nf), "scaler_iqr": np.ones(nf), "band": np.array([1e-4])}
         aid = MA.save("XAUUSD", "event_engine_dir3", st, {"status": "VALIDATED_SHADOW", "model_type": "EVENT_GRU_STACK",
                                                            "feature_schema": "PMW-MM-EVENT-1:" + ",".join(EV.FEATURES),
-                                                           "event_source": "BAR_CLOSE_EVENTS", "note": "TEST: artefakt techniczny"})
+                                                           "event_source": "BAR_CLOSE_EVENTS", "note": "TEST: artefakt techniczny",
+                                                           # merge with group mm (I0545): promote_shadow needs passed gates on REAL_USER_DATA
+                                                           "gates": {"walk_forward": True}, "data_kind": "REAL_USER_DATA"})
         MA.promote_shadow("XAUUSD", "event_engine_dir3", aid, "test")
         return aid
 
@@ -584,8 +586,8 @@ class TestNoSpecRows(unittest.TestCase):
     def _nospec_ids(self):
         from masterquo.mm import inventory as MI
         from masterquo.quant import ids as I
-        from masterquo.quant import inventory as QI
-        mm = [f"mm:{m['id']}" for m in MI.MODULES if not m.get("spec") and m["id"] not in QI._MM_TO_CANON]
+        # merge with quant_inventory (I0009): the MM -> canonical alias table is quant/ids (I.resolve), no private copy in inventory
+        mm = [f"mm:{m['id']}" for m in MI.MODULES if not m.get("spec") and not I.resolve(m["id"])]
         return mm + [cid for cid, v in I.EXTRA_PRODUCERS.items() if v[1] == "NO_SPEC"]
 
     def test_every_registry_no_spec_row(self):

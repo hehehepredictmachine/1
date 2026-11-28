@@ -391,7 +391,8 @@ class TestI0756FrozenViewNothingWithheld(unittest.TestCase):
                                active=SimpleNamespace(view=v1, status=lambda compact=True: {}, tracker=SimpleNamespace(get=lambda k: None)),
                                volatility=dict, _indicator_context=lambda f: None, _liquidity_context=lambda f: None, _structure_snapshot=lambda s: None,
                                _pmw_indicators=lambda: None, _svp_view=lambda: None, _lock=threading.Lock(), contexts=OrderedDict(),
-                               si=SimpleNamespace(last={"snapshot_id": "SIS-1"}), _structure_cache=None)
+                               si=SimpleNamespace(last={"snapshot_id": "SIS-1"}), _structure_cache=None,
+                               mm_provider=None)                       # w2 (I0095): class default of EngineService (read as self.x)
         fake.structure = lambda tf: EngineService.structure(fake, tf)
         full = {"snapshot_id": "S1", "as_of": "2026-11-24T10:00:05+00:00", "epoch": 1, "account_key": "A", "legacy": {}, "closed": {}}
         EngineService._store_context(fake, full, {}, None, {}, {}, {}, {})
@@ -564,18 +565,23 @@ class TestI0114DeadCode(unittest.TestCase):
         self.assertEqual(a["change_points"], b["change_points"])
         self.assertAlmostEqual(a["objective"], b["objective"], places=9)
 
-    def test_export_train_is_not_implemented(self):
+    def test_export_train_is_implemented_by_the_lab_protocol(self):
+        """Merged with wave 2a, group lab (I0481): export-train writes PMW_MR2_TRAIN.bin with exactly the rows `train` gives MiniRocket
+        (si_families.export_native_train - no guessed rows); the NOT_IMPLEMENTED stub of I0114 is gone. Without a dataset it is blocked."""
         import contextlib
         import io
 
-        from masterquo.lab import structure_cli
+        from masterquo.lab import si_families, structure_cli
+        self.assertTrue(callable(si_families.export_native_train))
         buf = io.StringIO()
         with contextlib.redirect_stdout(buf):
-            rc = structure_cli.main(["minirocket", "export-train"])
+            rc = structure_cli.main(["minirocket", "export-train", "--asset", "XAUUSD", "--output", str(ROOT / "nonexistent_out")])
         self.assertEqual(rc, 2)
-        self.assertIn("NOT_IMPLEMENTED", buf.getvalue())
+        self.assertNotIn("NOT_IMPLEMENTED", buf.getvalue())
+        self.assertIn("BLOCKED_NO_DATASET", buf.getvalue())
         mq5 = (ROOT / "mql5" / "MiniRocketV2" / "Scripts" / "PMW_MR2_Fit.mq5").read_text(encoding="utf-8")
-        self.assertIn("NOT_IMPLEMENTED", mq5)
+        self.assertIn("minirocket export-train", mq5)
+        self.assertNotIn("NOT_IMPLEMENTED", mq5)
 
 
 # ---------------------------------------------------------------------------------------------------------------- engine _risk harness

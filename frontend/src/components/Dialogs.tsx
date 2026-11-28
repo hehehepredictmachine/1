@@ -250,10 +250,11 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
         <div className="note">Reguła „spread do 40%”: w źródłach brak mianownika (M01 v4.2.1 §12) – status WYMAGA USTALENIA, nie jest używana jako filtr.</div>
       </div>}
       {tab === "strategy" && <div className="form">
+        <div className="note">Ta zakładka dotyczy ścieżki ORIGINAL / M07 (MVP / SMC / SCALPING). Profil ACTIVE (S01–S12) ma własne pola w zakładce AUTO / ACTIVE.</div>
         {field("Tryb strategii", "strategy.mode", "text", "AUTO = SMC > MVP > SCALPING (stała kolejność, nie ranking)", ["AUTO", "MVP", "SMC", "SCALPING"])}
         {field("Kierunek struktury", "strategy.structure_policy", "text", "H1_LEAD = decyduje H1 (najwięcej setupów) · H1_H4_NOT_OPPOSING = H1, o ile H4 nie jest przeciwny · STRICT_H4_H1 = oryginał MasterQUO (H4 i H1 zgodne)", ["H1_LEAD", "H1_H4_NOT_OPPOSING", "STRICT_H4_H1"])}
         {field("TTL setupu [świece TF setupu]", "strategy.setup_ttl_bars", "num")}
-        {field("Okno wejścia po potwierdzeniu [świece]", "strategy.confirmed_window_bars", "num", "potem setup = MISSED_ENTRY")}
+        {field("Okno wejścia po potwierdzeniu – ścieżka ORIGINAL / M07 [świece]", "strategy.confirmed_window_bars", "num", "potem setup = MISSED_ENTRY; profil ACTIVE (S01–S12) używa pola w zakładce AUTO / ACTIVE")}
         {field("Konflikt D1 blokuje wejście", "strategy.d1_conflict_blocks_entry", "bool")}
         {field("Waga TP1", "strategy.tp1_weight", "num")}
         {field("Min. odległość celu [ATR]", "strategy.min_target_distance_atr", "num")}
@@ -275,7 +276,7 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
         {field("Margines konfliktu LONG/SHORT", "active.conflict_margin", "num")}
         {field("Obniżenie etapu po [aktualizacjach]", "active.downgrade_confirm_updates", "num")}
         {field("Anulowanie po [aktualizacjach bez struktury]", "active.cancel_after_misses", "num")}
-        {field("Okno wejścia po CONFIRMED [świece]", "active.confirmed_window_bars", "num")}
+        {field("Okno wejścia po CONFIRMED – profil ACTIVE, S01–S12 [świece]", "active.confirmed_window_bars", "num", "ścieżka ORIGINAL / M07 używa pola w zakładce Strategia M07")}
         <div className="note">Skanowanie i dopuszczenie do handlu każdej strategii ustawiasz w panelu „Strategie (10)”. Powrót do poprzedniej konfiguracji: profil ORIGINAL (instrukcja w ROLLBACK.md).</div>
       </div>}
       {tab === "kronos" && <KronosTfs />}

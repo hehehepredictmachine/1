@@ -159,7 +159,7 @@ class TestScalpForecastStaleI0754(unittest.TestCase):
         def ask(req, timeout):
             seen.update(req)
             return {"status": "SHADOW"}
-        fake = SimpleNamespace(registry=lambda: {"active": "R1"}, forecast=SimpleNamespace(proc=object(), _ask=ask),
+        fake = SimpleNamespace(registry=lambda: {"active": "R1"}, _worker_down=lambda: None, forecast=SimpleNamespace(proc=object(), _ask=ask),
                                bridge=SimpleNamespace(bars=lambda tf, n, include_forming=False: _m1(3, time.time() - 120), symbol_info={"point": 0.01}))
         ScalpService.forecasts(fake)
         self.assertIn("as_of", seen)
@@ -372,8 +372,10 @@ class TestEventGruFeatureSchemaI0023(_Data):
         from masterquo.mm import events as EV
         st = {**EE.EventModel(F=len(EV.FEATURES)).state(), "scaler_med": np.zeros(len(EV.FEATURES)), "scaler_iqr": np.ones(len(EV.FEATURES)),
               "band": np.array([1e-4])}
+        # merge with group mm (I0545): promote_shadow needs every validation gate True on REAL_USER_DATA (as mm/jobs.py writes)
         aid = MA.save(INST, "event_engine_dir3", st, {"status": "VALIDATED_SHADOW", "model_type": "EVENT_GRU_STACK", "feature_schema": schema,
-                                                      "event_source": "BAR_CLOSE_EVENTS"})
+                                                      "event_source": "BAR_CLOSE_EVENTS", "gates": {"walk_forward": True},
+                                                      "data_kind": "REAL_USER_DATA"})
         MA.promote_shadow(INST, "event_engine_dir3", aid, "test")
         return aid
 

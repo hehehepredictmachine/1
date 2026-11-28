@@ -12,6 +12,8 @@ import math
 import time
 from datetime import datetime
 
+from ..data import quality as DQ
+
 TF_S = {"M1": 60, "M5": 300, "M15": 900, "H1": 3600}
 
 
@@ -40,9 +42,10 @@ def data_quality(bars: dict, quote: dict | None, now: float, cfg: dict) -> dict:
             issues.append(f"{tf}: brak świec")
             continue
         ts = [_ts(b["open_utc"]) for b in bs[-60:]]                  # ordering/duplicates of the recent window (the analysed part)
-        if any(b2 <= b1 for b1, b2 in zip(ts, ts[1:])):
+        # 1.46 (I0047): the checks are the shared ones of data/quality.py; the SH policy (windows 60 / 50, loose geometry h >= l) is unchanged
+        if DQ.order_violations(ts):
             issues.append(f"{tf}: świece nieuporządkowane lub zdublowane")
-        if any(not all(math.isfinite(float(b[k])) for k in ("o", "h", "l", "c")) or b["h"] < b["l"] for b in bs[-50:]):
+        if any(not DQ.geometry_ok(b, strict=False) for b in bs[-50:]):
             issues.append(f"{tf}: NaN/inf lub błędna geometria")
         close_t = ts[-1] + TF_S.get(tf, 60)
         ages[tf] = round(now - close_t, 1)
@@ -90,7 +93,11 @@ def _structure(bars: list[dict], tick: float) -> dict:
 class IncRegime:
     """MQ_REGIME_MULTI_V2 on closed M5 bars fed ONE bar at a time with exactly the per-bar step of market_v2.regime_series (same
     RegimeMachine, MarketBehavior, ATR14 rolling mean, volatility axis) - O(1) per bar instead of re-running 400 bars at every
-    close. The hysteresis state is path dependent: live and replay both start from the window available at their first call."""
+    close. The hysteresis state is path dependent: live and replay both start from the window available at their first call.
+    1.46: the MarketBehavior inside is trimmed (MarketBehavior.trim, identical results) - it grew without bound in the session cache."""
+
+    MB_MAX_BARS = 3000                      # MarketBehavior bars kept before a trim ...
+    MB_KEEP_BARS = 1000                     # ... down to this many (pivot / ATR windows need < 30)
 
     def __init__(self, tick: float):
         from ..lab import market_v2 as MV
@@ -126,6 +133,8 @@ class IncRegime:
                                  self.MV.vol_axis(ar, len(ar) - 1, cf["vol_window"], cf["vol_min"], cf["vol_lo"], cf["vol_hi"]))
         if len(self.c) > 2000:                              # bounded memory; windows use at most the last 400 values
             del self.c[:1000], self.tr[:1000], self.atr_rel[:1000]
+        if self.mb.retained_bars() > self.MB_MAX_BARS:     # 1.46: MarketBehavior lists / swings / bias history bounded too
+            self.mb.trim(self.MB_KEEP_BARS)
 
     def public(self) -> dict:
         v = self.view or {}
@@ -155,14 +164,18 @@ def _regime(m5: list[dict], tick: float, cache: dict | None = None) -> dict:
     return inc.public()
 
 
+# 1.46 w2 (I0312): SH reads VAMD / FD / SMC with the FROZEN DEFAULT profile of lab/context_ind (VM.DEFAULT, FD.DEFAULT, SMC defaults) -
+# passed explicitly here (the values are the ones computed before: cfg None = DEFAULT). A calibrated context_ind profile (profile.json,
+# 'context-indicators calibrate') is used by the context panel / SI cell and research only; switching SH to it would change the SH filters
+# and the sh_tp_model inputs (an owner decision after a validation with costs, not a fix). The panel shows the values SH uses ('sh' block).
 def _ctx_m5(m5: list[dict], tick: float) -> dict:
     from ..lab.context_ind import fractal as FD
     from ..lab.context_ind import smc as SM
     from ..lab.context_ind import vamd as VM
     out = {}
-    v5 = [x for x in VM.series(m5[-300:]) if x.get("status") == "READY"]
+    v5 = [x for x in VM.series(m5[-300:], VM.DEFAULT) if x.get("status") == "READY"]
     out["vamd_m5"] = v5[-1]["y"] if v5 else None
-    f = [x for x in FD.series(m5[-200:]) if x.get("zone")]
+    f = [x for x in FD.series(m5[-200:], FD.DEFAULT) if x.get("zone")]
     out["fd_zone_m5"] = f[-1]["zone"] if f else None
     s = SM.run(m5[-400:], 300, tick=tick)
     out["smc_trend_m5"] = s.trend
@@ -178,7 +191,7 @@ def _ctx_m5(m5: list[dict], tick: float) -> dict:
 def _ctx_m1(m1: list[dict], tick: float) -> dict:
     from ..lab.context_ind import smc as SM
     from ..lab.context_ind import vamd as VM
-    v1 = [x for x in VM.series(m1[-300:]) if x.get("status") == "READY"]
+    v1 = [x for x in VM.series(m1[-300:], VM.DEFAULT) if x.get("status") == "READY"]
     s1 = SM.run(m1[-240:], 60, tick=tick)
     ev1 = [e for e in s1.events if e["kind"].startswith(("BOS", "CHOCH"))]
     return {"vamd_m1": v1[-1]["y"] if v1 else None, "smc_trend_m1": s1.trend,

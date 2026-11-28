@@ -131,3 +131,9 @@ def bot_config(s: dict | None = None) -> BotConfig | None:
 def export_lock_path(s: dict | None = None) -> Path:
     """ONE lock file shared by every Studio instance and the bot's export (in the bot's data dir)."""
     return bot_data_dir(s) / "locks" / "pmw_export.lock"
+
+
+if __name__ == "__main__":
+    # 1.46 (I0139): `python -m masterquo.studio.settings` prints the port the Studio server listens on (settings.json of
+    # MQ_STUDIO_DATA_DIR) - 36_STUDIO.bat opens the browser on it instead of a hard-coded 8780
+    print(load()["port"])

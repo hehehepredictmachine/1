@@ -1,4 +1,4 @@
-// 1.33 chart layers (ChartPanel): Pepe Scalp Plan / Pepe Hedge Plan (PMW-PLAN-1), AVWAP session line with ±1σ/±2σ (PMW-IND-1) and
+// 1.33 chart layers (ChartPanel): Apollo23 Scalp Plan / Apollo23 Hedge Plan (PMW-PLAN-1), AVWAP session line with ±1σ/±2σ (PMW-IND-1) and
 // SVP zones (PMW-SVP-1). Values come from the backend - the panel only draws them. Switching a layer never changes an order.
 // 1.38: "Pakiet 20" layer (PMW-PLAN-2): the selected variant plan + active positions only (never 20 sets of lines), TP1/TP2 without a
 // fictitious TP3, the confirmed-signal arrow on the bar where the information was available (WATCH = neutral circle), one owner per
@@ -93,8 +93,8 @@ export function usePmwOverlays({ chart, candles, tf, layers, shift, dataKey }: {
     lines.current.forEach((l) => { try { ser.removePriceLine(l); } catch { /* series recreated */ } });
     lines.current = [];
     const all: Line[] = [];
-    if (layers.scalp) all.push(...planLines(scalp.data, "Pepe Scalp Plan", COL.scalp));
-    if (layers.hedge) all.push(...planLines(hedge.data, "Pepe Hedge Plan", COL.hedge));
+    if (layers.scalp) all.push(...planLines(scalp.data, "Apollo23 Scalp Plan", COL.scalp));
+    if (layers.hedge) all.push(...planLines(hedge.data, "Apollo23 Hedge Plan", COL.hedge));
     if (layers.pack && pf.levels) all.push(...planLines(pack.data, "Pakiet", COL.scalp, { activeToo: true, tf }));
     if (layers.svp) for (const z of (svp.data as any)?.items || []) {
       if (typeof z.lower !== "number" || typeof z.upper !== "number") continue;
@@ -160,8 +160,8 @@ export function PmwLayerButtons({ layers, onChange, info }: { layers: PmwLayers;
       onClick={() => onChange({ ...layers, [k]: !layers[k] })}>{label}</button>);
   return (
     <span className="pmw-layers" data-testid="pmw-layers">
-      {b("scalp", "Scalp Plan", "Pepe Scalp Plan – poziomy planu SCALPING (wejście, SL, TP, fill, SL v2)")}
-      {b("hedge", "Hedge Plan", "Pepe Hedge Plan – plan HEDGING, poziom aktywacji i noga zabezpieczająca")}
+      {b("scalp", "Scalp Plan", "Apollo23 Scalp Plan – poziomy planu SCALPING (wejście, SL, TP, fill, SL v2)")}
+      {b("hedge", "Hedge Plan", "Apollo23 Hedge Plan – plan HEDGING, poziom aktywacji i noga zabezpieczająca")}
       {b("avwap", "AVWAP", "AVWAP sesji z pasmami ±1σ/±2σ (PMW-IND-1)")}
       {b("svp", "SVP", "Strefy SVP (ręczne / algorytm / AI) jako linie granic")}
       {b("pack", "Pakiet 20", "20 strategii SC/HG (PMW-PLAN-2): strzałki potwierdzonych sygnałów, Entry/SL/TP1/TP2, stan hedge")}

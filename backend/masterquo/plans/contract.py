@@ -1,4 +1,4 @@
-"""PMW-PLAN-1 - trade plan for the chart layers **Pepe Scalp Plan** (SCALPING) and **Pepe Hedge Plan** (HEDGING).
+"""PMW-PLAN-1 - trade plan for the chart layers **Apollo23 Scalp Plan** (SCALPING) and **Apollo23 Hedge Plan** (HEDGING).
 
 Sources (never recomputed here, never in the frontend): the SH setup evaluation (sh/setup.py: entry_ref, sl, tps from the active
 strategy profile and the symbol spec - tick size / digits), the coordinator / risk result, the frozen plan row (sh_plans) and its
@@ -20,7 +20,7 @@ import json
 import time
 
 VERSION = "PMW-PLAN-1"
-LAYERS = {"SCALPING": ("SCALP", "Pepe Scalp Plan"), "HEDGING": ("HEDGE", "Pepe Hedge Plan")}
+LAYERS = {"SCALPING": ("SCALP", "Apollo23 Scalp Plan"), "HEDGING": ("HEDGE", "Apollo23 Hedge Plan")}
 STATES = ("WAIT", "NO_TRADE", "READY", "ACTIVE", "EXPIRED", "INVALIDATED", "CLOSED", "UNKNOWN")      # 1.46: + UNKNOWN
 CLOSED_STATES = ("CLOSED", "ERROR_CLOSED", "REJECTED", "ENTRY_UNKNOWN")
 LEG_LIVE = ("OPEN", "CLOSING")                                   # 1.46: hedge-leg statuses drawn as a HEDGE_ENTRY fill line
@@ -63,7 +63,7 @@ def from_setup(su: dict, *, now: float | None = None, timeframe: str = "M1", acc
     """One plan view. su = SH setup (last_eval or the frozen plan['setup'] merged with signal metadata)."""
     now = now if now is not None else time.time()
     strat = su.get("strategy")
-    kind, layer = LAYERS.get(strat, ("SCALP", "Pepe Scalp Plan"))
+    kind, layer = LAYERS.get(strat, ("SCALP", "Apollo23 Scalp Plan"))
     side = su.get("side")
     entry, sl = _entry_price(su), su.get("sl")
     tps = [t for t in (su.get("tps") or []) if t.get("price") is not None]
@@ -193,7 +193,7 @@ def chart_payload(plans: list[dict], *, symbol: str, account_key: str | None) ->
     pick = next((p["plan_key"] for p in order if p["state"] == "ACTIVE"), None) or \
         next((p["plan_key"] for p in order if p["state"] == "READY"), None) or (order[0]["plan_key"] if order else None)
     return {"contract": VERSION, "symbol": symbol, "account_key": account_key, "primary": pick, "plans": order,
-            "legend": {"SCALP": "Pepe Scalp Plan", "HEDGE": "Pepe Hedge Plan"},
+            "legend": {"SCALP": "Apollo23 Scalp Plan", "HEDGE": "Apollo23 Hedge Plan"},
             "note": "poziomy z planu strategii i danych wykonania; przełączanie warstw nie zmienia zleceń"}
 
 

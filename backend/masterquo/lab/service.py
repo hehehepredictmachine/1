@@ -19,7 +19,7 @@ from . import features as FE
 from . import fourier, market, scenarios, sessions, ticks as TK
 from .common import closed, iso, ts
 from .edge import RepaintInspector
-from .protocol import LabTrainer, load_artifact
+from .protocol import SEQ_FAMILIES, SEQ_WINDOW_POLICY, LabTrainer, load_artifact
 from .zones import ZoneStore, detect as detect_zones
 
 log = logging.getLogger("masterquo.lab")
@@ -195,14 +195,11 @@ class LabService:
     # ------------------------------------------------------------------ models + telemetry
     def _active_models(self, asset: str) -> list[tuple]:
         """Active artefact of EVERY model family of this asset: the pinned one (ACTIVE.json - activation / rollback per family),
-        otherwise the latest. All of them run; one is shown as primary."""
-        from .protocol import read_pointer
-        pinned = read_pointer(self.trainer.root, asset)["active"]
-        out, seen, errors = [], set(), []
-        for m in self.trainer.models(asset):
-            if m.get("family") in seen or (m.get("family") in pinned and pinned[m["family"]] != m.get("model_id")):
-                continue
-            seen.add(m.get("family"))
+        otherwise the latest. All of them run; one is shown as primary. 1.46: the rule lives in protocol.effective_models (the SH matrix
+        row 'lab' reports the same set)."""
+        from .protocol import effective_models
+        out, errors = [], []
+        for m in effective_models(self.trainer.root, asset, self.trainer.models(asset)):
             path = str(self.trainer.root / "models" / asset / m["path"])
             cached = self._models.get(path)
             if cached is None:
@@ -260,7 +257,11 @@ class LabService:
         if fm["warmup"][i] or i < man["seq_len"]:
             return {"status": "warming_up", "model_id": man["model_id"], "nn_status": "WARMING_UP"}
         X = fm["X"][i:i + 1]
-        Xs = FE.sequences(fm["X"], np.array([i]), man["seq_len"])
+        Xs = FE.sequences(fm["X"], np.array([i]), man["seq_len"])      # inputs unchanged for every artefact (zeros for NaN as trained)
+        # 1.46: an artefact trained under NO_WARMUP_IN_WINDOW_V1 never saw a zero-filled window - such a window is flagged (never refused:
+        # the score keeps flowing exactly as before, no change of what Quant receives)
+        seq_warm = (man.get("seq_window_policy") == SEQ_WINDOW_POLICY and fitted.family in SEQ_FAMILIES
+                    and not bool(FE.window_clean(fm["warmup"], np.array([i]), man["seq_len"])[0]))
         regime = (X[:, FE.FEATURES.index("vol_pct")] > 0.5).astype(float)
         p = float(fitted.predict(X, Xs, regime)[0])
         lat = (time.perf_counter() - t0) * 1000
@@ -283,11 +284,15 @@ class LabService:
                "latency_ms": round(lat, 2), "telemetry_overhead_ms": round(tel_ms, 2),
                "quality": "OK" if all(v == "OK" for v in fq.values()) else "DEGRADED",
                "warnings": (["MODEL_TECHNICZNY_NA_DANYCH_SYNTETYCZNYCH – nie do decyzji"] if man.get("role") == "fixture_only" else []) +
-                           ([] if man.get("verdict") == "HOLDOUT_PASSED" else [f"werdykt badania: {man.get('verdict')}"]),
+                           ([] if man.get("verdict") == "HOLDOUT_PASSED" else [f"werdykt badania: {man.get('verdict')}"]) +
+                           # 1.46: library versions differ from training (manifest vs installed) - shown, never a refusal
+                           (["ZALEZNOSCI_INNE_NIZ_PRZY_TRENINGU: " + "; ".join(man["dependency_drift"])[:300]] if man.get("dependency_drift") else []) +
+                           (["OKNO_SEKWENCJI_Z_ROZGRZEWKA: braki w oknie zastąpione zerami – poza rozkładem treningu"] if seq_warm else []),
                "expires_at": iso(ts(as_of) + TF_SEC["M5"])}
         return {"status": "ready", "model_id": man["model_id"], "family": fitted.family, "role": man.get("role"), "horizon": man["horizon"],
                 "side": side, "raw_score": round(p, 4), "probability": None, "calibration_ece": (man.get("metrics") or {}).get("ece_mean"),
                 "inference_id": inf_id, "event": tel["output_schema"]["event"], "data_source": man.get("data_source"),
+                "dependency_drift": man.get("dependency_drift") or [],
                 "nn_status": ("ACTIVE_" + str(man.get("role")).upper()) if is_nn else "INACTIVE",
                 "nn_reason": None if is_nn else f"championem jest {fitted.family} (nie sieć neuronowa) – pokazano jego rzeczywisty przepływ",
                 "telemetry": tel}

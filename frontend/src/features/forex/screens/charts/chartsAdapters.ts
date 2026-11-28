@@ -5,6 +5,7 @@ export type Sig = {
   res: string; hit: string[]; et: number | null; inv?: number | null; rg?: string | null; ro?: boolean | null; ev?: string | null;
   tb?: string | string[] | null; to?: number | null; sc?: number | null; why?: string[]; miss?: string[]; trg?: string | null;
   sh?: number[] | null; rr?: number | null; be?: string | null; hz?: number | null;
+  ref?: string | null;   // 1.46 (I0328): id rekordu źródła planu (S01–S12: setup_id, SH: signal_id) – szanse modeli liczone per plan
 };
 export type Zone = { ty: string; lo: number; up: number; st: string; t0: number; t1: number | null; q: number | null; why: string | null; v: 0 | 1 };
 export type Prob = { name: string; task: string; v: number | null; state: string; cal: string; src: string };
@@ -61,7 +62,7 @@ export function legacySignalVM(x: any): Sig | null {
     sid: x.strategy_id, src: "LEGACY", tf: x.timeframe, t: ms(x.detail?.source_time ?? x.created_at) as number, sd: x.action === "SELL" ? -1 : 1, e, sl,
     tp: (x.take_profits || []).map(num).filter((v: number | null): v is number => v != null), res, hit, et: ms(x.closed_at),
     inv: num(d.invalidation_level), rg: d.regime ?? null, tb: d.exit_rules ?? null, sc: num(x.setup_score),
-    why: d.reason_codes || [], miss: d.missing_confirmations || [], trg: x.trigger ?? null,
+    why: d.reason_codes || [], miss: d.missing_confirmations || [], trg: x.trigger ?? null, ref: x.setup_id ?? null,
   };
 }
 
@@ -234,15 +235,39 @@ export function shSignalVM(x: any): Sig | null {
   return {
     sid: "SH_" + x.strategy, src: "SH", tf: "M1", t: ms(x.created_at) as number, sd: /SELL|SHORT/.test(side) ? -1 : 1, e: +L.entry, sl: +L.sl,
     tp: tg.map((t: any) => +t.price), res, hit, et: ms(P?.closed_at ?? (x.status !== "READY" ? x.updated_at : null)),
-    sh: tg.map((t: any) => num(t.share) ?? 0), rr: num(L.net_rr), be: L.be_after ?? "—", hz: num(L.horizon_minutes),
+    sh: tg.map((t: any) => num(t.share) ?? 0), rr: num(L.net_rr), be: L.be_after ?? "—", hz: num(L.horizon_minutes), ref: x.signal_id ?? null,
   };
 }
 
-/** Szanse w karcie planu (D1 §3.7): win = Legacy ML (NET_R_POSITIVE_S01_S12), tp2 = SH tp_model (TP2_BEFORE_SL_H) z /api/v1/models/predictions. */
-export function cardProbsVM(pred: any): Record<string, Prob> {
-  const items: any[] = pred?.items || [];
-  const find = (re: RegExp) => items.find((p) => re.test(String(p.task || "")) || re.test(String(p.model_key || "")));
-  return { win: probVM(find(/NET_R_POSITIVE/), "Legacy ML · P(cel przed SL)"), tp2: probVM(find(/TP2_BEFORE_SL/), "SH tp_model · P(TP2 przed SL)") };
+const WIN = "Legacy ML · P(cel przed SL)", TP2 = "SH tp_model · P(TP2 przed SL)";
+const naProb = (name: string, state: string, why: string): Prob => ({ name, task: "—", v: null, state, cal: "NOT_APPLICABLE", src: why });
+
+/** Szanse w karcie planu (D1 §3.7) – 1.46 (I0328): prawdopodobieństwo dotyczy KONKRETNEGO planu, więc nie jest szukane na liście
+ *  /api/v1/models/predictions instrumentu (nie ma tam zadań NET_R_POSITIVE / TP2_BEFORE_SL – karta zawsze pokazywała „brak w API”).
+ *  Stan przed wyborem planu: NOT_SELECTED; szanse wybranego planu: planProbsVM. */
+export function cardProbsVM(_pred?: unknown): Record<string, Prob> {
+  return { win: naProb(WIN, "NOT_SELECTED", "wybierz plan S01–S12"), tp2: naProb(TP2, "NOT_SELECTED", "wybierz plan SH") };
+}
+
+/** SH: prawdopodobieństwo zapisane z sygnałem (GET /api/v1/sh/signals/{signal_id} → payload.probability: value, status, event, model_version).
+ *  Procent wyłącznie przy statusie SKALIBROWANE (sh/setup.py); BRAK_MODELU_ZDARZENIA → NOT_TRAINED, brak zapisu → NO_DATA. */
+export function shTp2ProbVM(detail: any): Prob {
+  const P = detail?.payload?.probability;
+  if (!detail) return naProb(TP2, "NO_DATA", "brak zapisu sygnału SH w API");
+  if (!P) return naProb(TP2, "NO_DATA", "sygnał SH zapisany bez prawdopodobieństwa");
+  const v = num(P.value), cal = P.status === "SKALIBROWANE" ? "CALIBRATED_SH" : String(P.status || "UNCALIBRATED");
+  const state = cal === "CALIBRATED_SH" && v != null && v >= 0 && v <= 1 ? "READY" : P.status === "BRAK_MODELU_ZDARZENIA" ? "NOT_TRAINED" : "NO_DATA";
+  return { name: TP2, task: String(P.event || "TP2_BEFORE_SL"), v: state === "READY" ? v : null, state, cal, src: String(P.model_version || P.source || "sh tp_model") };
+}
+
+/** Szanse wybranego planu: S01–S12 – P(net R > 0) championa ML nie jest publikowane tylko do odczytu (GET /api/v1/ml/predict zapisuje
+ *  predykcję do próby driftu ML, więc panel go nie woła); SH – zapis sygnału; plan koszyka – żaden model tego zdarzenia. */
+export function planProbsVM(sig: Pick<Sig, "src"> | null | undefined, shDetail?: any): Record<string, Prob> {
+  if (!sig) return cardProbsVM();
+  if (sig.src === "SH") return { win: naProb(WIN, "NOT_APPLICABLE", "nie dotyczy planu SH"), tp2: shTp2ProbVM(shDetail) };
+  if (sig.src === "LEGACY") return { win: naProb(WIN, "NOT_PUBLISHED", "P(net R > 0) per setup nie jest publikowane tylko do odczytu"),
+    tp2: naProb(TP2, "NOT_APPLICABLE", "nie dotyczy planu S01–S12") };
+  return { win: naProb(WIN, "NOT_APPLICABLE", "nie dotyczy planu koszyka"), tp2: naProb(TP2, "NOT_APPLICABLE", "nie dotyczy planu koszyka") };
 }
 
 /** K4: komunikat w zakładce STREFY, gdy bot nie ma stref wybranego TF M1–M30 (nie liczone / błąd / brak danych) – stan z API, bez zgadywania.

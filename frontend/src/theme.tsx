@@ -429,7 +429,3 @@ export function useTheme(): Ctx {
   if (!c) throw new Error("no theme");
   return c;
 }
-
-export function exportTheme(name: string, tokens: Tokens, overrides: Record<string, Tokens>): string {
-  return JSON.stringify({ schema: SCHEMA, version: VERSION, name, tokens, chart_overrides: overrides }, null, 1);
-}
