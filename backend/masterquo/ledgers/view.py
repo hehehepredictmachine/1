@@ -4,6 +4,12 @@ Before: 15 tables in the main database (+ the legacy ML tables of BTC in its own
 instrument, evaluation, quant rows + assessments), each with its own key, time encoding, status vocabulary and instrument id; the
 same column name meant different moments (decision_time = plan time in scalp_shadow, dequeue time in nss_inferences, processing time in
 ml_scalp_samples; settled_at = event time or wall clock). Nothing could read them together.
+Etap 4 (ETAP2 §5 'ledgery: evaluation, quant/ledger, mm ledger, decision/ledger, scalp, ml (+ pliki)'): AUX_ADAPTERS add, read-only as
+well, the decision ledger of PMW-ARC-1 (decision_records, execution_intents, risk_reservations - decision/coordinator.py, decision/ledger.py),
+the holdout / trial registries (eval_ledger - ml/scalp_task.reserve_holdout, lab_holdout_access / lab_trials - lab/protocol.py) and the
+file ledgers outside the databases (apollo/asge_trials.jsonl - apollo/asge.TrialLedger; holdout_access of structure_intelligence/<I> and
+flow_context/<I>/registry.json; context_ind/<I>/ledger/*.jsonl - structure events; context_ind/<I>/calibration_trials.jsonl - calibration
+trials). ADAPTERS keeps the 19 prediction / outcome ledgers.
 
 This module changes NOTHING in the writers or the data:
 * stores()   the registry of stores; the paths use the writers' own building blocks (paths.data_dir, the expression of
@@ -18,7 +24,8 @@ sample_id, forecast_id, row_id, run_id, ...), model_id, artifact, fingerprint, f
 id), broker_symbol, timeframe, horizon ({bars|seconds|text}), side, the times decision_ts (moment of the decision / plan), available_at,
 predicted_at (written), processed_at (taken from a queue / processed), matures_at, matured_at (wall clock of the scoring), outcome_event_ts
 (time of the outcome event) - each UTC epoch seconds plus <name>_iso -, data_kind REAL|SYNTHETIC|UNKNOWN, run_mode
-LIVE_SHADOW|WALK_FORWARD|REPLAY, prediction, outcome_status (ONE vocabulary, OUTCOME_STATUSES) next to status_raw, outcome, metrics, raw.
+LIVE_SHADOW|LIVE|WALK_FORWARD|REPLAY|OFFLINE_VALIDATION (RUN_MODES), prediction, outcome_status (ONE vocabulary, OUTCOME_STATUSES) next to
+status_raw, outcome, metrics, raw.
 """
 from __future__ import annotations
 
@@ -42,6 +49,9 @@ STATUS_MAP = {
     "MISSED_LIMIT": "EXCLUDED", "NO_EXECUTABLE_ENTRY": "EXCLUDED", "EXPIRED": "EXCLUDED", "NO_TRADE": "EXCLUDED", "REJECTED": "EXCLUDED",
     "ERROR": "INVALID", "FAILED": "INVALID",
 }
+# LIVE = a record of the running bot in its execution mode (decision ledger - the mode itself is in prediction.mode);
+# OFFLINE_VALIDATION = trials / holdout evaluations run offline on stored bars (no live decision)
+RUN_MODES = ("LIVE_SHADOW", "LIVE", "WALK_FORWARD", "REPLAY", "OFFLINE_VALIDATION")
 TIME_KEYS = ("decision_ts", "available_at", "predicted_at", "processed_at", "matures_at", "matured_at", "outcome_event_ts")
 REQUIRED = ("view", "ledger", "store", "source_table", "source_key", "pred_id", "link_ids", "model_id", "artifact", "fingerprint",
             "feature_schema", "task", "label_policy", "instrument", "broker_symbol", "timeframe", "horizon", "side", *TIME_KEYS,
@@ -99,14 +109,16 @@ def _kind(data_kind=None, synthetic=None) -> str:
 # ---------------------------------------------------------------------------------------------------------------------- stores
 @dataclass(frozen=True)
 class Store:
-    id: str                   # e.g. main, ml:BTC, mm:XAUUSD, evaluation, quant
-    kind: str                 # main | ml | mm | evaluation | quant
+    id: str                   # e.g. main, ml:BTC, mm:XAUUSD, evaluation, quant, apollo_trials, context_ind:XAUUSD
+    kind: str                 # main | ml | mm | evaluation | quant | apollo_trials | structure_intelligence | flow_context | context_ind
+                              # | context_ind_calibration
     path: Path
     instrument: str | None    # the store's instrument when the store is per instrument
+    fmt: str = "sqlite"       # sqlite | jsonl | json | jsonl_dir (a folder of .jsonl files)
 
     @property
     def exists(self) -> bool:
-        return self.path.is_file()
+        return self.path.is_dir() if self.fmt == "jsonl_dir" else self.path.is_file()
 
 
 def _inst_root(kind: str, inst: str) -> Path:
@@ -133,6 +145,15 @@ def stores(insts: list[str] | None = None) -> list[Store]:
         out.append(Store(f"mm:{inst}", "mm", _inst_root("mm", inst) / "ledger.sqlite", inst))       # mm/service: artifacts.root(inst)
     out.append(Store("evaluation", "evaluation", data / "evaluation" / "ledger.sqlite", None))   # evaluation/service._default_dir()
     out.append(Store("quant", "quant", data / "quant" / "ledger.sqlite", None))                 # quant/service.qdir()
+    # file ledgers (Etap 4): the writers' own paths without their mkdir (lab roots = mq_instruments.data_dir() / <area> / <inst>)
+    out.append(Store("apollo_trials", "apollo_trials", data / "apollo" / "asge_trials.jsonl", None, "jsonl"))   # wf32_services TrialLedger
+    for inst in insts or instruments():
+        for area in ("structure_intelligence", "flow_context"):               # lab/structure_task.root, lab/flow_context/task.root
+            out.append(Store(f"{area}:{inst}", area, mi.data_dir() / area / inst / "registry.json", inst, "json"))
+        out.append(Store(f"context_ind:{inst}", "context_ind", mi.data_dir() / "context_ind" / inst / "ledger", inst, "jsonl_dir"))
+    for inst in insts or instruments():                                       # lab/context_ind/task.calibrate (appended last: order kept)
+        out.append(Store(f"context_ind_calibration:{inst}", "context_ind_calibration",
+                         mi.data_dir() / "context_ind" / inst / "calibration_trials.jsonl", inst, "jsonl"))
     return out
 
 
@@ -151,9 +172,11 @@ def connect_ro(path: Path) -> sqlite3.Connection:
 class Adapter:
     name: str                 # ledger name in the view
     stores: tuple[str, ...]   # store kinds holding the table
-    table: str
+    table: str                # sqlite table, or the file / record set of a file store
     pk: tuple[str, ...]
     fn: Callable[[dict], dict]   # row -> adapter-specific fields of the canonical record
+    reader: Callable[[Path], Iterator[dict]] | None = None    # file stores: rows of one file (read-only); None = sqlite table
+    group: str = "prediction"    # prediction | decision | holdout | trials | events
 
 
 def _ml_predictions(r):
@@ -347,6 +370,188 @@ ADAPTERS: dict[str, Adapter] = {a.name: a for a in _A}
 ML_STORE_TABLES = ("ml_predictions", "ml_scalp_predictions", "ml_samples", "ml_scalp_samples")   # main db for XAUUSD, ml.sqlite otherwise
 
 
+# ---------------------------------------------------------------------------------------------------------------------- Etap 4: AUX
+# The decision ledger (PMW-ARC-1), holdout / trial registries and file ledgers. Their own state vocabularies are mapped HERE (local
+# maps, never added to STATUS_MAP - a raw value of another writer must not change its meaning); an unknown state = INVALID + note.
+INTENT_STATUS = {"NEW": "PENDING", "RESERVED": "PENDING", "SENT": "PENDING", "UNKNOWN": "PENDING",
+                 "FILLED": "SCORED", "PARTIAL": "SCORED", "RECONCILED_FILLED": "SCORED",
+                 "REJECTED": "EXCLUDED", "BLOCKED": "EXCLUDED", "RECONCILED_NOT_FOUND": "EXCLUDED",
+                 "DUPLICATE": "EXCLUDED"}    # decision/contracts.INTENT_STATES (DUPLICATE: execution/gateway -> IntentLedger.outcome, not sent)
+RESERVATION_STATUS = {"HELD": "PENDING", "UNKNOWN": "PENDING", "CONSUMED": "SCORED", "RELEASED": "EXCLUDED", "EXPIRED": "EXCLUDED"}
+
+
+def _local(vocab: dict, raw) -> tuple[str, str | None]:
+    s = str(raw or "").upper()
+    return (vocab[s], None) if s in vocab else ("INVALID", f"UNKNOWN_STATUS:{raw}")
+
+
+def _decision_records(r):
+    return {"model_id": f"decision:coordinator/{r['path']}", "task": "DECISION_VERDICT", "broker_symbol": r["symbol"], "side": r["direction"],
+            "link_ids": {"record_id": r["record_id"], "source_id": r["source_id"]}, "decision_ts": r["created_at"], "predicted_at": r["created_at"],
+            "fingerprint": r["inputs_hash"], "run_mode": "LIVE",
+            "prediction": {"path": r["path"], "mode": r["mode"], "strategy_id": r["strategy_id"], "account_key": r["account_key"],
+                           "base_verdict": r["base_verdict"], "final_verdict": r["final_verdict"], "reason_codes": _j(r["reason_codes"]),
+                           "models": _j(r["models_json"])},
+            "status_raw": r["final_verdict"], "outcome_status": "NOT_APPLICABLE",
+            "status_note": "wynik wykonania w execution_intents (link record_id)"}
+
+
+def _execution_intents(r):
+    st, note = _local(INTENT_STATUS, r["state"])
+    return {"model_id": f"decision:intent/{r['path']}", "task": f"EXECUTION_{r['kind']}", "broker_symbol": r["symbol"], "side": r["side"],
+            "link_ids": {"intent_id": r["intent_id"], "record_id": r["record_id"], "source_ref": r["source_ref"], "reservation_id": r["reservation_id"]},
+            "decision_ts": r["created_at"], "predicted_at": r["created_at"], "processed_at": r["updated_at"], "run_mode": "LIVE",
+            "prediction": {"path": r["path"], "mode": r["mode"], "account_key": r["account_key"], "volume": r["volume"],
+                           "risk_money": r["risk_money"], "dedup_key": r["dedup_key"]},
+            "status_raw": r["state"], "outcome_status": st, "status_note": note, "outcome": _j(r["outcome_json"])}
+
+
+def _risk_reservations(r):
+    st, note = _local(RESERVATION_STATUS, r["state"])
+    return {"model_id": f"decision:risk_book/{r['path']}", "task": "RISK_RESERVATION",
+            "link_ids": {"reservation_id": r["reservation_id"], "subject": r["subject"]},
+            "decision_ts": r["created_ts"] if r["created_ts"] is not None else r["created_at"], "predicted_at": r["created_at"],
+            "processed_at": r["updated_at"], "run_mode": "LIVE",
+            "prediction": {"path": r["path"], "mode": r["mode"], "account_key": r["account_key"], "risk_money": r["risk_money"],
+                           "positions": r["positions"], "reservation_key": r["reservation_key"], "note": r["note"]},
+            "status_raw": r["state"], "outcome_status": st, "status_note": note}
+
+
+def _eval_ledger(r):
+    return {"model_id": f"holdout:{r['task_id']}", "artifact": r["artifact_hash"], "task": r["task_id"], "instrument": r["instrument"],
+            "link_ids": {"id": r["id"]}, "decision_ts": r["at"], "predicted_at": r["at"], "run_mode": "OFFLINE_VALIDATION",
+            "prediction": {"period_start": r["period_start"], "period_end": r["period_end"]},
+            "status_raw": r["status"], "outcome_status": "NOT_APPLICABLE",
+            "status_note": "rejestr użycia okresu holdout (FRESH / REUSED_PERIOD_EXPLORATORY), nie prognoza"}
+
+
+def _lab_holdout_access(r):
+    return {"model_id": "lab:holdout", "artifact": r["candidate_id"], "task": r["horizon"], "instrument": r["asset"],
+            "link_ids": {"id": r["id"], "candidate_id": r["candidate_id"]}, "fingerprint": r["holdout_hash"], "decision_ts": r["at"],
+            "predicted_at": r["at"], "run_mode": "OFFLINE_VALIDATION", "prediction": {"protocol_id": r["protocol_id"]},
+            "outcome": _j(r["result"]), "outcome_status": "NOT_APPLICABLE", "status_note": "jednorazowy dostęp do holdoutu (lab/protocol)"}
+
+
+def _lab_trials(r):
+    m = _j(r["metrics"])
+    return {"model_id": f"lab:{r['model_family']}", "artifact": r["trial_id"], "task": r["horizon"], "instrument": r["asset"],
+            "link_ids": {"trial_id": r["trial_id"]}, "fingerprint": r["data_hash"], "decision_ts": r["created_at"], "predicted_at": r["created_at"],
+            "run_mode": "OFFLINE_VALIDATION",
+            "prediction": {"protocol_id": r["protocol_id"], "config": _j(r["config"]), "seeds": _j(r["seeds"]), "note": r["note"]},
+            "status_raw": r["status"], "metrics": m if isinstance(m, dict) else {}, "outcome_status": "NOT_APPLICABLE",
+            "status_note": "rejestr prób protokołu walidacji (liczba prób = poprawka na wielokrotne testy)"}
+
+
+def _asge_trials(r):
+    return {"model_id": "apollo:asge", "artifact": r["ir_hash"], "fingerprint": r["data_hash"], "task": "ASGE_STRATEGY_TRIAL",
+            "link_ids": {"trial_id": r["trial_id"], "parent": r["parent"], "holdout_reused_from": r["holdout_reused_from"]},
+            "decision_ts": r["created_at"], "predicted_at": r["created_at"], "run_mode": "OFFLINE_VALIDATION",
+            "prediction": {"ir": r["ir"], "version": r["version"], "hurdle_net_r": r["hurdle_net_r"], "execution_allowed": r["execution_allowed"],
+                           "reasons": r["reasons"], "integrity": r["integrity"]},
+            "status_raw": r["status"], "metrics": {"dev_trades": r["dev_trades"], "dev_mean_net_r": r["dev_mean_net_r"],
+                                                   "positive_folds": r["positive_folds"], "holdout_mean_net_r": r["holdout_mean_net_r"]},
+            "outcome_status": "NOT_APPLICABLE", "status_note": "ledger prób generatora strategii (lineage, holdout raz na kandydata) - nie prognoza"}
+
+
+# task of a holdout entry: the entries carry no task_id - structure_intelligence keeps it in registry.json runs[<run>].task (_read_holdout
+# adds it as _run_task); flow_context has one task (lab/flow_context/task.TASK - kept equal to it by a test)
+HOLDOUT_TASK = {"structure_intelligence": None, "flow_context": "FLOW_CONTEXT_MOVE_M1_V1"}
+
+
+def _holdout_registry(area: str):
+    def fn(r):
+        led = r["ledger"] if isinstance(r["ledger"], dict) else {}
+        return {"model_id": f"lab:{area}", "artifact": r["model_hash"] or r["candidate_id"],
+                "task": r["task_id"] or r["_run_task"] or HOLDOUT_TASK.get(area),
+                "link_ids": {"candidate_id": r["candidate_id"]}, "decision_ts": r["at"], "predicted_at": r["at"], "run_mode": "OFFLINE_VALIDATION",
+                "prediction": {"protocol_id": r["protocol_id"], "role": r["role"], "edge_status": r["edge_status"], "ledger": r["ledger"]},
+                "status_raw": led.get("status"), "outcome": {"metrics": r["metrics"]}, "outcome_status": "NOT_APPLICABLE",
+                "status_note": f"jednorazowa ocena holdout ({area}/<instrument>/registry.json holdout_access)"}
+    return fn
+
+
+def _context_ind_events(r):
+    parts = str(r["ledger_id"] or "").split("|")                           # <inst>|<tf>|<profile_hash>|E<epoch>|<event_id>
+    return {"model_id": "lab:context_ind", "task": f"STRUCTURE_EVENT_{r['kind']}", "timeframe": parts[1] if len(parts) > 1 else None,
+            "fingerprint": parts[2] if len(parts) > 2 else None, "link_ids": {"event_id": r["event_id"], "event_key": r["event_key"]},
+            "decision_ts": r["available_at"], "available_at": r["available_at"], "predicted_at": r["available_at"],
+            "prediction": {k: v for k, v in r.items() if k not in ("_file", "_line")}, "outcome_status": "NOT_APPLICABLE",
+            "status_note": "zdarzenie struktury (SMC), nie prognoza - zapis append-only lab/context_ind/service.py"}
+
+
+def _context_ind_calibration(r):
+    trials = r["trials"] if isinstance(r["trials"], list) else []
+    return {"model_id": "lab:context_ind/calibration", "task": "CONTEXT_MODULE_CALIBRATION", "decision_ts": r["at"], "predicted_at": r["at"],
+            "link_ids": {"line": r["_line"]}, "run_mode": "OFFLINE_VALIDATION",
+            "prediction": {"chosen": r["chosen"], "grid": [{k: t.get(k) for k in ("module", "config", "status")} for t in trials
+                                                           if isinstance(t, dict)]},
+            "metrics": {"trials": len(trials), "failed": sum(1 for t in trials if isinstance(t, dict) and t.get("status") == "FAILED")},
+            "outcome_status": "NOT_APPLICABLE",
+            "status_note": "ledger prób kalibracji VAMD / FD / SMC na DEV (<= 24 konfiguracje, lab/context_ind/task.py) - nie prognoza"}
+
+
+def _read_jsonl(path: Path) -> Iterator[dict]:
+    """Rows of one JSONL file (read-only); a torn / unreadable line is skipped, as apollo/asge.TrialLedger skips it. Bytes are decoded
+    per line inside the try: a torn multi-byte UTF-8 character (writers use ensure_ascii=False) skips that line, not the whole file."""
+    with open(path, "rb") as fh:
+        for n, line in enumerate(fh, 1):
+            try:
+                row = json.loads(line.decode("utf-8"))
+            except ValueError:                                             # JSONDecodeError and UnicodeDecodeError
+                continue
+            if isinstance(row, dict):
+                yield {**row, "_file": path.name, "_line": n}
+
+
+def _read_asge(path: Path) -> Iterator[dict]:
+    """asge_trials.jsonl as the owner exposes it: every row through apollo/asge._sealed (read-only) - execution_allowed is the constant
+    False and a file row with another value carries integrity = EXECUTION_ALLOWED_TAMPERED (1.46); the file is never rewritten."""
+    from ..apollo import asge as ASG
+    for row in _read_jsonl(path):
+        yield ASG._sealed(row)
+
+
+def _read_jsonl_dir(path: Path) -> Iterator[dict]:
+    for f in sorted(path.glob("*.jsonl")):
+        yield from _read_jsonl(f)
+
+
+def _read_holdout(path: Path) -> Iterator[dict]:
+    """holdout_access of a lab registry.json ({candidate_id: result}); an unreadable registry yields nothing (never repaired here)."""
+    try:
+        reg = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return
+    acc = reg.get("holdout_access") if isinstance(reg, dict) else None
+    runs = reg.get("runs") if isinstance(reg, dict) and isinstance(reg.get("runs"), dict) else {}
+    for cid, v in (acc or {}).items():
+        if isinstance(v, dict):
+            c = v.get("candidate_id") or cid
+            rid = next((r for r in runs if str(c).startswith(r + "-")), None)        # the owners' rule (structure_task._candidate_dir)
+            run = runs.get(rid) if rid is not None else None
+            yield {**v, "candidate_id": c, "_run_task": run.get("task") if isinstance(run, dict) else None}
+
+
+_AUX = [
+    Adapter("decision_records", ("main",), "decision_records", ("record_id",), _decision_records, group="decision"),
+    Adapter("execution_intents", ("main",), "execution_intents", ("intent_id",), _execution_intents, group="decision"),
+    Adapter("risk_reservations", ("main",), "risk_reservations", ("reservation_id",), _risk_reservations, group="decision"),
+    Adapter("eval_ledger", ("main", "ml"), "eval_ledger", ("id",), _eval_ledger, group="holdout"),
+    Adapter("lab_holdout_access", ("main",), "lab_holdout_access", ("id",), _lab_holdout_access, group="holdout"),
+    Adapter("lab_trials", ("main",), "lab_trials", ("trial_id",), _lab_trials, group="trials"),
+    Adapter("asge_trials", ("apollo_trials",), "asge_trials.jsonl", ("trial_id",), _asge_trials, _read_asge, "trials"),
+    Adapter("structure_intelligence_holdout", ("structure_intelligence",), "registry.json:holdout_access", ("candidate_id",),
+            _holdout_registry("structure_intelligence"), _read_holdout, "holdout"),
+    Adapter("flow_context_holdout", ("flow_context",), "registry.json:holdout_access", ("candidate_id",), _holdout_registry("flow_context"),
+            _read_holdout, "holdout"),
+    Adapter("context_ind_events", ("context_ind",), "ledger/*.jsonl", ("ledger_id",), _context_ind_events, _read_jsonl_dir, "events"),
+    Adapter("context_ind_calibration", ("context_ind_calibration",), "calibration_trials.jsonl", ("at", "_line"), _context_ind_calibration,
+            _read_jsonl, "trials"),
+]
+AUX_ADAPTERS: dict[str, Adapter] = {a.name: a for a in _AUX}
+ALL_ADAPTERS: dict[str, Adapter] = {**ADAPTERS, **AUX_ADAPTERS}
+
+
 def to_record(ad: Adapter, store: Store, row: dict) -> dict:
     """One row of `ad.table` from `store` -> the canonical record (pure function, no I/O)."""
     pk = ":".join(str(row.get(k)) for k in ad.pk)
@@ -397,9 +602,18 @@ def _stores_for(ad: Adapter, insts: list[str] | None) -> list[Store]:
 
 def records(ledger: str, *, instrument: str | None = None, limit: int | None = None) -> Iterator[dict]:
     """Canonical records of one ledger, store by store (read-only). A missing store / table yields nothing (see status())."""
-    ad = ADAPTERS[ledger]
+    ad = ALL_ADAPTERS[ledger]
     for s in _stores_for(ad, [instrument] if instrument else None):
         if not s.exists:
+            continue
+        if ad.reader is not None:                                           # file ledger: read-only reader, nothing is created
+            for k, row in enumerate(ad.reader(s.path)):
+                if limit and k >= int(limit):
+                    break
+                rec = to_record(ad, s, row)
+                if instrument and rec["instrument"] not in (None, instrument):
+                    continue
+                yield rec
             continue
         con = connect_ro(s.path)
         try:
@@ -416,10 +630,10 @@ def records(ledger: str, *, instrument: str | None = None, limit: int | None = N
 
 
 def status() -> dict:
-    """Per store: path, exists; per ledger: rows by canonical outcome_status (read-only)."""
-    out = {"view": VERSION, "stores": [{"id": s.id, "kind": s.kind, "path": str(s.path), "exists": s.exists, "instrument": s.instrument}
-                                       for s in stores()], "ledgers": {}}
-    for name in ADAPTERS:
+    """Per store: path, exists; per ledger (prediction ledgers + AUX): rows by canonical outcome_status (read-only)."""
+    out = {"view": VERSION, "stores": [{"id": s.id, "kind": s.kind, "path": str(s.path), "exists": s.exists, "instrument": s.instrument,
+                                        "fmt": s.fmt} for s in stores()], "ledgers": {}}
+    for name in ALL_ADAPTERS:
         cnt: dict[str, int] = {}
         for r in records(name):
             cnt[r["outcome_status"]] = cnt.get(r["outcome_status"], 0) + 1
