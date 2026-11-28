@@ -834,6 +834,10 @@ class TestOfflineReportsSameAsBefore(unittest.TestCase):
         for case in range(3000):
             o, h, lo, c = _price_tuple(rnd, True)
             self.assertEqual(EX._geometry_ok(o, h, lo, c), _legacy_export_geometry_ok(o, h, lo, c), case)
+        # fixed cases where only the positive-open condition decides (the random bars never reach it)
+        for t in ((0.0, 0.0, 0.0, 0.0), (-1.0, 1.0, -2.0, 0.0), (0.0, 1.0, 0.0, 0.5), (-0.5, 0.0, -1.0, -0.2), (1e-12, 1.0, 0.0, 0.5)):
+            self.assertEqual(EX._geometry_ok(*t), _legacy_export_geometry_ok(*t), t)
+        self.assertFalse(EX._geometry_ok(0.0, 1.0, 0.0, 0.5))
 
 
 # ============================================================================================ Kronos / TSFM input, Kronos steps, Monte Carlo

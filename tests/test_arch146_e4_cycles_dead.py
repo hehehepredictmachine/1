@@ -310,6 +310,8 @@ def dead_definitions(root: Path = ROOT) -> list[str]:
 class TestNoDeadDefinitions(unittest.TestCase):
     """martwy_kod_konfig#7 (I0114) - the CI step: no function / method / class without a static or dynamic reference."""
 
+    @unittest.skipIf((ROOT / "backend" / "masterquo" / "licensing" / "_edition.py").exists(),
+                     "paczka klienta: pliki edycji właściciela (verify_release.OWNER_ONLY) są usunięte, więc ich odwołania nie są widoczne")
     def test_backend_and_tools_have_no_unreferenced_definitions(self):
         dead = dead_definitions()
         self.assertEqual(dead, [], "martwe definicje (nazwa występuje tylko w definicji): usuń je albo dopisz do ALLOW z powodem\n"

@@ -216,7 +216,7 @@ def build(rt, inst: str) -> dict:
         state = STATE_FROM_PROBE.get(pr["status"], "ERROR")
         loc, data = LOCATION.get(it["id"], ("?", "?"))
         cat = CAT_FROM_KIND.get(it["kind"], "INDICATOR")
-        if it["kind"] == "DETERMINISTIC" and set(it["roles"].values()) <= set(RULE_ROLES):
+        if it["kind"] == "DETERMINISTIC" and it["roles"] and set(it["roles"].values()) <= set(RULE_ROLES):
             cat = "RULE"
         rows.append({"id": it["id"], "name": it["name"], "category": cat, "location": loc, "purpose": it["output"], "required_data": data,
                      "input": data, "output": it["output"], "instruments": ["XAUUSD", "BTC"], "training": it.get("train") or "nie dotyczy",
