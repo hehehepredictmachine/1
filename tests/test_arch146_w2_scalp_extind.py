@@ -318,9 +318,9 @@ class TestArtifactEnvironment(unittest.TestCase):
 
 
 # ------------------------------------------------------------------------------------------------------------ archive (ExtIndService)
-def _env_body(seq=1, gen=1, cap=1_800_000_000, objects=None, symbol="XAUUSD-", adapter="IQ_GOLD_GANN"):
+def _env_body(seq=1, gen=1, cap=1_800_000_000, objects=None, symbol="XAUUSD-", adapter="IQ_GOLD_GANN", chart="77"):
     return {"schema_version": "pmw-extind-1", "producer_version": "test", "adapter_id": adapter, "product": {"version": "1.0"},
-            "terminal_fingerprint": "Srv:001", "chart_id": "77", "symbol": symbol, "tf": "PERIOD_M5", "time_basis": "UTC",
+            "terminal_fingerprint": "Srv:001", "chart_id": chart, "symbol": symbol, "tf": "PERIOD_M5", "time_basis": "UTC",
             "captured_at_server": cap, "generation": gen, "sequence": seq, "complete": True,
             "objects": objects if objects is not None else [{"name": "IQG_major_1", "type": "HLINE", "prices": [2650.0], "times": []}]}
 
@@ -408,6 +408,101 @@ class TestArchiveDeduplication(_ArchiveCase):
         self.assertNotIn("IQ_GOLD_GANN", svc2.heartbeat)
         self.assertEqual(svc2.ingest_bytes(self.c.wrap(_env_body(seq=4, cap=1_800_000_006)), now=t0 + timedelta(minutes=30)), 1)
         self.assertEqual(self.rows(), 2)                                      # the next read after 30 min: a new row (gap)
+
+
+class TestAsOfTwoSources(_ArchiveCase):
+    """I0729 (review 2): one adapter on two charts of the same instrument. After the deduplication a row stands for a run of identical
+    reads (available_at = the FIRST read), so 'newest available_at wins' picked the chart that last CHANGED its content - a chart closed
+    long ago - instead of the one that last confirmed something. as_of picks the newest row of every source at or before t and keeps the
+    one confirmed latest at t (before the deduplication: the newest read)."""
+
+    L2700 = ({"name": "IQG_major_1", "type": "HLINE", "prices": [2700.0], "times": []},)
+
+    def feed(self, t0, live=(0, 120), other=(10, 20), live_chart="77", other_chart="88"):
+        seq = {live_chart: 0, other_chart: 0}
+        for k in range(0, 121, 2):
+            for ch, (a, b), obj in ((live_chart, live, None), (other_chart, other, self.L2700)):
+                if a <= k <= b:
+                    seq[ch] += 1
+                    self.ing(t0 + timedelta(seconds=k), seq=seq[ch], cap=1_800_000_000 + k, objects=obj, chart=ch)
+
+    def test_closed_chart_does_not_win_over_the_live_one(self):
+        t0 = datetime(2026, 10, 19, 10, 0, tzinfo=UTC)
+        self.feed(t0)
+        s = self.svc.as_of("IQ_GOLD_GANN", "XAUUSD", t0 + timedelta(seconds=100))
+        self.assertEqual([x["price"] for x in s["levels"]], [2650.0])
+        self.assertEqual(s["chart_id"], "77")
+        self.assertLessEqual(s["age_s"], 2.0)
+        self.assertLessEqual(self.rows(), 4)                                  # still deduplicated (no row per read)
+
+    def test_inside_the_other_chart_window_and_point_in_time(self):
+        t0 = datetime(2026, 10, 19, 10, 0, tzinfo=UTC)
+        self.feed(t0)
+        s = self.svc.as_of("IQ_GOLD_GANN", "XAUUSD", t0 + timedelta(seconds=15))    # both charts confirm: the newest content (as before)
+        self.assertEqual(([x["price"] for x in s["levels"]], s["chart_id"]), ([2700.0], "88"))
+        s = self.svc.as_of("IQ_GOLD_GANN", "XAUUSD", t0 + timedelta(seconds=9))     # chart 88 is not known yet (no look-ahead)
+        self.assertEqual(([x["price"] for x in s["levels"]], s["chart_id"]), ([2650.0], "77"))
+        self.assertIsNone(self.svc.as_of("IQ_GOLD_GANN", "XAUUSD", t0 - timedelta(seconds=1)))
+
+    def test_live_chart_closed_the_other_one_wins(self):
+        t0 = datetime(2026, 10, 19, 10, 0, tzinfo=UTC)
+        self.feed(t0, live=(0, 30), other=(10, 120))
+        s = self.svc.as_of("IQ_GOLD_GANN", "XAUUSD", t0 + timedelta(seconds=100))
+        self.assertEqual(([x["price"] for x in s["levels"]], s["chart_id"]), ([2700.0], "88"))
+        self.assertLessEqual(s["age_s"], 2.0)
+
+    def test_both_closed_the_later_confirmation_wins(self):
+        t0 = datetime(2026, 10, 19, 10, 0, tzinfo=UTC)
+        self.feed(t0, live=(0, 60), other=(10, 40))
+        s = self.svc.as_of("IQ_GOLD_GANN", "XAUUSD", t0 + timedelta(seconds=100))
+        self.assertEqual(([x["price"] for x in s["levels"]], s["chart_id"]), ([2650.0], "77"))
+        self.assertAlmostEqual(s["age_s"], 40.0)
+        self.assertEqual(s["confirmed_at"], _iso(t0 + timedelta(seconds=60)))
+
+
+    def test_random_feeds_match_the_definition(self):
+        """Random feeds of three charts (closing, reopening, changing content, several reads inside one second, whole-second stamps)
+        against the definition: the newest row of every source at or before t, key (min(t, last confirmation), available_at, sequence)."""
+        import random
+
+        from masterquo.timeutil import parse_iso
+        rnd = random.Random(7)
+        t0 = datetime(2026, 10, 19, 10, 0, tzinfo=UTC)
+        charts = {"77": [0, 2650.0, True], "88": [0, 2700.0, False], "99": [0, 2600.0, False]}
+        t = t0
+        for k in range(400):
+            t += timedelta(microseconds=rnd.choice((0, 300_000, 700_000, 1_000_000, 2_000_000)) * (rnd.random() < 0.95 or 40))
+            if rnd.random() < 0.5:
+                t = t.replace(microsecond=0)                                  # whole-second stamps ('...SSZ') mixed with fractions
+            ch = rnd.choice(tuple(charts))
+            st_ = charts[ch]
+            if rnd.random() < 0.05:
+                st_[2] = not st_[2]                                           # chart closed / opened
+            if not st_[2]:
+                continue
+            if rnd.random() < 0.1:
+                st_[1] = rnd.choice((2600.0, 2650.0, 2700.0, 2750.0))
+            st_[0] += 1
+            self.ing(t, seq=st_[0], cap=1_800_000_000 + k, chart=ch,
+                     objects=[{"name": "IQG_major_1", "type": "HLINE", "prices": [st_[1]], "times": []}])
+        rows = self.db.query("SELECT * FROM extind_snapshots")
+        self.assertLess(len(rows), 300)
+
+        def expected(tq):
+            newest = {}
+            for r in rows:
+                a = parse_iso(r["available_at"])
+                if a <= tq and (r["source_instance"] not in newest or (a, r["sequence"]) > newest[r["source_instance"]][0]):
+                    newest[r["source_instance"]] = ((a, r["sequence"]), r)
+            if not newest:
+                return None
+            return max(newest.values(), key=lambda v: (max(v[0][0], min(tq, parse_iso(v[1]["last_seen_at"]))), *v[0]))[1]["snapshot_id"]
+        for _ in range(300):
+            tq = t0 + timedelta(microseconds=rnd.randrange(-2_000_000, int((t - t0).total_seconds() * 1e6) + 60_000_000))
+            if rnd.random() < 0.3:
+                tq = tq.replace(microsecond=0)
+            got = self.svc.as_of("IQ_GOLD_GANN", "XAUUSD", tq)
+            self.assertEqual(got and got["snapshot_id"], expected(tq), tq)
 
 
 class TestAgentContextConfirmedAt(_ArchiveCase):

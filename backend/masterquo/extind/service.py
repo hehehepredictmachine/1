@@ -12,6 +12,8 @@ file never makes data younger). Decisions at time D use only snapshots with avai
 - I0729: the exporter re-sends the same objects every 2 s. The same decoded content of the same source within HEARTBEAT_TTL_S of the
   last confirmation does not add a row - it moves last_seen_at / last_sequence / last_captured_at / seen_count of the newest row
   (migration 0030). Nothing is deleted. as_of age_s = time since the last confirmation at or before D (0 inside a confirmed run).
+  as_of takes the newest row of EVERY source at or before D and keeps the one confirmed latest at D (one adapter on two charts /
+  terminals: a chart closed long ago no longer wins only because it changed its content last; before the deduplication: the newest read).
 - I0175: a read whose symbol matches no assets.mappings broker symbol is archived with instrument NULL (invisible to as_of) - it is
   now reported once per symbol (UNMAPPED_SYMBOL) and in status() needs.
 - I0077: active_model() hands the indicator-context model to the scalp service (scalp no longer imports extind)."""
@@ -222,38 +224,89 @@ class ExtIndService:
 
     # ------------------------------------------------------------------ point-in-time reads
     def as_of(self, adapter: str, instrument: str, t: datetime, approved_only: bool = True) -> dict | None:
-        # 1.46: available_at is ISO text with or without a fraction ('...:00.400000Z' < '...:00Z' as text): a snapshot received 0.4 s
-        # AFTER a decision at a full second passed 'available_at <= D' (look-ahead) and the order inside one second was reversed.
-        # The index still selects whole seconds; inside a second the stamps are compared as times.
         w = " FROM extind_snapshots WHERE adapter=? AND instrument=?"
         if approved_only:
             w += " AND mapping_status='MAPPING_APPROVED' AND time_status='OK'"
         tu = parse_iso(iso(t))
-        sec = tu.strftime("%Y-%m-%dT%H:%M:%S")                    # stored stamps: 'YYYY-MM-DDTHH:MM:SS[.ffffff]Z' ('.', 'Z' < '~')
-
-        def second(s: str) -> list[dict]:
-            return self.db.query("SELECT *" + w + " AND available_at >= ? AND available_at < ?", (adapter, instrument, s, s + "~"))
-        rows = [x for x in second(sec) if parse_iso(x["available_at"]) <= tu]
-        if not rows:                                               # the newest earlier second: every stamp in it is before t
-            prev = self.db.one("SELECT substr(available_at, 1, 19) AS s" + w + " AND available_at < ? ORDER BY available_at DESC LIMIT 1",
-                               (adapter, instrument, sec))
-            rows = second(prev["s"]) if prev else []
-        if not rows:
+        args = (adapter, instrument)
+        r = self._newest_at(w, args, tu)
+        if r is None:
             return None
-        r = max(rows, key=lambda x: (parse_iso(x["available_at"]), x["sequence"]))
+        # 1.46 arch (I0729, review 2): a row stands for a run of identical reads of ONE source (available_at = the first read), so the
+        # newest available_at is the source that last CHANGED its content, not the one that last confirmed something - with one adapter
+        # on two charts / terminals of the instrument a chart closed long ago won over the live one. The read known at t is the newest
+        # row of every source at or before t, keyed by its last confirmation at or before t (ties: the newer content, as before). Rows of
+        # one source never overlap, so another source can only win when the newest row's run ended before t.
+        if self._confirmed(r, tu) < tu:
+            for c in self._per_source(w, args, tu, self._confirmed(r, tu)):
+                if self._key(c, tu) > self._key(r, tu):
+                    r = c
         for k in ("levels", "windows", "events"):
             r[k] = json.loads(r[k])
-        # 1.46 arch (I0729): a row stands for a run of identical reads confirmed at most HEARTBEAT_TTL_S apart; the read known at t is
-        # the last confirmation at or before t (a row without last_seen_at - older archive - is one read, as before). Fields that
-        # describe confirmations AFTER t are not part of the point-in-time read.
-        avail = parse_iso(r["available_at"])
-        seen = parse_iso(r["last_seen_at"]) if r.get("last_seen_at") else avail
-        conf = max(avail, min(tu, seen))
+        # a row without last_seen_at (older archive) is one read, as before; fields describing confirmations AFTER t are not part of
+        # the point-in-time read
+        conf = self._confirmed(r, tu)
         for k in ("last_seen_at", "last_sequence", "last_captured_at", "seen_count"):
             r.pop(k, None)
         r["confirmed_at"] = iso(conf)
         r["age_s"] = (t - conf).total_seconds()
         return r
+
+    @staticmethod
+    def _confirmed(r: dict, tu: datetime) -> datetime:
+        """Last confirmation of the row's content at or before tu (inside a confirmed run: tu; runs have gaps <= HEARTBEAT_TTL_S)."""
+        avail = parse_iso(r["available_at"])
+        seen = parse_iso(r["last_seen_at"]) if r.get("last_seen_at") else avail
+        return max(avail, min(tu, seen))
+
+    @classmethod
+    def _key(cls, r: dict, tu: datetime) -> tuple:
+        return cls._confirmed(r, tu), parse_iso(r["available_at"]), r["sequence"]
+
+    def _newest_at(self, w: str, args: tuple, tu: datetime) -> dict | None:
+        """Newest row (available_at, sequence) with available_at <= tu.
+        1.46: available_at is ISO text with or without a fraction ('...:00.400000Z' < '...:00Z' as text): a snapshot received 0.4 s
+        AFTER a decision at a full second passed 'available_at <= D' (look-ahead) and the order inside one second was reversed.
+        The index still selects whole seconds; inside a second the stamps are compared as times."""
+        sec = tu.strftime("%Y-%m-%dT%H:%M:%S")                    # stored stamps: 'YYYY-MM-DDTHH:MM:SS[.ffffff]Z' ('.', 'Z' < '~')
+
+        def second(s: str) -> list[dict]:
+            return self.db.query("SELECT *" + w + " AND available_at >= ? AND available_at < ?", (*args, s, s + "~"))
+        rows = [x for x in second(sec) if parse_iso(x["available_at"]) <= tu]
+        if not rows:                                               # the newest earlier second: every stamp in it is before t
+            prev = self.db.one("SELECT substr(available_at, 1, 19) AS s" + w + " AND available_at < ? ORDER BY available_at DESC LIMIT 1",
+                               (*args, sec))
+            rows = second(prev["s"]) if prev else []
+        return max(rows, key=lambda x: (parse_iso(x["available_at"]), x["sequence"])) if rows else None
+
+    def _per_source(self, w: str, args: tuple, tu: datetime, floor: datetime) -> list[dict]:
+        """The newest row with available_at <= tu of every source_instance of the (adapter, instrument) rows whose last confirmation is
+        not before floor (only those can win). The sources are walked by one index seek each (migration 0030: idx_extind_asof_source)
+        in a single statement, not by scanning the archive."""
+        sec = tu.strftime("%Y-%m-%dT%H:%M:%S")
+        best: dict[str, dict] = {}
+
+        def newer(x: dict, y: dict | None) -> bool:
+            return y is None or (parse_iso(x["available_at"]), x["sequence"]) > (parse_iso(y["available_at"]), y["sequence"])
+        for x in self.db.query("SELECT *" + w + " AND available_at >= ? AND available_at < ?", (*args, sec, sec + "~")):
+            if parse_iso(x["available_at"]) <= tu and newer(x, best.get(x["source_instance"])):     # t's second: compared as times
+                best[x["source_instance"]] = x
+        sids = self.db.query("WITH RECURSIVE src(s) AS (SELECT (SELECT MIN(source_instance)" + w + ") UNION ALL SELECT (SELECT MIN(source_instance)"
+                             + w + " AND source_instance > src.s) FROM src WHERE src.s IS NOT NULL) SELECT s, (SELECT snapshot_id" + w
+                             + " AND source_instance = src.s AND available_at < ? ORDER BY available_at DESC, sequence DESC LIMIT 1) AS sid"
+                             " FROM src WHERE s IS NOT NULL", (*args, *args, *args, sec))
+        ids = [x["sid"] for x in sids if x["sid"] is not None and x["s"] not in best]
+        fsec = floor.strftime("%Y-%m-%dT%H:%M:%S")
+        for i in range(0, len(ids), 500):
+            chunk = ids[i:i + 500]
+            for x in self.db.query("SELECT * FROM extind_snapshots WHERE snapshot_id IN (" + ",".join("?" * len(chunk)) + ") AND "
+                                   "(COALESCE(last_seen_at, available_at) >= ? OR length(available_at) = 20)", (*chunk, fsec)):
+                if len(x["available_at"]) == 20:   # 'SSZ' is the EARLIEST stamp of its second but sorts after 'SS.ffffffZ'
+                    s1 = x["available_at"][:19]
+                    x = max(self.db.query("SELECT *" + w + " AND source_instance=? AND available_at >= ? AND available_at < ?",
+                                          (*args, x["source_instance"], s1, s1 + "~")), key=lambda y: (parse_iso(y["available_at"]), y["sequence"]))
+                best[x["source_instance"]] = x
+        return list(best.values())
 
     def status(self, instrument: str | None = None, now: datetime | None = None) -> dict:
         now = now or utcnow()
