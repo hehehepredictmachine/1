@@ -31,14 +31,7 @@ TSFM_WEIGHTS_ENV = "MQ_TSFM_WEIGHTS_ROOT"             # --weights-root of tools/
 
 
 # ------------------------------------------------------------------------------------------------------------------- helpers
-def _exc(exc: BaseException) -> str:
-    """Exception -> 'Type: message @ file:line' of the innermost frame (evidence for a FAIL)."""
-    import traceback
-    tb = traceback.extract_tb(exc.__traceback__)
-    where = f" @ {os.path.relpath(tb[-1].filename)}:{tb[-1].lineno}" if tb else ""
-    return f"{type(exc).__name__}: {exc}{where}"[:380]
-
-
+# 1.46 arch (Etap 4, martwy kod): the unused helper _exc (no caller anywhere - AST + grep) was removed.
 @contextmanager
 def _env(**kw):
     """Temporarily set (value) / remove (None) environment variables of THIS area process; restored afterwards."""

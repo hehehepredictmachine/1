@@ -30,7 +30,8 @@ from __future__ import annotations
 
 import hashlib
 
-from ..strategies import indicators as ind
+# 1.46 arch (Etap 4): indicators.series = the same functions as strategies.indicators (shim) - no analysis-layer -> strategies import
+from ..indicators import series as ind
 from .series import Series, iso
 
 VERSION = "PMW-ZONES-HLZE-1"
@@ -359,8 +360,9 @@ def session_levels(boxes: list[dict], m5: Series, cfg, tick: float, a5: list) ->
 def consolidation_levels(m5_bars: list[dict], m5: Series, cfg, tick: float, a5: list) -> list[dict]:
     """CONSOLIDATION_HIGH / LOW from analysis.range_m5 (frozen M5 range); a range broken by close turns its edge into
     BREAKOUT_LEVEL / BREAKDOWN_LEVEL."""
+    # 1.46 arch (Etap 4): indicators.view.TFView = the same class as strategies.base.TFView (alias)
     from ..analysis import range_m5 as RG
-    from ..strategies.base import TFView
+    from ..indicators.view import TFView
     if len(m5) < 60:
         return []
     v = TFView("M5", [dict(b, closed=True) for b in m5_bars])

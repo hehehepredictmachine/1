@@ -40,9 +40,7 @@ class ProcessRegistry:
             self._procs[name] = (proc, kind)
         return proc
 
-    def unregister(self, name: str) -> None:
-        with self._lock:
-            self._procs.pop(name, None)
+    # 1.46 arch (Etap 4, martwy kod): unregister() had no caller (AST + grep) - register() already drops finished children.
 
     def running(self) -> dict[str, dict]:
         with self._lock:

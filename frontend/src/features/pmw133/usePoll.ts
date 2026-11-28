@@ -28,11 +28,6 @@ export function usePoll<T = any>(url: string | null, ms: number): { data: T | nu
   return { data, err, reload };
 }
 
-export const STATUS_PL: Record<string, string> = {
-  OK: "OK", READY: "gotowy", WARMUP: "rozgrzewanie", NO_DATA: "brak danych", DISABLED: "wyłączony", STALE: "nieaktualny", ERROR: "błąd",
-  NOT_CONFIGURED: "nieskonfigurowany", UNAVAILABLE: "niedostępny", BLOCKED_DATA: "brak wymaganych danych", NOT_TRAINED: "niewytrenowany",
-  TRAINING: "trening", INCOMPATIBLE: "niezgodny", INSUFFICIENT: "za mało danych",
-};
 export const tone = (st?: string | null) => st === "OK" || st === "READY" ? "ok" : st === "ERROR" || st === "INCOMPATIBLE" ? "bad" :
   st === "DISABLED" || st === "NOT_TRAINED" || st == null ? "muted" : "warn";
 export const num = (v: any, d = 2) => (typeof v === "number" && isFinite(v) ? v.toFixed(d) : "—");

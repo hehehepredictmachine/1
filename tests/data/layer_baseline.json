@@ -14,6 +14,7 @@
   "bootstrap": "L5 kompozycja",
   "config": "L0 liście",
   "contracts": "L0 liście",
+  "costs": "L0 liście",
   "data": "L1 dane",
   "db": "L1 dane",
   "decision": "L3 rdzeń handlowy",
@@ -78,7 +79,7 @@
   "wf32_services": "L5 kompozycja",
   "zones": "L2 analizy"
  },
- "count": 53,
+ "count": 50,
  "edges": {
   "masterquo.analytics.liquidity_cli -> masterquo.extind.cli": {
    "from": "L2 analizy",
@@ -199,12 +200,12 @@
     "FUNCTION"
    ],
    "lines": [
-    184,
-    193,
-    291,
-    407,
-    407,
-    407
+    190,
+    199,
+    297,
+    413,
+    413,
+    413
    ]
   },
   "masterquo.forecast.export -> masterquo.training.requirements": {
@@ -214,7 +215,7 @@
     "FUNCTION"
    ],
    "lines": [
-    686
+    692
    ]
   },
   "masterquo.indicators.avwap -> masterquo.lab.context_ind.smc": {
@@ -290,14 +291,14 @@
     13
    ]
   },
-  "masterquo.markets.analysis -> masterquo.strategies.indicators": {
+  "masterquo.markets.analysis -> masterquo.indicators.series": {
    "from": "L1 dane",
-   "to": "L3 rdzeń handlowy",
+   "to": "L2 analizy",
    "kinds": [
     "MODULE"
    ],
    "lines": [
-    14
+    16
    ]
   },
   "masterquo.markets.signals -> masterquo.strategies.adapter": {
@@ -359,8 +360,8 @@
     "FUNCTION"
    ],
    "lines": [
-    318,
-    842
+    320,
+    844
    ]
   },
   "masterquo.modelhub.smoke.lab -> masterquo.training.cli": {
@@ -461,21 +462,10 @@
     "FUNCTION"
    ],
    "lines": [
-    172
+    173
    ]
   },
   "masterquo.sh.context -> masterquo.lab.context_ind.smc": {
-   "from": "L3 rdzeń handlowy",
-   "to": "L4 SHADOW/badania",
-   "kinds": [
-    "FUNCTION"
-   ],
-   "lines": [
-    173,
-    192
-   ]
-  },
-  "masterquo.sh.context -> masterquo.lab.context_ind.vamd": {
    "from": "L3 rdzeń handlowy",
    "to": "L4 SHADOW/badania",
    "kinds": [
@@ -486,6 +476,17 @@
     193
    ]
   },
+  "masterquo.sh.context -> masterquo.lab.context_ind.vamd": {
+   "from": "L3 rdzeń handlowy",
+   "to": "L4 SHADOW/badania",
+   "kinds": [
+    "FUNCTION"
+   ],
+   "lines": [
+    175,
+    194
+   ]
+  },
   "masterquo.sh.context -> masterquo.lab.market_v2": {
    "from": "L3 rdzeń handlowy",
    "to": "L4 SHADOW/badania",
@@ -493,7 +494,7 @@
     "FUNCTION"
    ],
    "lines": [
-    103
+    104
    ]
   },
   "masterquo.sh.models -> masterquo.lab.protocol": {
@@ -503,7 +504,7 @@
     "FUNCTION"
    ],
    "lines": [
-    267
+    270
    ]
   },
   "masterquo.sh.models -> masterquo.mm.artifacts": {
@@ -513,7 +514,7 @@
     "FUNCTION"
    ],
    "lines": [
-    294
+    297
    ]
   },
   "masterquo.sh.models -> masterquo.modelhub.aggregate": {
@@ -523,7 +524,7 @@
     "FUNCTION"
    ],
    "lines": [
-    425
+    427
    ]
   },
   "masterquo.sh.models -> masterquo.quant.ids": {
@@ -533,7 +534,7 @@
     "FUNCTION"
    ],
    "lines": [
-    295
+    203
    ]
   },
   "masterquo.sh.models -> masterquo.trainhub.registry": {
@@ -543,7 +544,7 @@
     "FUNCTION"
    ],
    "lines": [
-    363
+    365
    ]
   },
   "masterquo.sh.scenario -> masterquo.montecarlo.engine": {
@@ -597,36 +598,6 @@
     290,
     290,
     309
-   ]
-  },
-  "masterquo.zones.hlze -> masterquo.strategies.base": {
-   "from": "L2 analizy",
-   "to": "L3 rdzeń handlowy",
-   "kinds": [
-    "FUNCTION"
-   ],
-   "lines": [
-    363
-   ]
-  },
-  "masterquo.zones.hlze -> masterquo.strategies.indicators": {
-   "from": "L2 analizy",
-   "to": "L3 rdzeń handlowy",
-   "kinds": [
-    "MODULE"
-   ],
-   "lines": [
-    33
-   ]
-  },
-  "masterquo.zones.market -> masterquo.strategies.indicators": {
-   "from": "L2 analizy",
-   "to": "L3 rdzeń handlowy",
-   "kinds": [
-    "MODULE"
-   ],
-   "lines": [
-    48
    ]
   }
  }
