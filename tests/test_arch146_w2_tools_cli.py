@@ -383,7 +383,7 @@ class TestLayerGuard(unittest.TestCase):
 ORDER_ROUTES = [("POST", "/api/v1/execute"), ("POST", "/api/v1/auto"), ("POST", "/api/v1/lab/tradepad/execute"),
                 ("POST", "/api/v1/manual/intents/{iid}/execute"), ("POST", "/api/v1/manual/intents/{iid}/manage"),
                 ("POST", "/api/v1/positions/close"), ("POST", "/api/v1/positions/{ticket}/adopt"), ("POST", "/api/v1/sh/plans/{pid}/close"),
-                ("POST", "/api/v1/mode")]
+                ("POST", "/api/v1/mode"), ("POST", "/api/v1/mode/primary-path")]
 ROUTE_PORT = 18797
 
 
@@ -426,6 +426,45 @@ class TestRouteInventory(unittest.TestCase):
         self.assertEqual(cls[("GET", "/api/v1/health")]["editions"], ["CLIENT", "OWNER"])
         self.assertTrue(any(x["editions"] == ["OWNER"] for x in inv["routes"]))           # owner-only routes are marked
         self.assertIn("POST /api/v1/execute", inv["execution_without_client"])
+
+    def test_every_execution_route_of_the_inventory_is_in_the_contract_test(self):
+        # uwaga recenzenta: test sesji/CSRF/Origin pomijał POST /api/v1/mode/primary-path (10 tras EXECUTION, test miał 9)
+        inv = json.loads(self.RI.OUT.read_text(encoding="utf-8"))
+        execution = {(x["method"], x["path"]) for x in inv["routes"] if x["class"] == "EXECUTION"}
+        self.assertEqual(execution, set(ORDER_ROUTES))
+
+    def test_note_describes_the_heuristic_and_the_kill_switch(self):
+        # uwaga recenzenta: klasa EXECUTION to heurystyka po źródle handlera; POST /api/v1/kill (set_kill - wyłączenie zdejmuje blokadę
+        # wejść) nie jest EXECUTION - nota inwentarza ma to mówić
+        inv = json.loads(self.RI.OUT.read_text(encoding="utf-8"))
+        for text in (self.RI.NOTE, inv["note"]):
+            self.assertIn("heurystyka", text)
+            self.assertIn("POST /api/v1/kill", text)
+        self.assertIn("/api/v1/kill", self.RI.__doc__)
+
+    def test_offline_data_dir_only_when_unset_and_removed_at_exit(self):
+        # uwaga recenzenta: os.environ.setdefault("MASTERQUO_DATA_DIR", tempfile.mkdtemp(...)) tworzył katalog przy KAŻDYM wywołaniu
+        # (także przy ustawionej zmiennej) i nigdy go nie usuwał (tools/routes_inventory.py, tools/model_map.py, tools/model_docs.py)
+        import model_docs
+        import model_map
+        for mod in (self.RI, model_map, model_docs):
+            with mock.patch.dict(os.environ, {"MASTERQUO_DATA_DIR": "/x/set", "PMW_FAMILIES_DIR": "/x/fam"}), \
+                    mock.patch("tempfile.mkdtemp") as mk:
+                mod._offline_env("MASTERQUO_DATA_DIR", "pmw_t_")
+                self.assertEqual(os.environ["MASTERQUO_DATA_DIR"], "/x/set")
+                mk.assert_not_called()
+            env = {k: v for k, v in os.environ.items() if k != "MASTERQUO_DATA_DIR"}
+            with mock.patch.dict(os.environ, env, clear=True), mock.patch("atexit.register") as reg:
+                mod._offline_env("MASTERQUO_DATA_DIR", "pmw_t_")
+                d = os.environ["MASTERQUO_DATA_DIR"]
+                self.assertTrue(Path(d).is_dir())
+                self.assertEqual(reg.call_count, 1)
+                fn, *args = reg.call_args[0]
+                fn(*args, **reg.call_args[1])                                              # what runs at exit
+                self.assertFalse(Path(d).exists())
+        with mock.patch("tempfile.mkdtemp") as mk:                                         # _app with the variable set (TempData)
+            self.RI._app("OWNER")
+            mk.assert_not_called()
 
     def test_classification_rules(self):
         self.assertEqual(self.RI.classify(True, {"frontend": 3}), "EXECUTION")

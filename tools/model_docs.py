@@ -10,8 +10,10 @@
 """
 from __future__ import annotations
 
+import atexit
 import json
 import os
+import shutil
 import sys
 import tempfile
 from pathlib import Path
@@ -40,9 +42,19 @@ def role_rules(f: dict) -> str:
             "– brak / nieświeża / przeciwna prognoza blokuje nowe wejście. Żadna rola nie tworzy wejścia ani nie podnosi WAIT.")
 
 
+def _offline_env(var: str, prefix: str) -> None:
+    """Temporary folder for `var` only when it is not set - `os.environ.setdefault(var, tempfile.mkdtemp())` created (and left behind)
+    a folder on every call, also with the variable set. The folder created here is removed when the process exits."""
+    if os.environ.get(var):
+        return
+    d = tempfile.mkdtemp(prefix=prefix)
+    os.environ[var] = d
+    atexit.register(shutil.rmtree, d, ignore_errors=True)
+
+
 def _catalog():
-    os.environ.setdefault("MASTERQUO_DATA_DIR", tempfile.mkdtemp(prefix="pmw_docs_"))
-    os.environ.setdefault("PMW_FAMILIES_DIR", tempfile.mkdtemp(prefix="pmw_docs_fam_"))
+    _offline_env("MASTERQUO_DATA_DIR", "pmw_docs_")
+    _offline_env("PMW_FAMILIES_DIR", "pmw_docs_fam_")
     from masterquo.config import ConfigStore
     from masterquo.modelhub.families.service import FamilyService
     return FamilyService(ConfigStore()).catalog("XAUUSD")

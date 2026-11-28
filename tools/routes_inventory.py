@@ -11,17 +11,21 @@ Classes:
   LEGACY_UI141  only the archived 1.41 UI (archive/ui_1_41, not built) calls it;
   INTERNAL      no client in the repository (tests only, or nothing at all).
 Callers are a best-effort static search of the path template ({param} = one path segment); a path built from variables in the client is
-not found. Nothing is removed or blocked here - routes are a public contract and their removal is an owner decision.
+not found. EXECUTION is a heuristic (ORDER_PATH regex over the handler source): a switch that does not call the order path itself is not
+EXECUTION - e.g. POST /api/v1/kill (rt.modes.set_kill; switching it OFF lifts the block on new entries) is PUBLIC (see NOTE).
+Nothing is removed or blocked here - routes are a public contract and their removal is an owner decision.
 
   python tools/routes_inventory.py            write docs/arch146/routes_inventory.json and print the summary
   python tools/routes_inventory.py --check    compare the file with create_app (exit 1 on a difference)
 """
 from __future__ import annotations
 
+import atexit
 import inspect
 import json
 import os
 import re
+import shutil
 import sys
 import tempfile
 from pathlib import Path
@@ -47,12 +51,25 @@ CALLER_AREAS = {                       # area -> (directory, glob patterns)
     "archive_ui141": ("archive/ui_1_41", ("*.ts", "*.tsx", "*.js", "*.jsx")),
 }
 CLIENT_AREAS = ("frontend", "desktop", "tools", "mql5", "launchers", "backend")
+NOTE = ("trasy z create_app (OWNER = nadzbiór; editions mówi, które są też w wersji klienta); wywołujący = statyczne wyszukiwanie szablonu "
+        "ścieżki; klasa EXECUTION = heurystyka (wyrażenie ORDER_PATH na źródle handlera: ścieżka zleceń, AUTO, tryb, ścieżka główna) - "
+        "przełącznik bez wywołania ścieżki zleceń nie jest EXECUTION, np. POST /api/v1/kill (rt.modes.set_kill; wyłączenie zdejmuje "
+        "blokadę nowych wejść) ma klasę z wywołujących; nic nie jest usuwane ani blokowane (kontrakt publiczny, decyzja właściciela)")
 SELF = {"tools/routes_inventory.py"}
+
+def _offline_env(var: str, prefix: str) -> None:
+    """Temporary folder for `var` only when it is not set - `os.environ.setdefault(var, tempfile.mkdtemp())` created (and left behind)
+    a folder on every call, also with the variable set. The folder created here is removed when the process exits."""
+    if os.environ.get(var):
+        return
+    d = tempfile.mkdtemp(prefix=prefix)
+    os.environ[var] = d
+    atexit.register(shutil.rmtree, d, ignore_errors=True)
 
 
 def _app(edition: str):
     from unittest import mock
-    os.environ.setdefault("MASTERQUO_DATA_DIR", tempfile.mkdtemp(prefix="pmw_routes_"))
+    _offline_env("MASTERQUO_DATA_DIR", "pmw_routes_")
     from masterquo.api import app as A
     rt = mock.MagicMock()
     rt.license.locked = False
@@ -138,8 +155,7 @@ def build() -> dict:
     for x in out:
         counts[x["class"]] = counts.get(x["class"], 0) + 1
     return {"schema": SCHEMA, "generated_by": "python tools/routes_inventory.py",
-            "note": ("trasy z create_app (OWNER = nadzbiór; editions mówi, które są też w wersji klienta); wywołujący = statyczne "
-                     "wyszukiwanie szablonu ścieżki; nic nie jest usuwane ani blokowane (kontrakt publiczny, decyzja właściciela)"),
+            "note": NOTE,
             "total": len(out), "by_class": dict(sorted(counts.items())),
             "execution_without_client": [f"{x['method']} {x['path']}" for x in out if x["class"] == "EXECUTION" and x["no_client"]],
             "routes": out}

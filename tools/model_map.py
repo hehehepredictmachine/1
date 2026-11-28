@@ -15,8 +15,10 @@ statement about model quality on real data - that comes only from a training run
 """
 from __future__ import annotations
 
+import atexit
 import json
 import os
+import shutil
 import sys
 import tempfile
 from pathlib import Path
@@ -271,8 +273,18 @@ def to_markdown(m: dict) -> str:
     return "\n".join(out)
 
 
+def _offline_env(var: str, prefix: str) -> None:
+    """Temporary folder for `var` only when it is not set - `os.environ.setdefault(var, tempfile.mkdtemp())` created (and left behind)
+    a folder on every call, also with the variable set. The folder created here is removed when the process exits."""
+    if os.environ.get(var):
+        return
+    d = tempfile.mkdtemp(prefix=prefix)
+    os.environ[var] = d
+    atexit.register(shutil.rmtree, d, ignore_errors=True)
+
+
 def main() -> None:
-    os.environ.setdefault("MASTERQUO_DATA_DIR", tempfile.mkdtemp(prefix="pmw_map_"))   # offline: no probe of the user's data folder
+    _offline_env("MASTERQUO_DATA_DIR", "pmw_map_")                  # offline: no probe of the user's data folder
     m = build()
     (ROOT / "MAPA_MODELI_I_TRENINGU.json").write_text(json.dumps(m, indent=1, ensure_ascii=False) + "\n", encoding="utf-8")
     (ROOT / "MAPA_MODELI_I_TRENINGU.md").write_text(to_markdown(m), encoding="utf-8")
