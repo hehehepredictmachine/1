@@ -438,8 +438,8 @@ class TestOwnerLockEqualsOld(_Victim):
         self.assertTrue(issubclass(SL.Lock, LK.OwnerLock))
         self.assertEqual(set(vars(SL.Lock)) - {"__module__", "__doc__", "__qualname__", "__firstlineno__", "__static_attributes__"},
                          {"_owner_alive"})                                  # nothing but the liveness hook (studio.lock._alive, patchable)
-        with mock.patch("masterquo.training.core._pid_alive", return_value=False):
-            self.assertTrue(SL.Lock(Path(tempfile.mkdtemp()) / "x.lock", app="A").stale({"pid": os.getpid(), "heartbeat": time.time()}))
+        with tempfile.TemporaryDirectory() as d, mock.patch("masterquo.training.core._pid_alive", return_value=False):
+            self.assertTrue(SL.Lock(Path(d) / "x.lock", app="A").stale({"pid": os.getpid(), "heartbeat": time.time()}))
 
 
 # ============================================================================================ the service: names, files, wrappers
