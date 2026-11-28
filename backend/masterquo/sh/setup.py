@@ -20,6 +20,7 @@ import hashlib
 import json
 import math
 
+from .. import costs as C
 from .context import obstacles
 from .units import SymbolSpec, UnitError
 
@@ -240,13 +241,14 @@ def evaluate(strategy: str, inst: str, snap: dict, spec: SymbolSpec, prof: dict,
             return finish("NO_TRADE", "model zdarzenia: za niskie prawdopodobieństwo TP2 przed SL")
     cl.add("reach", "Osiągalność TP1/TP2", "PASS", f"zasięg {expected:.2f}, najbliższa przeszkoda {first['price'] if first else '—'}")
 
-    # 7. costs and net RR (whole cycle: weighted targets, one trade)
-    cost = (d.get("spread") or 0.0) + 2 * (ic.get("slippage_usd") or 0.0)
+    # 7. costs and net RR (whole cycle: weighted targets, one trade). Etap 4 (PMW-COSTS-1): through the cost resolver with the declared
+    # SH policy - the same formula: spread (a cost line although the entry is at Ask / Bid, O7 / D2 unchanged) + 2 x slippage_usd
+    # + 2 x commission / money per price when the commission is known and tick_value > 0, else the warning below
     comm = ic.get("commission_per_lot_side")
-    if comm is not None and spec.tick_value > 0:
-        cost += 2 * comm / spec.money_per_price(1.0)
-    else:
-        con.append("prowizja nieznana – koszt bez prowizji (AUTO wymaga znanej prowizji)")
+    cb = C.resolve(C.profile(C.SH, inst), spread=d.get("spread"), slippage=ic.get("slippage_usd"), commission_per_lot_side=comm,
+                   money_per_price=spec.money_per_price(1.0) if comm is not None and spec.tick_value > 0 else None)
+    cost = cb.total
+    con.extend(cb.warnings)                     # "prowizja nieznana – koszt bez prowizji (AUTO wymaga znanej prowizji)"
     w_tp = sum(t["distance_actual"] * t["share"] for t in tps)
     sl_real = abs(ref - sl)
     net_rr = (w_tp - cost) / (sl_real + cost)

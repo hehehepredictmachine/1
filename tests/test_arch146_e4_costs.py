@@ -229,5 +229,129 @@ class TestCommissionSourceMoved(unittest.TestCase):
             self.assertEqual(_bits(new.resolve_commission(cfg, deals, "XAUUSD-")), _bits(old.resolve_commission(cfg, deals, "XAUUSD-")), i)
 
 
+def _outcome(fn, *a, **kw):
+    """Result or the exception type (an old crash must stay the same crash)."""
+    try:
+        return _bits(fn(*a, **kw))
+    except Exception as exc:  # noqa: BLE001
+        return ("EXC", type(exc).__name__)
+
+
+# ====================================================================================================================== SH
+def _old_sh_cost(d, ic, spec):
+    """sh/setup.evaluate step 7 at cf5d941 (verbatim): cost and the warnings appended to `con`."""
+    con = []
+    cost = (d.get("spread") or 0.0) + 2 * (ic.get("slippage_usd") or 0.0)
+    comm = ic.get("commission_per_lot_side")
+    if comm is not None and spec.tick_value > 0:
+        cost += 2 * comm / spec.money_per_price(1.0)
+    else:
+        con.append("prowizja nieznana – koszt bez prowizji (AUTO wymaga znanej prowizji)")
+    return cost, comm is not None, con
+
+
+def _old_sh_loss_per_lot(setup, ic, mpp, sl_dist):
+    """sh/risk.evaluate sizing at cf5d941 (verbatim)."""
+    cost_price = float((setup.get("costs") or {}).get("round_trip_price") or 0.0)
+    comm = ic.get("commission_per_lot_side")
+    return (sl_dist + cost_price) * mpp + (2 * comm if comm is not None else 0.0)
+
+
+def _sh_spec(rng):
+    from masterquo.sh.units import SymbolSpec
+    tick = rng.choice([0.01, 0.001, 0.1])
+    return SymbolSpec("XAUUSD-", tick, rng.choice([0.0, 1.0, 0.1, 0.65, rng.uniform(0.01, 5)]), rng.choice([100, 10, 1]),
+                      0.01, 0.01, rng.choice([100, 5]), 2, "USD", source="TEST")
+
+
+class TestSH(unittest.TestCase):
+    def setUp(self):
+        self.td = TempData()
+        from masterquo.sh import config as SC
+        self.cfg = SC.load()
+        self.SC = SC
+
+    def tearDown(self):
+        self.td.close()
+
+    def _ic(self, rng):
+        return {"slippage_usd": _maybe(rng, rng.choice([0.0, 0.05, rng.uniform(0, 0.5)])),
+                "commission_per_lot_side": _maybe(rng, rng.choice([0.0, 0.5, 3.5, rng.uniform(0, 8)]), 0.3)}
+
+    def test_round_trip_resolver_equals_old_formula(self):
+        from masterquo import costs as C
+        rng = random.Random(SEED + 10)
+        for i in range(N):
+            spec, ic = _sh_spec(rng), self._ic(rng)
+            d = {"spread": _maybe(rng, rng.choice([0.0, 0.2, rng.uniform(0, 1.5)]))}
+            comm = ic.get("commission_per_lot_side")
+            cb = C.resolve(C.profile(C.SH, "XAUUSD"), spread=d.get("spread"), slippage=ic.get("slippage_usd"), commission_per_lot_side=comm,
+                           money_per_price=spec.money_per_price(1.0) if comm is not None and spec.tick_value > 0 else None)
+            self.assertEqual(_bits((cb.total, cb.commission_known, list(cb.warnings))), _bits(_old_sh_cost(d, ic, spec)), i)
+            self.assertEqual(cb.spread, d.get("spread") or 0.0)                       # O7: the spread IS a cost line of SH
+
+    def test_sizing_resolver_equals_old_formula(self):
+        from masterquo import costs as C
+        rng = random.Random(SEED + 11)
+        for i in range(N):
+            ic = self._ic(rng)
+            setup = {"costs": _maybe(rng, {"round_trip_price": _maybe(rng, rng.choice([0.0, 0.3, rng.uniform(0, 2)]))}, 0.1)}
+            mpp, sl_dist = rng.choice([100.0, 10.0, rng.uniform(0.5, 500)]), rng.uniform(0.1, 30)
+            cost_price = float((setup.get("costs") or {}).get("round_trip_price") or 0.0)
+            new = C.sizing_loss_per_lot(C.profile(C.SH), stop_distance=sl_dist, round_trip_price=cost_price, money_per_price=mpp,
+                                        commission_per_lot_side=ic.get("commission_per_lot_side"))
+            self.assertEqual(_bits(new), _bits(_old_sh_loss_per_lot(setup, ic, mpp, sl_dist)), i)
+
+    def test_whole_setup_evaluate_old_vs_new(self):
+        import copy
+
+        import test_sh_setup as TS
+        old = _old_module("backend/masterquo/sh/setup.py", "masterquo.sh._e4_old_setup")
+        from masterquo.sh import setup as new
+        rng = random.Random(SEED + 12)
+        seen = set()
+        for i in range(N):
+            side, strat = rng.choice(["BUY", "SELL"]), rng.choice(["SCALPING", "HEDGING"])
+            prof = copy.deepcopy(self.SC.profile(self.cfg, "XAUUSD", strat))
+            prof["_instrument"] = dict(prof.get("_instrument") or {}, **self._ic(rng))
+            prof["min_net_rr"] = rng.choice([prof["min_net_rr"], 0.5, 0.8, 0.9, 1.2])
+            if rng.random() < 0.3:
+                prof["be_rule"] = rng.choice(["ENTRY_PLUS_COSTS", "ENTRY"])
+            snap = TS._snap(side)
+            snap["data"] = dict(snap["data"], spread=rng.choice([0.0, 0.05, 0.2, 0.6, rng.uniform(0, 1.2)]))
+            spec = _sh_spec(rng)
+            kw = {"now": TS.NOW, "m1": TS._m1(side)}
+            a = _outcome(old.evaluate, strat, "XAUUSD", copy.deepcopy(snap), spec, copy.deepcopy(prof), **kw)
+            b = _outcome(new.evaluate, strat, "XAUUSD", copy.deepcopy(snap), spec, copy.deepcopy(prof), **kw)
+            self.assertEqual(b, a, i)
+            seen.add(a[0] if isinstance(a, tuple) else (a.get("status"), "costs" in a))
+        self.assertIn(("READY", True), seen)                    # the cost step is reached and passed ...
+        self.assertTrue({s for s in seen if s[0] == "NO_TRADE" and s[1]}, seen)   # ... and fails on net RR in some cases
+
+    def test_whole_risk_evaluate_old_vs_new(self):
+        import copy
+
+        import test_sh_risk_state as TR
+        old = _old_module("backend/masterquo/sh/risk.py", "masterquo.sh._e4_old_risk")
+        from masterquo.sh import risk as new
+        rng = random.Random(SEED + 13)
+        statuses = set()
+        for i in range(N):
+            strat, side = rng.choice(["SCALPING", "HEDGING"]), rng.choice(["BUY", "SELL"])
+            prof = copy.deepcopy(self.SC.profile(self.cfg, "XAUUSD", strat))
+            prof["_instrument"] = dict(prof.get("_instrument") or {}, **self._ic(rng))
+            sl = 2000.2 - rng.uniform(0.3, 8) if side == "BUY" else 2000.2 + rng.uniform(0.3, 8)
+            setup = TR._setup(strat, side, sl=sl, costs=_maybe(rng, {"round_trip_price": _maybe(rng, rng.choice([0.0, 0.3, rng.uniform(0, 2)]))}, 0.1))
+            spec = _sh_spec(rng)
+            acc = dict(TR.ACC, equity=rng.choice([300.0, 2000.0, 10000.0, 80000.0]), margin_mode=rng.choice(["HEDGING", "NETTING"]))
+            kw = {"setup": setup, "spec": spec, "prof": prof, "cfg": self.cfg, "inst": "XAUUSD", "account": acc, "state": {},
+                  "exec_mode": rng.choice(["PAPER", "AUTO_DEMO", "SIGNALS"]), "now": TR.NOW, "quote": TR.Q}
+            a = _outcome(old.evaluate, **copy.deepcopy(kw))
+            b = _outcome(new.evaluate, **copy.deepcopy(kw))
+            self.assertEqual(b, a, i)
+            statuses.add(a.get("status") if isinstance(a, dict) else a[0])
+        self.assertIn("PASS", statuses)
+
+
 if __name__ == "__main__":
     unittest.main()

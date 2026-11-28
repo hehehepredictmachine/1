@@ -8,6 +8,7 @@ HEDGING: exposure and margin are checked for the WORST gross case (primary + max
 """
 from __future__ import annotations
 
+from .. import costs as C
 from .units import SymbolSpec, UnitError
 
 REAL_MODES = ("AUTO_DEMO", "AUTO_LIVE")
@@ -106,7 +107,10 @@ def evaluate(*, setup: dict, spec: SymbolSpec, prof: dict, cfg: dict, inst: str,
     sl_dist = abs(setup["entry_ref"] - setup["sl"])
     cost_price = float((setup.get("costs") or {}).get("round_trip_price") or 0.0)
     comm = ic.get("commission_per_lot_side")
-    loss_per_lot = (sl_dist + cost_price) * mpp + (2 * comm if comm is not None else 0.0)
+    # Etap 4 (PMW-COSTS-1): the declared SH sizing policy of the cost resolver - (SL distance + round_trip_price) x money per price
+    # + 2 x commission; the commission is also inside round_trip_price (counted twice, D2 - unchanged)
+    loss_per_lot = C.sizing_loss_per_lot(C.profile(C.SH, inst), stop_distance=sl_dist, round_trip_price=cost_price, money_per_price=mpp,
+                                         commission_per_lot_side=comm)
     risk_budget = eq * r["risk_per_trade_pct"] / 100.0
     vol = spec.floor_volume(risk_budget / loss_per_lot) if loss_per_lot > 0 else 0.0
     if spec.volume_max:
