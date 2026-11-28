@@ -5,9 +5,9 @@
  "total": 522,
  "by_class": {
   "EXECUTION": 10,
-  "INTERNAL": 115,
+  "INTERNAL": 114,
   "LEGACY_UI141": 192,
-  "PUBLIC": 205
+  "PUBLIC": 206
  },
  "execution_without_client": [
   "POST /api/v1/auto",
@@ -36,7 +36,7 @@
    "method": "POST",
    "path": "/api/v1/admin/shutdown",
    "handler": "backend/masterquo/api/app.py:shutdown",
-   "line": 4129,
+   "line": 4135,
    "class": "PUBLIC",
    "editions": [
     "CLIENT",
@@ -53,7 +53,7 @@
    "method": "GET",
    "path": "/api/v1/agent",
    "handler": "backend/masterquo/api/app.py:agent_status",
-   "line": 1678,
+   "line": 1682,
    "class": "LEGACY_UI141",
    "editions": [
     "CLIENT",
@@ -68,7 +68,7 @@
    "method": "POST",
    "path": "/api/v1/agent/analyze",
    "handler": "backend/masterquo/api/app.py:agent_analyze",
-   "line": 1700,
+   "line": 1704,
    "class": "LEGACY_UI141",
    "editions": [
     "CLIENT",
@@ -83,7 +83,7 @@
    "method": "POST",
    "path": "/api/v1/agent/ask",
    "handler": "backend/masterquo/api/app.py:agent_ask",
-   "line": 1692,
+   "line": 1696,
    "class": "LEGACY_UI141",
    "editions": [
     "CLIENT",
@@ -98,7 +98,7 @@
    "method": "GET",
    "path": "/api/v1/agent/memory",
    "handler": "backend/masterquo/api/app.py:agent_memory",
-   "line": 1709,
+   "line": 1713,
    "class": "LEGACY_UI141",
    "editions": [
     "CLIENT",
@@ -113,7 +113,7 @@
    "method": "POST",
    "path": "/api/v1/agent/memory/{mid}",
    "handler": "backend/masterquo/api/app.py:agent_memory_set",
-   "line": 1713,
+   "line": 1717,
    "class": "LEGACY_UI141",
    "editions": [
     "CLIENT",
@@ -128,7 +128,7 @@
    "method": "GET",
    "path": "/api/v1/agent/models",
    "handler": "backend/masterquo/api/app.py:agent_models",
-   "line": 1684,
+   "line": 1688,
    "class": "PUBLIC",
    "editions": [
     "CLIENT",
@@ -143,7 +143,7 @@
    "method": "POST",
    "path": "/api/v1/agent/test",
    "handler": "backend/masterquo/api/app.py:agent_test",
-   "line": 1688,
+   "line": 1692,
    "class": "PUBLIC",
    "editions": [
     "CLIENT",
@@ -217,7 +217,7 @@
    "method": "GET",
    "path": "/api/v1/appearance/assets",
    "handler": "backend/masterquo/api/app.py:appearance_assets",
-   "line": 3923,
+   "line": 3929,
    "class": "PUBLIC",
    "editions": [
     "CLIENT",
@@ -233,7 +233,7 @@
    "method": "POST",
    "path": "/api/v1/appearance/upload",
    "handler": "backend/masterquo/api/app.py:appearance_upload",
-   "line": 3935,
+   "line": 3941,
    "class": "INTERNAL",
    "editions": [
     "CLIENT",
@@ -248,7 +248,7 @@
    "method": "GET",
    "path": "/api/v1/asge/ledger",
    "handler": "backend/masterquo/api/wf32_routes.py:asge_ledger",
-   "line": 568,
+   "line": 594,
    "class": "INTERNAL",
    "editions": [
     "CLIENT",
@@ -263,7 +263,7 @@
    "method": "POST",
    "path": "/api/v1/asge/run",
    "handler": "backend/masterquo/api/wf32_routes.py:asge_run",
-   "line": 554,
+   "line": 580,
    "class": "INTERNAL",
    "editions": [
     "CLIENT",
@@ -338,7 +338,7 @@
    "method": "POST",
    "path": "/api/v1/auto",
    "handler": "backend/masterquo/api/app.py:set_auto",
-   "line": 3960,
+   "line": 3966,
    "class": "EXECUTION",
    "editions": [
     "CLIENT",
@@ -353,7 +353,7 @@
    "method": "GET",
    "path": "/api/v1/baskets",
    "handler": "backend/masterquo/api/app.py:baskets_list",
-   "line": 2887,
+   "line": 2893,
    "class": "PUBLIC",
    "editions": [
     "CLIENT",
@@ -369,7 +369,7 @@
    "method": "GET",
    "path": "/api/v1/baskets/catalog",
    "handler": "backend/masterquo/api/app.py:baskets_catalog",
-   "line": 2892,
+   "line": 2898,
    "class": "PUBLIC",
    "editions": [
     "CLIENT",
@@ -385,7 +385,7 @@
    "method": "DELETE",
    "path": "/api/v1/baskets/declared/{item_id}",
    "handler": "backend/masterquo/api/app.py:baskets_undeclare",
-   "line": 2928,
+   "line": 2934,
    "class": "INTERNAL",
    "editions": [
     "CLIENT",
@@ -400,7 +400,7 @@
    "method": "GET",
    "path": "/api/v1/baskets/declared/{profile}",
    "handler": "backend/masterquo/api/app.py:baskets_declared",
-   "line": 2912,
+   "line": 2918,
    "class": "INTERNAL",
    "editions": [
     "CLIENT",
@@ -415,7 +415,7 @@
    "method": "POST",
    "path": "/api/v1/baskets/declared/{profile}",
    "handler": "backend/masterquo/api/app.py:baskets_declare",
-   "line": 2916,
+   "line": 2922,
    "class": "INTERNAL",
    "editions": [
     "CLIENT",
@@ -430,7 +430,7 @@
    "method": "GET",
    "path": "/api/v1/baskets/otc",
    "handler": "backend/masterquo/api/app.py:baskets_otc",
-   "line": 2936,
+   "line": 2942,
    "class": "INTERNAL",
    "editions": [
     "CLIENT",
@@ -445,7 +445,7 @@
    "method": "PUT",
    "path": "/api/v1/baskets/otc/meta",
    "handler": "backend/masterquo/api/app.py:baskets_otc_meta",
-   "line": 2941,
+   "line": 2947,
    "class": "INTERNAL",
    "editions": [
     "CLIENT",
@@ -458,7 +458,7 @@
    "method": "POST",
    "path": "/api/v1/baskets/otc/payoff",
    "handler": "backend/masterquo/api/app.py:baskets_otc_payoff",
-   "line": 2949,
+   "line": 2955,
    "class": "INTERNAL",
    "editions": [
     "CLIENT",
@@ -471,7 +471,7 @@
    "method": "POST",
    "path": "/api/v1/baskets/otc/ticks",
    "handler": "backend/masterquo/api/app.py:baskets_otc_ticks",
-   "line": 2945,
+   "line": 2951,
    "class": "INTERNAL",
    "editions": [
     "CLIENT",
@@ -486,7 +486,7 @@
    "method": "GET",
    "path": "/api/v1/baskets/settings",
    "handler": "backend/masterquo/api/app.py:baskets_settings",
-   "line": 2897,
+   "line": 2903,
    "class": "PUBLIC",
    "editions": [
     "CLIENT",
@@ -502,7 +502,7 @@
    "method": "PUT",
    "path": "/api/v1/baskets/settings",
    "handler": "backend/masterquo/api/app.py:baskets_settings_put",
-   "line": 2901,
+   "line": 2907,
    "class": "PUBLIC",
    "editions": [
     "CLIENT",
@@ -518,7 +518,7 @@
    "method": "GET",
    "path": "/api/v1/baskets/signals",
    "handler": "backend/masterquo/api/app.py:baskets_signals",
-   "line": 2908,
+   "line": 2914,
    "class": "PUBLIC",
    "editions": [
     "CLIENT",
@@ -576,7 +576,7 @@
    "method": "GET",
    "path": "/api/v1/bootstrap",
    "handler": "backend/masterquo/api/wf32_routes.py:bootstrap_status",
-   "line": 438,
+   "line": 450,
    "class": "INTERNAL",
    "editions": [
     "CLIENT",
@@ -591,7 +591,7 @@
    "method": "PUT",
    "path": "/api/v1/bootstrap",
    "handler": "backend/masterquo/api/wf32_routes.py:bootstrap_profile",
-   "line": 446,
+   "line": 458,
    "class": "INTERNAL",
    "editions": [
     "CLIENT",
@@ -606,7 +606,7 @@
    "method": "GET",
    "path": "/api/v1/bot-signals",
    "handler": "backend/masterquo/api/app.py:bot_signals",
-   "line": 1552,
+   "line": 1556,
    "class": "PUBLIC",
    "editions": [
     "CLIENT",
@@ -623,7 +623,7 @@
    "method": "GET",
    "path": "/api/v1/bot-signals/{signal_id}",
    "handler": "backend/masterquo/api/app.py:bot_signal_get",
-   "line": 1558,
+   "line": 1562,
    "class": "INTERNAL",
    "editions": [
     "CLIENT",
@@ -653,7 +653,7 @@
    "method": "GET",
    "path": "/api/v1/change-points",
    "handler": "backend/masterquo/api/wf32_routes.py:change_points",
-   "line": 424,
+   "line": 436,
    "class": "PUBLIC",
    "editions": [
     "CLIENT",
@@ -669,7 +669,7 @@
    "method": "GET",
    "path": "/api/v1/config",
    "handler": "backend/masterquo/api/app.py:get_config",
-   "line": 1609,
+   "line": 1613,
    "class": "PUBLIC",
    "editions": [
     "CLIENT",
@@ -688,7 +688,7 @@
    "method": "PUT",
    "path": "/api/v1/config",
    "handler": "backend/masterquo/api/app.py:put_config",
-   "line": 1616,
+   "line": 1620,
    "class": "PUBLIC",
    "editions": [
     "CLIENT",
@@ -707,7 +707,7 @@
    "method": "GET",
    "path": "/api/v1/context-tf",
    "handler": "backend/masterquo/api/app.py:context_tf_view",
-   "line": 1547,
+   "line": 1551,
    "class": "LEGACY_UI141",
    "editions": [
     "CLIENT",
@@ -722,7 +722,7 @@
    "method": "GET",
    "path": "/api/v1/decision",
    "handler": "backend/masterquo/api/app.py:decision",
-   "line": 1581,
+   "line": 1585,
    "class": "PUBLIC",
    "editions": [
     "CLIENT",
@@ -739,7 +739,7 @@
    "method": "GET",
    "path": "/api/v1/decision/records/{record_id}",
    "handler": "backend/masterquo/api/app.py:decision_record",
-   "line": 2671,
+   "line": 2677,
    "class": "PUBLIC",
    "editions": [
     "CLIENT",
@@ -755,7 +755,7 @@
    "method": "GET",
    "path": "/api/v1/decision/status",
    "handler": "backend/masterquo/api/app.py:decision_status",
-   "line": 2663,
+   "line": 2669,
    "class": "PUBLIC",
    "editions": [
     "CLIENT",
@@ -771,7 +771,7 @@
    "method": "GET",
    "path": "/api/v1/desktop",
    "handler": "backend/masterquo/api/app.py:desktop_get",
-   "line": 4103,
+   "line": 4109,
    "class": "LEGACY_UI141",
    "editions": [
     "CLIENT",
@@ -787,7 +787,7 @@
    "method": "POST",
    "path": "/api/v1/desktop/display",
    "handler": "backend/masterquo/api/wf32_routes.py:desktop_display",
-   "line": 456,
+   "line": 468,
    "class": "INTERNAL",
    "editions": [
     "CLIENT",
@@ -800,7 +800,7 @@
    "method": "POST",
    "path": "/api/v1/desktop/prefs",
    "handler": "backend/masterquo/api/app.py:desktop_prefs",
-   "line": 4107,
+   "line": 4113,
    "class": "LEGACY_UI141",
    "editions": [
     "CLIENT",
@@ -816,7 +816,7 @@
    "method": "POST",
    "path": "/api/v1/desktop/restart-engine",
    "handler": "backend/masterquo/api/app.py:desktop_restart",
-   "line": 4119,
+   "line": 4125,
    "class": "LEGACY_UI141",
    "editions": [
     "CLIENT",
@@ -832,7 +832,7 @@
    "method": "GET",
    "path": "/api/v1/diagnostics",
    "handler": "backend/masterquo/api/app.py:diagnostics",
-   "line": 3999,
+   "line": 4005,
    "class": "LEGACY_UI141",
    "editions": [
     "CLIENT",
@@ -848,7 +848,7 @@
    "method": "GET",
    "path": "/api/v1/eval/assessments",
    "handler": "backend/masterquo/api/app.py:eval_assessments",
-   "line": 3112,
+   "line": 3118,
    "class": "PUBLIC",
    "editions": [
     "CLIENT",
@@ -863,7 +863,7 @@
    "method": "GET",
    "path": "/api/v1/eval/exposure",
    "handler": "backend/masterquo/api/app.py:eval_exposure",
-   "line": 3123,
+   "line": 3129,
    "class": "INTERNAL",
    "editions": [
     "CLIENT",
@@ -876,7 +876,7 @@
    "method": "GET",
    "path": "/api/v1/eval/report",
    "handler": "backend/masterquo/api/app.py:eval_report",
-   "line": 3119,
+   "line": 3125,
    "class": "PUBLIC",
    "editions": [
     "CLIENT",
@@ -891,7 +891,7 @@
    "method": "GET",
    "path": "/api/v1/eval/status",
    "handler": "backend/masterquo/api/app.py:eval_status",
-   "line": 3108,
+   "line": 3114,
    "class": "PUBLIC",
    "editions": [
     "CLIENT",
@@ -906,7 +906,7 @@
    "method": "POST",
    "path": "/api/v1/execute",
    "handler": "backend/masterquo/api/app.py:execute",
-   "line": 3973,
+   "line": 3979,
    "class": "EXECUTION",
    "editions": [
     "CLIENT",
@@ -921,7 +921,7 @@
    "method": "GET",
    "path": "/api/v1/execution/lock",
    "handler": "backend/masterquo/api/app.py:exec_lock",
-   "line": 1480,
+   "line": 1484,
    "class": "INTERNAL",
    "editions": [
     "CLIENT",
@@ -934,7 +934,7 @@
    "method": "POST",
    "path": "/api/v1/execution/lock",
    "handler": "backend/masterquo/api/app.py:exec_lock_set",
-   "line": 1485,
+   "line": 1489,
    "class": "INTERNAL",
    "editions": [
     "CLIENT",
@@ -947,7 +947,7 @@
    "method": "POST",
    "path": "/api/v1/export/cancel",
    "handler": "backend/masterquo/api/app.py:export_cancel",
-   "line": 3410,
+   "line": 3416,
    "class": "LEGACY_UI141",
    "editions": [
     "CLIENT",
@@ -962,7 +962,7 @@
    "method": "GET",
    "path": "/api/v1/export/datasets",
    "handler": "backend/masterquo/api/app.py:export_datasets",
-   "line": 3415,
+   "line": 3421,
    "class": "LEGACY_UI141",
    "editions": [
     "CLIENT",
@@ -977,7 +977,7 @@
    "method": "GET",
    "path": "/api/v1/export/readiness",
    "handler": "backend/masterquo/api/app.py:export_readiness",
-   "line": 3422,
+   "line": 3428,
    "class": "INTERNAL",
    "editions": [
     "CLIENT",
@@ -990,7 +990,7 @@
    "method": "POST",
    "path": "/api/v1/export/start",
    "handler": "backend/masterquo/api/app.py:export_start",
-   "line": 3397,
+   "line": 3403,
    "class": "LEGACY_UI141",
    "editions": [
     "CLIENT",
@@ -1005,7 +1005,7 @@
    "method": "GET",
    "path": "/api/v1/export/status",
    "handler": "backend/masterquo/api/app.py:export_status",
-   "line": 3405,
+   "line": 3411,
    "class": "LEGACY_UI141",
    "editions": [
     "CLIENT",
@@ -1081,7 +1081,7 @@
    "method": "GET",
    "path": "/api/v1/families",
    "handler": "backend/masterquo/api/app.py:families_catalog",
-   "line": 2678,
+   "line": 2684,
    "class": "PUBLIC",
    "editions": [
     "CLIENT",
@@ -1099,7 +1099,7 @@
    "method": "GET",
    "path": "/api/v1/families/predictions",
    "handler": "backend/masterquo/api/app.py:families_predictions",
-   "line": 2716,
+   "line": 2722,
    "class": "PUBLIC",
    "editions": [
     "CLIENT",
@@ -1115,7 +1115,7 @@
    "method": "POST",
    "path": "/api/v1/families/train-all",
    "handler": "backend/masterquo/api/app.py:families_train_all",
-   "line": 2693,
+   "line": 2699,
    "class": "PUBLIC",
    "editions": [
     "CLIENT",
@@ -1131,7 +1131,7 @@
    "method": "POST",
    "path": "/api/v1/families/{fid}/activate",
    "handler": "backend/masterquo/api/app.py:families_activate",
-   "line": 2701,
+   "line": 2707,
    "class": "PUBLIC",
    "editions": [
     "CLIENT",
@@ -1147,7 +1147,7 @@
    "method": "POST",
    "path": "/api/v1/families/{fid}/cancel",
    "handler": "backend/masterquo/api/app.py:families_cancel",
-   "line": 2697,
+   "line": 2703,
    "class": "LEGACY_UI141",
    "editions": [
     "CLIENT",
@@ -1162,7 +1162,7 @@
    "method": "POST",
    "path": "/api/v1/families/{fid}/rollback",
    "handler": "backend/masterquo/api/app.py:families_rollback",
-   "line": 2708,
+   "line": 2714,
    "class": "PUBLIC",
    "editions": [
     "CLIENT",
@@ -1178,7 +1178,7 @@
    "method": "GET",
    "path": "/api/v1/families/{fid}/runs",
    "handler": "backend/masterquo/api/app.py:families_runs",
-   "line": 2685,
+   "line": 2691,
    "class": "INTERNAL",
    "editions": [
     "CLIENT",
@@ -1191,7 +1191,7 @@
    "method": "POST",
    "path": "/api/v1/families/{fid}/train",
    "handler": "backend/masterquo/api/app.py:families_train",
-   "line": 2689,
+   "line": 2695,
    "class": "PUBLIC",
    "editions": [
     "CLIENT",
@@ -1207,7 +1207,7 @@
    "method": "POST",
    "path": "/api/v1/families/{fid}/use",
    "handler": "backend/masterquo/api/app.py:families_use",
-   "line": 2712,
+   "line": 2718,
    "class": "PUBLIC",
    "editions": [
     "CLIENT",
@@ -1342,7 +1342,7 @@
    "method": "GET",
    "path": "/api/v1/forecast/long-horizon",
    "handler": "backend/masterquo/api/wf32_routes.py:long_horizon",
-   "line": 409,
+   "line": 421,
    "class": "PUBLIC",
    "editions": [
     "CLIENT",
@@ -1512,7 +1512,7 @@
    "method": "GET",
    "path": "/api/v1/indicators/anchors",
    "handler": "backend/masterquo/api/app.py:indicators_anchors",
-   "line": 2510,
+   "line": 2516,
    "class": "PUBLIC",
    "editions": [
     "CLIENT",
@@ -1529,7 +1529,7 @@
    "method": "POST",
    "path": "/api/v1/indicators/anchors",
    "handler": "backend/masterquo/api/app.py:indicators_anchor_add",
-   "line": 2514,
+   "line": 2520,
    "class": "PUBLIC",
    "editions": [
     "CLIENT",
@@ -1546,7 +1546,7 @@
    "method": "DELETE",
    "path": "/api/v1/indicators/anchors/{anchor_id}",
    "handler": "backend/masterquo/api/app.py:indicators_anchor_del",
-   "line": 2528,
+   "line": 2534,
    "class": "LEGACY_UI141",
    "editions": [
     "CLIENT",
@@ -1591,7 +1591,7 @@
    "method": "GET",
    "path": "/api/v1/indicators/chart",
    "handler": "backend/masterquo/api/app.py:indicators_chart",
-   "line": 2501,
+   "line": 2507,
    "class": "PUBLIC",
    "editions": [
     "CLIENT",
@@ -1622,7 +1622,7 @@
    "method": "GET",
    "path": "/api/v1/indicators/dxy",
    "handler": "backend/masterquo/api/app.py:indicators_dxy",
-   "line": 2505,
+   "line": 2511,
    "class": "PUBLIC",
    "editions": [
     "CLIENT",
@@ -1638,7 +1638,7 @@
    "method": "GET",
    "path": "/api/v1/indicators/manifest",
    "handler": "backend/masterquo/api/app.py:indicators_manifest",
-   "line": 2534,
+   "line": 2540,
    "class": "INTERNAL",
    "editions": [
     "CLIENT",
@@ -1651,7 +1651,7 @@
    "method": "POST",
    "path": "/api/v1/indicators/refresh",
    "handler": "backend/masterquo/api/app.py:indicators_refresh",
-   "line": 2497,
+   "line": 2503,
    "class": "LEGACY_UI141",
    "editions": [
     "CLIENT",
@@ -1666,7 +1666,7 @@
    "method": "GET",
    "path": "/api/v1/indicators/snapshot",
    "handler": "backend/masterquo/api/app.py:indicators_snapshot",
-   "line": 2490,
+   "line": 2496,
    "class": "PUBLIC",
    "editions": [
     "CLIENT",
@@ -1682,7 +1682,7 @@
    "method": "GET",
    "path": "/api/v1/indicators/status",
    "handler": "backend/masterquo/api/app.py:indicators_status",
-   "line": 2486,
+   "line": 2492,
    "class": "LEGACY_UI141",
    "editions": [
     "CLIENT",
@@ -1697,7 +1697,7 @@
    "method": "POST",
    "path": "/api/v1/kill",
    "handler": "backend/masterquo/api/app.py:kill",
-   "line": 3967,
+   "line": 3973,
    "class": "PUBLIC",
    "editions": [
     "CLIENT",
@@ -1714,7 +1714,7 @@
    "method": "GET",
    "path": "/api/v1/kronos",
    "handler": "backend/masterquo/api/app.py:kronos_status",
-   "line": 2206,
+   "line": 2212,
    "class": "PUBLIC",
    "editions": [
     "CLIENT",
@@ -1731,7 +1731,7 @@
    "method": "POST",
    "path": "/api/v1/kronos/enable",
    "handler": "backend/masterquo/api/app.py:kronos_enable",
-   "line": 2234,
+   "line": 2240,
    "class": "LEGACY_UI141",
    "editions": [
     "CLIENT",
@@ -1746,7 +1746,7 @@
    "method": "GET",
    "path": "/api/v1/kronos/forecast",
    "handler": "backend/masterquo/api/app.py:kronos_forecast",
-   "line": 2215,
+   "line": 2221,
    "class": "PUBLIC",
    "editions": [
     "CLIENT",
@@ -1763,7 +1763,7 @@
    "method": "GET",
    "path": "/api/v1/kronos/history",
    "handler": "backend/masterquo/api/app.py:kronos_history",
-   "line": 2219,
+   "line": 2225,
    "class": "LEGACY_UI141",
    "editions": [
     "CLIENT",
@@ -1779,7 +1779,7 @@
    "method": "POST",
    "path": "/api/v1/kronos/install",
    "handler": "backend/masterquo/api/app.py:kronos_install",
-   "line": 2241,
+   "line": 2247,
    "class": "LEGACY_UI141",
    "editions": [
     "CLIENT",
@@ -1794,7 +1794,7 @@
    "method": "GET",
    "path": "/api/v1/kronos/job/{name}",
    "handler": "backend/masterquo/api/app.py:kronos_job",
-   "line": 2258,
+   "line": 2264,
    "class": "LEGACY_UI141",
    "editions": [
     "CLIENT",
@@ -1809,7 +1809,7 @@
    "method": "POST",
    "path": "/api/v1/kronos/refresh",
    "handler": "backend/masterquo/api/app.py:kronos_refresh",
-   "line": 2264,
+   "line": 2270,
    "class": "LEGACY_UI141",
    "editions": [
     "CLIENT",
@@ -1824,7 +1824,7 @@
    "method": "PUT",
    "path": "/api/v1/kronos/settings",
    "handler": "backend/masterquo/api/app.py:kronos_settings_put",
-   "line": 2223,
+   "line": 2229,
    "class": "PUBLIC",
    "editions": [
     "CLIENT",
@@ -1840,7 +1840,7 @@
    "method": "POST",
    "path": "/api/v1/kronos/strategy-use",
    "handler": "backend/masterquo/api/app.py:kronos_strategy_use",
-   "line": 2289,
+   "line": 2295,
    "class": "LEGACY_UI141",
    "editions": [
     "CLIENT",
@@ -1856,7 +1856,7 @@
    "method": "POST",
    "path": "/api/v1/kronos/validate",
    "handler": "backend/masterquo/api/app.py:kronos_validate",
-   "line": 2271,
+   "line": 2277,
    "class": "LEGACY_UI141",
    "editions": [
     "CLIENT",
@@ -1872,7 +1872,7 @@
    "method": "GET",
    "path": "/api/v1/kronos/validation",
    "handler": "backend/masterquo/api/app.py:kronos_validation",
-   "line": 2281,
+   "line": 2287,
    "class": "LEGACY_UI141",
    "editions": [
     "CLIENT",
@@ -1887,7 +1887,7 @@
    "method": "POST",
    "path": "/api/v1/kronos/verify",
    "handler": "backend/masterquo/api/app.py:kronos_verify",
-   "line": 2251,
+   "line": 2257,
    "class": "LEGACY_UI141",
    "editions": [
     "CLIENT",
@@ -2142,7 +2142,7 @@
    "method": "GET",
    "path": "/api/v1/lab/neural",
    "handler": "backend/masterquo/api/app.py:nss_state",
-   "line": 3672,
+   "line": 3678,
    "class": "LEGACY_UI141",
    "editions": [
     "CLIENT",
@@ -2158,7 +2158,7 @@
    "method": "POST",
    "path": "/api/v1/lab/neural/cancel",
    "handler": "backend/masterquo/api/app.py:nss_cancel",
-   "line": 3718,
+   "line": 3724,
    "class": "LEGACY_UI141",
    "editions": [
     "CLIENT",
@@ -2173,7 +2173,7 @@
    "method": "POST",
    "path": "/api/v1/lab/neural/doctor",
    "handler": "backend/masterquo/api/app.py:nss_doctor",
-   "line": 3700,
+   "line": 3706,
    "class": "LEGACY_UI141",
    "editions": [
     "CLIENT",
@@ -2189,7 +2189,7 @@
    "method": "GET",
    "path": "/api/v1/lab/neural/history",
    "handler": "backend/masterquo/api/app.py:nss_history",
-   "line": 3676,
+   "line": 3682,
    "class": "LEGACY_UI141",
    "editions": [
     "CLIENT",
@@ -2204,7 +2204,7 @@
    "method": "GET",
    "path": "/api/v1/lab/neural/jobs",
    "handler": "backend/masterquo/api/app.py:nss_jobs_list",
-   "line": 3692,
+   "line": 3698,
    "class": "LEGACY_UI141",
    "editions": [
     "CLIENT",
@@ -2219,7 +2219,7 @@
    "method": "POST",
    "path": "/api/v1/lab/neural/prepare",
    "handler": "backend/masterquo/api/app.py:nss_prepare",
-   "line": 3696,
+   "line": 3702,
    "class": "LEGACY_UI141",
    "editions": [
     "CLIENT",
@@ -2234,7 +2234,7 @@
    "method": "GET",
    "path": "/api/v1/lab/neural/report",
    "handler": "backend/masterquo/api/app.py:nss_report",
-   "line": 3680,
+   "line": 3686,
    "class": "LEGACY_UI141",
    "editions": [
     "CLIENT",
@@ -2249,7 +2249,7 @@
    "method": "POST",
    "path": "/api/v1/lab/neural/rollback",
    "handler": "backend/masterquo/api/app.py:nss_rollback",
-   "line": 3735,
+   "line": 3741,
    "class": "LEGACY_UI141",
    "editions": [
     "CLIENT",
@@ -2264,7 +2264,7 @@
    "method": "POST",
    "path": "/api/v1/lab/neural/select",
    "handler": "backend/masterquo/api/app.py:nss_select",
-   "line": 3727,
+   "line": 3733,
    "class": "LEGACY_UI141",
    "editions": [
     "CLIENT",
@@ -2279,7 +2279,7 @@
    "method": "POST",
    "path": "/api/v1/lab/neural/train",
    "handler": "backend/masterquo/api/app.py:nss_train",
-   "line": 3714,
+   "line": 3720,
    "class": "LEGACY_UI141",
    "editions": [
     "CLIENT",
@@ -2395,8 +2395,8 @@
     "OWNER"
    ],
    "callers": {
-    "backend": 1,
-    "tests": 2,
+    "backend": 3,
+    "tests": 3,
     "archive_ui141": 1
    },
    "no_client": false
@@ -2512,7 +2512,7 @@
    "method": "POST",
    "path": "/api/v1/license/activate",
    "handler": "backend/masterquo/api/app.py:license_activate",
-   "line": 3336,
+   "line": 3342,
    "class": "PUBLIC",
    "editions": [
     "CLIENT",
@@ -2528,7 +2528,7 @@
    "method": "POST",
    "path": "/api/v1/license/require",
    "handler": "backend/masterquo/api/app.py:license_require",
-   "line": 3343,
+   "line": 3349,
    "class": "PUBLIC",
    "editions": [
     "CLIENT",
@@ -2544,7 +2544,7 @@
    "method": "GET",
    "path": "/api/v1/license/status",
    "handler": "backend/masterquo/api/app.py:license_status",
-   "line": 3332,
+   "line": 3338,
    "class": "PUBLIC",
    "editions": [
     "CLIENT",
@@ -2560,7 +2560,7 @@
    "method": "GET",
    "path": "/api/v1/liquidity/context",
    "handler": "backend/masterquo/api/app.py:liq_context",
-   "line": 3574,
+   "line": 3580,
    "class": "LEGACY_UI141",
    "editions": [
     "CLIENT",
@@ -2575,7 +2575,7 @@
    "method": "GET",
    "path": "/api/v1/liquidity/heatmap",
    "handler": "backend/masterquo/api/app.py:liq_heatmap",
-   "line": 3570,
+   "line": 3576,
    "class": "LEGACY_UI141",
    "editions": [
     "CLIENT",
@@ -2590,7 +2590,7 @@
    "method": "PUT",
    "path": "/api/v1/liquidity/key",
    "handler": "backend/masterquo/api/app.py:liq_key",
-   "line": 3603,
+   "line": 3609,
    "class": "LEGACY_UI141",
    "editions": [
     "CLIENT",
@@ -2606,7 +2606,7 @@
    "method": "POST",
    "path": "/api/v1/liquidity/poll",
    "handler": "backend/masterquo/api/app.py:liq_poll",
-   "line": 3611,
+   "line": 3617,
    "class": "LEGACY_UI141",
    "editions": [
     "CLIENT",
@@ -2622,7 +2622,7 @@
    "method": "GET",
    "path": "/api/v1/liquidity/sessions",
    "handler": "backend/masterquo/api/app.py:liq_sessions",
-   "line": 3556,
+   "line": 3562,
    "class": "PUBLIC",
    "editions": [
     "CLIENT",
@@ -2638,7 +2638,7 @@
    "method": "PUT",
    "path": "/api/v1/liquidity/source",
    "handler": "backend/masterquo/api/app.py:liq_source",
-   "line": 3589,
+   "line": 3595,
    "class": "LEGACY_UI141",
    "editions": [
     "CLIENT",
@@ -2653,7 +2653,7 @@
    "method": "GET",
    "path": "/api/v1/logs",
    "handler": "backend/masterquo/api/app.py:logs",
-   "line": 1605,
+   "line": 1609,
    "class": "LEGACY_UI141",
    "editions": [
     "CLIENT",
@@ -2775,7 +2775,7 @@
    "method": "GET",
    "path": "/api/v1/market-trap",
    "handler": "backend/masterquo/api/wf32_routes.py:market_trap",
-   "line": 540,
+   "line": 563,
    "class": "PUBLIC",
    "editions": [
     "CLIENT",
@@ -2783,7 +2783,7 @@
    ],
    "callers": {
     "backend": 1,
-    "tests": 1
+    "tests": 3
    },
    "no_client": false
   },
@@ -2791,7 +2791,7 @@
    "method": "GET",
    "path": "/api/v1/market-zones",
    "handler": "backend/masterquo/api/app.py:market_zones",
-   "line": 1898,
+   "line": 1902,
    "class": "PUBLIC",
    "editions": [
     "CLIENT",
@@ -2808,7 +2808,7 @@
    "method": "GET",
    "path": "/api/v1/market-zones/as-of",
    "handler": "backend/masterquo/api/app.py:market_zones_as_of",
-   "line": 1954,
+   "line": 1958,
    "class": "INTERNAL",
    "editions": [
     "CLIENT",
@@ -2823,7 +2823,7 @@
    "method": "GET",
    "path": "/api/v1/market-zones/bars",
    "handler": "backend/masterquo/api/app.py:market_zones_bars",
-   "line": 1941,
+   "line": 1945,
    "class": "PUBLIC",
    "editions": [
     "CLIENT",
@@ -2840,7 +2840,7 @@
    "method": "POST",
    "path": "/api/v1/market-zones/compute",
    "handler": "backend/masterquo/api/app.py:market_zones_compute",
-   "line": 1905,
+   "line": 1909,
    "class": "PUBLIC",
    "editions": [
     "CLIENT",
@@ -2857,7 +2857,7 @@
    "method": "GET",
    "path": "/api/v1/market-zones/events",
    "handler": "backend/masterquo/api/app.py:market_zones_events",
-   "line": 1937,
+   "line": 1941,
    "class": "INTERNAL",
    "editions": [
     "CLIENT",
@@ -2870,7 +2870,7 @@
    "method": "GET",
    "path": "/api/v1/market-zones/job/{job_id}",
    "handler": "backend/masterquo/api/app.py:market_zones_job",
-   "line": 1923,
+   "line": 1927,
    "class": "INTERNAL",
    "editions": [
     "CLIENT",
@@ -2883,7 +2883,7 @@
    "method": "POST",
    "path": "/api/v1/market-zones/live",
    "handler": "backend/masterquo/api/app.py:market_zones_live",
-   "line": 1912,
+   "line": 1916,
    "class": "PUBLIC",
    "editions": [
     "CLIENT",
@@ -2899,23 +2899,22 @@
    "method": "POST",
    "path": "/api/v1/market-zones/stop",
    "handler": "backend/masterquo/api/app.py:market_zones_stop",
-   "line": 1919,
-   "class": "PUBLIC",
+   "line": 1923,
+   "class": "LEGACY_UI141",
    "editions": [
     "CLIENT",
     "OWNER"
    ],
    "callers": {
-    "frontend": 1,
     "archive_ui141": 1
    },
-   "no_client": false
+   "no_client": true
   },
   {
    "method": "GET",
    "path": "/api/v1/market-zones/zone/{zone_id}",
    "handler": "backend/masterquo/api/app.py:market_zones_zone",
-   "line": 1930,
+   "line": 1934,
    "class": "LEGACY_UI141",
    "editions": [
     "CLIENT",
@@ -2930,7 +2929,7 @@
    "method": "GET",
    "path": "/api/v1/markets",
    "handler": "backend/masterquo/api/app.py:markets",
-   "line": 1489,
+   "line": 1493,
    "class": "INTERNAL",
    "editions": [
     "CLIENT",
@@ -2943,7 +2942,7 @@
    "method": "GET",
    "path": "/api/v1/markets/chart",
    "handler": "backend/masterquo/api/app.py:markets_chart",
-   "line": 1518,
+   "line": 1522,
    "class": "LEGACY_UI141",
    "editions": [
     "CLIENT",
@@ -2958,7 +2957,7 @@
    "method": "GET",
    "path": "/api/v1/markets/detail",
    "handler": "backend/masterquo/api/app.py:markets_detail",
-   "line": 1507,
+   "line": 1511,
    "class": "LEGACY_UI141",
    "editions": [
     "CLIENT",
@@ -2973,7 +2972,7 @@
    "method": "POST",
    "path": "/api/v1/markets/scan",
    "handler": "backend/masterquo/api/app.py:markets_scan",
-   "line": 1493,
+   "line": 1497,
    "class": "LEGACY_UI141",
    "editions": [
     "CLIENT",
@@ -2988,7 +2987,7 @@
    "method": "GET",
    "path": "/api/v1/markets/symbols",
    "handler": "backend/masterquo/api/app.py:markets_symbols",
-   "line": 1500,
+   "line": 1504,
    "class": "INTERNAL",
    "editions": [
     "CLIENT",
@@ -3068,7 +3067,7 @@
    "method": "POST",
    "path": "/api/v1/ml/backfill",
    "handler": "backend/masterquo/api/app.py:ml_backfill",
-   "line": 3840,
+   "line": 3846,
    "class": "LEGACY_UI141",
    "editions": [
     "CLIENT",
@@ -3083,7 +3082,7 @@
    "method": "POST",
    "path": "/api/v1/ml/cancel",
    "handler": "backend/masterquo/api/app.py:ml_cancel",
-   "line": 3844,
+   "line": 3850,
    "class": "INTERNAL",
    "editions": [
     "CLIENT",
@@ -3096,7 +3095,7 @@
    "method": "POST",
    "path": "/api/v1/ml/collect",
    "handler": "backend/masterquo/api/app.py:ml_collect",
-   "line": 1829,
+   "line": 1833,
    "class": "LEGACY_UI141",
    "editions": [
     "CLIENT",
@@ -3111,7 +3110,7 @@
    "method": "GET",
    "path": "/api/v1/ml/explain",
    "handler": "backend/masterquo/api/app.py:ml_explain",
-   "line": 3867,
+   "line": 3873,
    "class": "PUBLIC",
    "editions": [
     "CLIENT",
@@ -3127,7 +3126,7 @@
    "method": "POST",
    "path": "/api/v1/ml/mode",
    "handler": "backend/masterquo/api/app.py:ml_mode",
-   "line": 1822,
+   "line": 1826,
    "class": "PUBLIC",
    "editions": [
     "CLIENT",
@@ -3142,7 +3141,7 @@
    "method": "GET",
    "path": "/api/v1/ml/models",
    "handler": "backend/masterquo/api/app.py:ml_models",
-   "line": 3859,
+   "line": 3865,
    "class": "INTERNAL",
    "editions": [
     "CLIENT",
@@ -3155,7 +3154,7 @@
    "method": "POST",
    "path": "/api/v1/ml/pause",
    "handler": "backend/masterquo/api/app.py:ml_pause",
-   "line": 1833,
+   "line": 1837,
    "class": "LEGACY_UI141",
    "editions": [
     "CLIENT",
@@ -3170,20 +3169,23 @@
    "method": "GET",
    "path": "/api/v1/ml/predict",
    "handler": "backend/masterquo/api/app.py:ml_predict",
-   "line": 3871,
-   "class": "INTERNAL",
+   "line": 3877,
+   "class": "PUBLIC",
    "editions": [
     "CLIENT",
     "OWNER"
    ],
-   "callers": {},
-   "no_client": true
+   "callers": {
+    "frontend": 2,
+    "tests": 1
+   },
+   "no_client": false
   },
   {
    "method": "POST",
    "path": "/api/v1/ml/reload",
    "handler": "backend/masterquo/api/app.py:ml_reload",
-   "line": 3833,
+   "line": 3839,
    "class": "PUBLIC",
    "editions": [
     "CLIENT",
@@ -3199,7 +3201,7 @@
    "method": "GET",
    "path": "/api/v1/ml/report",
    "handler": "backend/masterquo/api/app.py:ml_report",
-   "line": 3863,
+   "line": 3869,
    "class": "INTERNAL",
    "editions": [
     "CLIENT",
@@ -3212,7 +3214,7 @@
    "method": "POST",
    "path": "/api/v1/ml/resume",
    "handler": "backend/masterquo/api/app.py:ml_resume",
-   "line": 3848,
+   "line": 3854,
    "class": "INTERNAL",
    "editions": [
     "CLIENT",
@@ -3225,7 +3227,7 @@
    "method": "POST",
    "path": "/api/v1/ml/rollback",
    "handler": "backend/masterquo/api/app.py:ml_rollback",
-   "line": 3852,
+   "line": 3858,
    "class": "LEGACY_UI141",
    "editions": [
     "CLIENT",
@@ -3240,7 +3242,7 @@
    "method": "GET",
    "path": "/api/v1/ml/scalp",
    "handler": "backend/masterquo/api/app.py:ml_scalp_status",
-   "line": 3744,
+   "line": 3750,
    "class": "LEGACY_UI141",
    "editions": [
     "CLIENT",
@@ -3256,7 +3258,7 @@
    "method": "GET",
    "path": "/api/v1/ml/scalp/explain",
    "handler": "backend/masterquo/api/app.py:ml_scalp_explain",
-   "line": 3803,
+   "line": 3809,
    "class": "PUBLIC",
    "editions": [
     "CLIENT",
@@ -3272,7 +3274,7 @@
    "method": "GET",
    "path": "/api/v1/ml/scalp/predictions",
    "handler": "backend/masterquo/api/app.py:ml_scalp_predictions",
-   "line": 3795,
+   "line": 3801,
    "class": "INTERNAL",
    "editions": [
     "CLIENT",
@@ -3285,7 +3287,7 @@
    "method": "POST",
    "path": "/api/v1/ml/scalp/prepare",
    "handler": "backend/masterquo/api/app.py:ml_scalp_prepare",
-   "line": 3777,
+   "line": 3783,
    "class": "LEGACY_UI141",
    "editions": [
     "CLIENT",
@@ -3300,7 +3302,7 @@
    "method": "POST",
    "path": "/api/v1/ml/scalp/rollback",
    "handler": "backend/masterquo/api/app.py:ml_scalp_rollback",
-   "line": 3824,
+   "line": 3830,
    "class": "LEGACY_UI141",
    "editions": [
     "CLIENT",
@@ -3316,7 +3318,7 @@
    "method": "POST",
    "path": "/api/v1/ml/scalp/select",
    "handler": "backend/masterquo/api/app.py:ml_scalp_select",
-   "line": 3815,
+   "line": 3821,
    "class": "LEGACY_UI141",
    "editions": [
     "CLIENT",
@@ -3332,7 +3334,7 @@
    "method": "POST",
    "path": "/api/v1/ml/scalp/train",
    "handler": "backend/masterquo/api/app.py:ml_scalp_train",
-   "line": 3784,
+   "line": 3790,
    "class": "LEGACY_UI141",
    "editions": [
     "CLIENT",
@@ -3348,7 +3350,7 @@
    "method": "GET",
    "path": "/api/v1/ml/status",
    "handler": "backend/masterquo/api/app.py:ml_status",
-   "line": 1818,
+   "line": 1822,
    "class": "PUBLIC",
    "editions": [
     "CLIENT",
@@ -3364,7 +3366,7 @@
    "method": "POST",
    "path": "/api/v1/ml/train",
    "handler": "backend/masterquo/api/app.py:ml_train",
-   "line": 1837,
+   "line": 1841,
    "class": "LEGACY_UI141",
    "editions": [
     "CLIENT",
@@ -3379,7 +3381,7 @@
    "method": "GET",
    "path": "/api/v1/mm/job",
    "handler": "backend/masterquo/api/app.py:mm_job",
-   "line": 3131,
+   "line": 3137,
    "class": "INTERNAL",
    "editions": [
     "CLIENT",
@@ -3394,7 +3396,7 @@
    "method": "GET",
    "path": "/api/v1/mm/ledger",
    "handler": "backend/masterquo/api/app.py:mm_ledger",
-   "line": 3146,
+   "line": 3152,
    "class": "PUBLIC",
    "editions": [
     "CLIENT",
@@ -3410,7 +3412,7 @@
    "method": "GET",
    "path": "/api/v1/mm/live",
    "handler": "backend/masterquo/api/app.py:mm_live",
-   "line": 3127,
+   "line": 3133,
    "class": "PUBLIC",
    "editions": [
     "CLIENT",
@@ -3427,7 +3429,7 @@
    "method": "POST",
    "path": "/api/v1/mm/rollback",
    "handler": "backend/masterquo/api/app.py:mm_rollback",
-   "line": 3156,
+   "line": 3162,
    "class": "INTERNAL",
    "editions": [
     "CLIENT",
@@ -3442,7 +3444,7 @@
    "method": "GET",
    "path": "/api/v1/mm/status",
    "handler": "backend/masterquo/api/app.py:mm_status",
-   "line": 1869,
+   "line": 1873,
    "class": "LEGACY_UI141",
    "editions": [
     "CLIENT",
@@ -3458,7 +3460,7 @@
    "method": "POST",
    "path": "/api/v1/mode",
    "handler": "backend/masterquo/api/app.py:set_mode",
-   "line": 1722,
+   "line": 1726,
    "class": "EXECUTION",
    "editions": [
     "CLIENT",
@@ -3475,7 +3477,7 @@
    "method": "POST",
    "path": "/api/v1/mode/primary-path",
    "handler": "backend/masterquo/api/app.py:set_primary_path",
-   "line": 1736,
+   "line": 1740,
    "class": "EXECUTION",
    "editions": [
     "CLIENT",
@@ -3517,7 +3519,7 @@
    ],
    "callers": {
     "backend": 2,
-    "tests": 1
+    "tests": 3
    },
    "no_client": false
   },
@@ -3525,7 +3527,7 @@
    "method": "GET",
    "path": "/api/v1/models/catalog",
    "handler": "backend/masterquo/api/app.py:models_catalog",
-   "line": 2173,
+   "line": 2177,
    "class": "PUBLIC",
    "editions": [
     "CLIENT",
@@ -3574,7 +3576,7 @@
    "method": "GET",
    "path": "/api/v1/models/evidence",
    "handler": "backend/masterquo/api/app.py:models_evidence",
-   "line": 2186,
+   "line": 2190,
    "class": "PUBLIC",
    "editions": [
     "CLIENT",
@@ -3590,7 +3592,7 @@
    "method": "GET",
    "path": "/api/v1/models/foundation",
    "handler": "backend/masterquo/api/app.py:tsfm_status",
-   "line": 2342,
+   "line": 2348,
    "class": "PUBLIC",
    "editions": [
     "CLIENT",
@@ -3606,7 +3608,7 @@
    "method": "GET",
    "path": "/api/v1/models/foundation/compare",
    "handler": "backend/masterquo/api/app.py:tsfm_compare",
-   "line": 2357,
+   "line": 2363,
    "class": "LEGACY_UI141",
    "editions": [
     "CLIENT",
@@ -3621,7 +3623,7 @@
    "method": "GET",
    "path": "/api/v1/models/foundation/forecast",
    "handler": "backend/masterquo/api/app.py:tsfm_forecast",
-   "line": 2353,
+   "line": 2359,
    "class": "LEGACY_UI141",
    "editions": [
     "CLIENT",
@@ -3636,7 +3638,7 @@
    "method": "GET",
    "path": "/api/v1/models/foundation/granite",
    "handler": "backend/masterquo/api/app.py:granite_get",
-   "line": 2413,
+   "line": 2419,
    "class": "PUBLIC",
    "editions": [
     "CLIENT",
@@ -3652,7 +3654,7 @@
    "method": "POST",
    "path": "/api/v1/models/foundation/granite/activate",
    "handler": "backend/masterquo/api/app.py:granite_activate",
-   "line": 2441,
+   "line": 2447,
    "class": "LEGACY_UI141",
    "editions": [
     "CLIENT",
@@ -3667,7 +3669,7 @@
    "method": "POST",
    "path": "/api/v1/models/foundation/granite/cancel",
    "handler": "backend/masterquo/api/app.py:granite_cancel",
-   "line": 2433,
+   "line": 2439,
    "class": "LEGACY_UI141",
    "editions": [
     "CLIENT",
@@ -3682,7 +3684,7 @@
    "method": "POST",
    "path": "/api/v1/models/foundation/granite/rollback",
    "handler": "backend/masterquo/api/app.py:granite_rollback",
-   "line": 2452,
+   "line": 2458,
    "class": "LEGACY_UI141",
    "editions": [
     "CLIENT",
@@ -3697,7 +3699,7 @@
    "method": "POST",
    "path": "/api/v1/models/foundation/granite/train",
    "handler": "backend/masterquo/api/app.py:granite_train",
-   "line": 2420,
+   "line": 2426,
    "class": "LEGACY_UI141",
    "editions": [
     "CLIENT",
@@ -3712,7 +3714,7 @@
    "method": "GET",
    "path": "/api/v1/models/foundation/history",
    "handler": "backend/masterquo/api/app.py:tsfm_history",
-   "line": 2361,
+   "line": 2367,
    "class": "INTERNAL",
    "editions": [
     "CLIENT",
@@ -3725,7 +3727,7 @@
    "method": "POST",
    "path": "/api/v1/models/foundation/install",
    "handler": "backend/masterquo/api/app.py:tsfm_install",
-   "line": 2381,
+   "line": 2387,
    "class": "LEGACY_UI141",
    "editions": [
     "CLIENT",
@@ -3740,7 +3742,7 @@
    "method": "GET",
    "path": "/api/v1/models/foundation/job/{name}",
    "handler": "backend/masterquo/api/app.py:tsfm_job",
-   "line": 2457,
+   "line": 2463,
    "class": "INTERNAL",
    "editions": [
     "CLIENT",
@@ -3753,7 +3755,7 @@
    "method": "POST",
    "path": "/api/v1/models/foundation/refresh",
    "handler": "backend/masterquo/api/app.py:tsfm_refresh",
-   "line": 2395,
+   "line": 2401,
    "class": "LEGACY_UI141",
    "editions": [
     "CLIENT",
@@ -3768,7 +3770,7 @@
    "method": "PUT",
    "path": "/api/v1/models/foundation/settings",
    "handler": "backend/masterquo/api/app.py:tsfm_settings_put",
-   "line": 2366,
+   "line": 2372,
    "class": "INTERNAL",
    "editions": [
     "CLIENT",
@@ -3781,7 +3783,7 @@
    "method": "POST",
    "path": "/api/v1/models/foundation/use",
    "handler": "backend/masterquo/api/app.py:tsfm_use",
-   "line": 2471,
+   "line": 2477,
    "class": "LEGACY_UI141",
    "editions": [
     "CLIENT",
@@ -3797,7 +3799,7 @@
    "method": "POST",
    "path": "/api/v1/models/foundation/validate",
    "handler": "backend/masterquo/api/app.py:tsfm_validate",
-   "line": 2402,
+   "line": 2408,
    "class": "LEGACY_UI141",
    "editions": [
     "CLIENT",
@@ -3813,7 +3815,7 @@
    "method": "GET",
    "path": "/api/v1/models/foundation/validation",
    "handler": "backend/masterquo/api/app.py:tsfm_validation",
-   "line": 2463,
+   "line": 2469,
    "class": "LEGACY_UI141",
    "editions": [
     "CLIENT",
@@ -3828,7 +3830,7 @@
    "method": "POST",
    "path": "/api/v1/models/foundation/verify",
    "handler": "backend/masterquo/api/app.py:tsfm_verify",
-   "line": 2388,
+   "line": 2394,
    "class": "LEGACY_UI141",
    "editions": [
     "CLIENT",
@@ -3843,16 +3845,16 @@
    "method": "GET",
    "path": "/api/v1/models/predictions",
    "handler": "backend/masterquo/api/app.py:models_predictions",
-   "line": 2178,
+   "line": 2182,
    "class": "PUBLIC",
    "editions": [
     "CLIENT",
     "OWNER"
    ],
    "callers": {
-    "frontend": 6,
+    "frontend": 5,
     "tools": 2,
-    "tests": 2,
+    "tests": 3,
     "archive_ui141": 9
    },
    "no_client": false
@@ -3877,7 +3879,7 @@
    "method": "POST",
    "path": "/api/v1/montecarlo/run",
    "handler": "backend/masterquo/api/app.py:montecarlo_run",
-   "line": 3463,
+   "line": 3469,
    "class": "PUBLIC",
    "editions": [
     "CLIENT",
@@ -3893,7 +3895,7 @@
    "method": "GET",
    "path": "/api/v1/montecarlo/scenarios",
    "handler": "backend/masterquo/api/app.py:montecarlo_scenarios",
-   "line": 3458,
+   "line": 3464,
    "class": "LEGACY_UI141",
    "editions": [
     "CLIENT",
@@ -3909,7 +3911,7 @@
    "method": "GET",
    "path": "/api/v1/montecarlo/status",
    "handler": "backend/masterquo/api/app.py:montecarlo_status",
-   "line": 3431,
+   "line": 3437,
    "class": "PUBLIC",
    "editions": [
     "CLIENT",
@@ -3926,7 +3928,7 @@
    "method": "GET",
    "path": "/api/v1/montecarlo/validations/{run_id}/report",
    "handler": "backend/masterquo/api/app.py:montecarlo_validation_report",
-   "line": 3435,
+   "line": 3441,
    "class": "PUBLIC",
    "editions": [
     "CLIENT",
@@ -3941,7 +3943,7 @@
    "method": "POST",
    "path": "/api/v1/mt5/reconnect",
    "handler": "backend/masterquo/api/app.py:reconnect",
-   "line": 3989,
+   "line": 3995,
    "class": "PUBLIC",
    "editions": [
     "CLIENT",
@@ -3956,7 +3958,7 @@
    "method": "GET",
    "path": "/api/v1/news",
    "handler": "backend/masterquo/api/app.py:news",
-   "line": 1601,
+   "line": 1605,
    "class": "LEGACY_UI141",
    "editions": [
     "CLIENT",
@@ -3971,7 +3973,7 @@
    "method": "POST",
    "path": "/api/v1/news/refresh",
    "handler": "backend/masterquo/api/app.py:news_refresh",
-   "line": 3994,
+   "line": 4000,
    "class": "LEGACY_UI141",
    "editions": [
     "CLIENT",
@@ -4381,7 +4383,7 @@
    "method": "GET",
    "path": "/api/v1/pepe-training",
    "handler": "backend/masterquo/api/app.py:pepe_training_status",
-   "line": 3351,
+   "line": 3357,
    "class": "PUBLIC",
    "editions": [
     "CLIENT",
@@ -4396,7 +4398,7 @@
    "method": "POST",
    "path": "/api/v1/pepe-training/cancel",
    "handler": "backend/masterquo/api/app.py:pepe_training_cancel",
-   "line": 3372,
+   "line": 3378,
    "class": "PUBLIC",
    "editions": [
     "CLIENT",
@@ -4411,7 +4413,7 @@
    "method": "GET",
    "path": "/api/v1/pepe-training/log",
    "handler": "backend/masterquo/api/app.py:pepe_training_log",
-   "line": 3380,
+   "line": 3386,
    "class": "PUBLIC",
    "editions": [
     "CLIENT",
@@ -4426,7 +4428,7 @@
    "method": "POST",
    "path": "/api/v1/pepe-training/remove",
    "handler": "backend/masterquo/api/app.py:pepe_training_remove",
-   "line": 3376,
+   "line": 3382,
    "class": "PUBLIC",
    "editions": [
     "CLIENT",
@@ -4441,7 +4443,7 @@
    "method": "PUT",
    "path": "/api/v1/pepe-training/settings",
    "handler": "backend/masterquo/api/app.py:pepe_training_settings",
-   "line": 3365,
+   "line": 3371,
    "class": "PUBLIC",
    "editions": [
     "CLIENT",
@@ -4456,7 +4458,7 @@
    "method": "POST",
    "path": "/api/v1/pepe-training/train",
    "handler": "backend/masterquo/api/app.py:pepe_training_train",
-   "line": 3355,
+   "line": 3361,
    "class": "PUBLIC",
    "editions": [
     "CLIENT",
@@ -4489,7 +4491,7 @@
    "method": "GET",
    "path": "/api/v1/playbook",
    "handler": "backend/masterquo/api/app.py:playbook",
-   "line": 3908,
+   "line": 3914,
    "class": "INTERNAL",
    "editions": [
     "CLIENT",
@@ -4504,7 +4506,7 @@
    "method": "POST",
    "path": "/api/v1/positions/close",
    "handler": "backend/masterquo/api/app.py:close_positions",
-   "line": 3977,
+   "line": 3983,
    "class": "EXECUTION",
    "editions": [
     "CLIENT",
@@ -4520,7 +4522,7 @@
    "method": "POST",
    "path": "/api/v1/positions/{ticket}/adopt",
    "handler": "backend/masterquo/api/app.py:adopt",
-   "line": 3983,
+   "line": 3989,
    "class": "EXECUTION",
    "editions": [
     "CLIENT",
@@ -4535,7 +4537,7 @@
    "method": "GET",
    "path": "/api/v1/prefs",
    "handler": "backend/masterquo/api/app.py:prefs_get",
-   "line": 1773,
+   "line": 1777,
    "class": "PUBLIC",
    "editions": [
     "CLIENT",
@@ -4550,7 +4552,7 @@
    "method": "POST",
    "path": "/api/v1/prefs/leverage",
    "handler": "backend/masterquo/api/app.py:prefs_leverage",
-   "line": 1791,
+   "line": 1795,
    "class": "PUBLIC",
    "editions": [
     "CLIENT",
@@ -4565,7 +4567,7 @@
    "method": "POST",
    "path": "/api/v1/prefs/setup-view",
    "handler": "backend/masterquo/api/app.py:prefs_setup_view",
-   "line": 1778,
+   "line": 1782,
    "class": "LEGACY_UI141",
    "editions": [
     "CLIENT",
@@ -4580,7 +4582,7 @@
    "method": "GET",
    "path": "/api/v1/presets/strategy",
    "handler": "backend/masterquo/api/app.py:presets_list",
-   "line": 4059,
+   "line": 4065,
    "class": "LEGACY_UI141",
    "editions": [
     "CLIENT",
@@ -4596,7 +4598,7 @@
    "method": "POST",
    "path": "/api/v1/presets/strategy",
    "handler": "backend/masterquo/api/app.py:presets_save",
-   "line": 4067,
+   "line": 4073,
    "class": "LEGACY_UI141",
    "editions": [
     "CLIENT",
@@ -4612,7 +4614,7 @@
    "method": "POST",
    "path": "/api/v1/presets/strategy/load",
    "handler": "backend/masterquo/api/app.py:presets_load",
-   "line": 4076,
+   "line": 4082,
    "class": "LEGACY_UI141",
    "editions": [
     "CLIENT",
@@ -4628,7 +4630,7 @@
    "method": "POST",
    "path": "/api/v1/presets/strategy/reset",
    "handler": "backend/masterquo/api/app.py:presets_reset",
-   "line": 4085,
+   "line": 4091,
    "class": "LEGACY_UI141",
    "editions": [
     "CLIENT",
@@ -4644,7 +4646,7 @@
    "method": "GET",
    "path": "/api/v1/quant/assessment",
    "handler": "backend/masterquo/api/app.py:quant_assessments",
-   "line": 2736,
+   "line": 2742,
    "class": "PUBLIC",
    "editions": [
     "CLIENT",
@@ -4662,7 +4664,7 @@
    "method": "POST",
    "path": "/api/v1/quant/assessment",
    "handler": "backend/masterquo/api/app.py:quant_assess",
-   "line": 2743,
+   "line": 2749,
    "class": "PUBLIC",
    "editions": [
     "CLIENT",
@@ -4680,7 +4682,7 @@
    "method": "PUT",
    "path": "/api/v1/quant/estimator",
    "handler": "backend/masterquo/api/app.py:quant_estimator",
-   "line": 2784,
+   "line": 2790,
    "class": "INTERNAL",
    "editions": [
     "CLIENT",
@@ -4693,7 +4695,7 @@
    "method": "GET",
    "path": "/api/v1/quant/inventory",
    "handler": "backend/masterquo/api/app.py:quant_inventory",
-   "line": 2975,
+   "line": 2981,
    "class": "PUBLIC",
    "editions": [
     "CLIENT",
@@ -4708,7 +4710,7 @@
    "method": "GET",
    "path": "/api/v1/quant/jobs",
    "handler": "backend/masterquo/api/app.py:quant_jobs",
-   "line": 2756,
+   "line": 2762,
    "class": "LEGACY_UI141",
    "editions": [
     "CLIENT",
@@ -4724,7 +4726,7 @@
    "method": "POST",
    "path": "/api/v1/quant/jobs",
    "handler": "backend/masterquo/api/app.py:quant_train",
-   "line": 2761,
+   "line": 2767,
    "class": "LEGACY_UI141",
    "editions": [
     "CLIENT",
@@ -4740,7 +4742,7 @@
    "method": "POST",
    "path": "/api/v1/quant/mode",
    "handler": "backend/masterquo/api/app.py:quant_mode",
-   "line": 2772,
+   "line": 2778,
    "class": "PUBLIC",
    "editions": [
     "CLIENT",
@@ -4756,7 +4758,7 @@
    "method": "POST",
    "path": "/api/v1/quant/models/activate",
    "handler": "backend/masterquo/api/app.py:quant_activate",
-   "line": 2953,
+   "line": 2959,
    "class": "LEGACY_UI141",
    "editions": [
     "CLIENT",
@@ -4772,7 +4774,7 @@
    "method": "POST",
    "path": "/api/v1/quant/models/rollback",
    "handler": "backend/masterquo/api/app.py:quant_rollback",
-   "line": 2969,
+   "line": 2975,
    "class": "PUBLIC",
    "editions": [
     "CLIENT",
@@ -4789,7 +4791,7 @@
    "method": "GET",
    "path": "/api/v1/quant/predictions",
    "handler": "backend/masterquo/api/app.py:quant_predictions",
-   "line": 2732,
+   "line": 2738,
    "class": "PUBLIC",
    "editions": [
     "CLIENT",
@@ -4804,7 +4806,7 @@
    "method": "GET",
    "path": "/api/v1/quant/status",
    "handler": "backend/masterquo/api/app.py:quant_status",
-   "line": 2727,
+   "line": 2733,
    "class": "PUBLIC",
    "editions": [
     "CLIENT",
@@ -4821,7 +4823,7 @@
    "method": "GET",
    "path": "/api/v1/quant/tabicl",
    "handler": "backend/masterquo/api/app.py:quant_tabicl",
-   "line": 2780,
+   "line": 2786,
    "class": "PUBLIC",
    "editions": [
     "CLIENT",
@@ -4836,7 +4838,7 @@
    "method": "POST",
    "path": "/api/v1/quant/tabicl/install",
    "handler": "backend/masterquo/api/app.py:quant_tabicl_install",
-   "line": 2802,
+   "line": 2808,
    "class": "PUBLIC",
    "editions": [
     "CLIENT",
@@ -4851,7 +4853,7 @@
    "method": "POST",
    "path": "/api/v1/quant/tabicl/reconstruct",
    "handler": "backend/masterquo/api/app.py:quant_tabicl_reconstruct",
-   "line": 2792,
+   "line": 2798,
    "class": "PUBLIC",
    "editions": [
     "CLIENT",
@@ -4867,7 +4869,7 @@
    "method": "GET",
    "path": "/api/v1/relationships/candidates",
    "handler": "backend/masterquo/api/wf32_routes.py:rel_candidates",
-   "line": 532,
+   "line": 544,
    "class": "INTERNAL",
    "editions": [
     "CLIENT",
@@ -4882,7 +4884,7 @@
    "method": "GET",
    "path": "/api/v1/relationships/pair",
    "handler": "backend/masterquo/api/wf32_routes.py:rel_pair",
-   "line": 536,
+   "line": 548,
    "class": "INTERNAL",
    "editions": [
     "CLIENT",
@@ -4895,7 +4897,7 @@
    "method": "GET",
    "path": "/api/v1/research-modules",
    "handler": "backend/masterquo/api/app.py:research_status",
-   "line": 2817,
+   "line": 2823,
    "class": "PUBLIC",
    "editions": [
     "CLIENT",
@@ -4910,7 +4912,7 @@
    "method": "GET",
    "path": "/api/v1/research-modules/feature-graph",
    "handler": "backend/masterquo/api/app.py:research_graph",
-   "line": 2838,
+   "line": 2844,
    "class": "INTERNAL",
    "editions": [
     "CLIENT",
@@ -4923,7 +4925,7 @@
    "method": "GET",
    "path": "/api/v1/research-modules/features",
    "handler": "backend/masterquo/api/app.py:research_features",
-   "line": 2832,
+   "line": 2838,
    "class": "INTERNAL",
    "editions": [
     "CLIENT",
@@ -4936,7 +4938,7 @@
    "method": "GET",
    "path": "/api/v1/research-modules/optimizer/jobs",
    "handler": "backend/masterquo/api/app.py:research_opt_jobs",
-   "line": 2842,
+   "line": 2848,
    "class": "INTERNAL",
    "editions": [
     "CLIENT",
@@ -4949,7 +4951,7 @@
    "method": "POST",
    "path": "/api/v1/research-modules/optimizer/run",
    "handler": "backend/masterquo/api/app.py:research_opt_run",
-   "line": 2846,
+   "line": 2852,
    "class": "PUBLIC",
    "editions": [
     "CLIENT",
@@ -4964,7 +4966,7 @@
    "method": "POST",
    "path": "/api/v1/research-modules/parameters/rollback",
    "handler": "backend/masterquo/api/app.py:research_rollback",
-   "line": 2855,
+   "line": 2861,
    "class": "PUBLIC",
    "editions": [
     "CLIENT",
@@ -4979,7 +4981,7 @@
    "method": "POST",
    "path": "/api/v1/research-modules/sdformerflow/cancel",
    "handler": "backend/masterquo/api/app.py:research_sdf_cancel",
-   "line": 2875,
+   "line": 2881,
    "class": "PUBLIC",
    "editions": [
     "CLIENT",
@@ -4994,7 +4996,7 @@
    "method": "POST",
    "path": "/api/v1/research-modules/sdformerflow/train",
    "handler": "backend/masterquo/api/app.py:research_sdf_train",
-   "line": 2859,
+   "line": 2865,
    "class": "PUBLIC",
    "editions": [
     "CLIENT",
@@ -5010,7 +5012,7 @@
    "method": "GET",
    "path": "/api/v1/research-modules/settings",
    "handler": "backend/masterquo/api/app.py:research_settings",
-   "line": 2821,
+   "line": 2827,
    "class": "PUBLIC",
    "editions": [
     "CLIENT",
@@ -5025,7 +5027,7 @@
    "method": "PUT",
    "path": "/api/v1/research-modules/settings",
    "handler": "backend/masterquo/api/app.py:research_settings_put",
-   "line": 2825,
+   "line": 2831,
    "class": "PUBLIC",
    "editions": [
     "CLIENT",
@@ -5040,7 +5042,7 @@
    "method": "GET",
    "path": "/api/v1/resources",
    "handler": "backend/masterquo/api/app.py:resources_get",
-   "line": 2315,
+   "line": 2321,
    "class": "PUBLIC",
    "editions": [
     "CLIENT",
@@ -5056,7 +5058,7 @@
    "method": "PUT",
    "path": "/api/v1/resources/profile",
    "handler": "backend/masterquo/api/app.py:resources_profile",
-   "line": 2322,
+   "line": 2328,
    "class": "PUBLIC",
    "editions": [
     "CLIENT",
@@ -5089,7 +5091,7 @@
    "method": "GET",
    "path": "/api/v1/scalp/dashboard",
    "handler": "backend/masterquo/api/app.py:mtf_dashboard",
-   "line": 3622,
+   "line": 3628,
    "class": "LEGACY_UI141",
    "editions": [
     "CLIENT",
@@ -5104,7 +5106,7 @@
    "method": "GET",
    "path": "/api/v1/scalp/dashboard/chart",
    "handler": "backend/masterquo/api/app.py:mtf_chart",
-   "line": 3638,
+   "line": 3644,
    "class": "PUBLIC",
    "editions": [
     "CLIENT",
@@ -5120,7 +5122,7 @@
    "method": "GET",
    "path": "/api/v1/scalp/dashboard/snapshots",
    "handler": "backend/masterquo/api/app.py:mtf_snapshots",
-   "line": 3645,
+   "line": 3651,
    "class": "LEGACY_UI141",
    "editions": [
     "CLIENT",
@@ -5135,7 +5137,7 @@
    "method": "GET",
    "path": "/api/v1/scalp/dashboard/snapshots/{sid}",
    "handler": "backend/masterquo/api/app.py:mtf_snapshot",
-   "line": 3650,
+   "line": 3656,
    "class": "INTERNAL",
    "editions": [
     "CLIENT",
@@ -5163,7 +5165,7 @@
    "method": "POST",
    "path": "/api/v1/secrets",
    "handler": "backend/masterquo/api/app.py:set_secret",
-   "line": 1666,
+   "line": 1670,
    "class": "PUBLIC",
    "editions": [
     "CLIENT",
@@ -5181,7 +5183,7 @@
    "method": "POST",
    "path": "/api/v1/secrets/anthropic",
    "handler": "backend/masterquo/api/app.py:set_key",
-   "line": 1660,
+   "line": 1664,
    "class": "PUBLIC",
    "editions": [
     "CLIENT",
@@ -5245,7 +5247,7 @@
    "method": "GET",
    "path": "/api/v1/setups",
    "handler": "backend/masterquo/api/app.py:setups_list",
-   "line": 1802,
+   "line": 1806,
    "class": "PUBLIC",
    "editions": [
     "CLIENT",
@@ -5262,7 +5264,7 @@
    "method": "GET",
    "path": "/api/v1/setups/{setup_id}/details",
    "handler": "backend/masterquo/api/app.py:setup_detail",
-   "line": 1807,
+   "line": 1811,
    "class": "LEGACY_UI141",
    "editions": [
     "CLIENT",
@@ -5474,15 +5476,17 @@
    "path": "/api/v1/sh/signals/{sid}",
    "handler": "backend/masterquo/api/app.py:sh_signal",
    "line": 1287,
-   "class": "LEGACY_UI141",
+   "class": "PUBLIC",
    "editions": [
     "CLIENT",
     "OWNER"
    ],
    "callers": {
+    "frontend": 4,
+    "tests": 1,
     "archive_ui141": 2
    },
-   "no_client": true
+   "no_client": false
   },
   {
    "method": "GET",
@@ -5537,7 +5541,7 @@
    "method": "GET",
    "path": "/api/v1/signal-history",
    "handler": "backend/masterquo/api/app.py:signal_history",
-   "line": 1537,
+   "line": 1541,
    "class": "PUBLIC",
    "editions": [
     "CLIENT",
@@ -5553,7 +5557,7 @@
    "method": "GET",
    "path": "/api/v1/signals",
    "handler": "backend/masterquo/api/app.py:signals",
-   "line": 1565,
+   "line": 1569,
    "class": "PUBLIC",
    "editions": [
     "CLIENT",
@@ -5570,7 +5574,7 @@
    "method": "GET",
    "path": "/api/v1/smma-cci",
    "handler": "backend/masterquo/api/wf32_routes.py:smma_cci",
-   "line": 546,
+   "line": 572,
    "class": "INTERNAL",
    "editions": [
     "CLIENT",
@@ -5602,7 +5606,7 @@
    "method": "GET",
    "path": "/api/v1/stats",
    "handler": "backend/masterquo/api/app.py:get_stats",
-   "line": 1585,
+   "line": 1589,
    "class": "PUBLIC",
    "editions": [
     "CLIENT",
@@ -5621,7 +5625,7 @@
    "method": "PUT",
    "path": "/api/v1/strategy-filter/config",
    "handler": "backend/masterquo/api/wf32_routes.py:sfb_config",
-   "line": 510,
+   "line": 522,
    "class": "INTERNAL",
    "editions": [
     "CLIENT",
@@ -5636,7 +5640,7 @@
    "method": "GET",
    "path": "/api/v1/strategy-filter/status",
    "handler": "backend/masterquo/api/wf32_routes.py:sfb_status",
-   "line": 503,
+   "line": 515,
    "class": "INTERNAL",
    "editions": [
     "CLIENT",
@@ -5651,7 +5655,7 @@
    "method": "GET",
    "path": "/api/v1/strategy-roi",
    "handler": "backend/masterquo/api/wf32_routes.py:strategy_roi",
-   "line": 402,
+   "line": 414,
    "class": "INTERNAL",
    "editions": [
     "CLIENT",
@@ -5666,7 +5670,7 @@
    "method": "GET",
    "path": "/api/v1/strategy/auto",
    "handler": "backend/masterquo/api/app.py:strategy_auto",
-   "line": 1751,
+   "line": 1755,
    "class": "PUBLIC",
    "editions": [
     "CLIENT",
@@ -5684,7 +5688,7 @@
    "method": "POST",
    "path": "/api/v1/strategy/mode",
    "handler": "backend/masterquo/api/app.py:strategy_mode",
-   "line": 1755,
+   "line": 1759,
    "class": "PUBLIC",
    "editions": [
     "CLIENT",
@@ -5701,7 +5705,7 @@
    "method": "POST",
    "path": "/api/v1/strategy/profile",
    "handler": "backend/masterquo/api/app.py:strategy_profile",
-   "line": 3896,
+   "line": 3902,
    "class": "INTERNAL",
    "editions": [
     "CLIENT",
@@ -5714,7 +5718,7 @@
    "method": "GET",
    "path": "/api/v1/strategy/selection-log",
    "handler": "backend/masterquo/api/app.py:selection_log",
-   "line": 3904,
+   "line": 3910,
    "class": "PUBLIC",
    "editions": [
     "CLIENT",
@@ -5730,7 +5734,7 @@
    "method": "POST",
    "path": "/api/v1/strategy/toggle",
    "handler": "backend/masterquo/api/app.py:strategy_toggle",
-   "line": 3878,
+   "line": 3884,
    "class": "LEGACY_UI141",
    "editions": [
     "CLIENT",
@@ -6069,7 +6073,7 @@
    "method": "POST",
    "path": "/api/v1/studio/import",
    "handler": "backend/masterquo/api/app.py:studio_import",
-   "line": 2627,
+   "line": 2633,
    "class": "PUBLIC",
    "editions": [
     "CLIENT",
@@ -6086,7 +6090,7 @@
    "method": "DELETE",
    "path": "/api/v1/studio/import/{import_id}",
    "handler": "backend/masterquo/api/app.py:studio_import_rollback",
-   "line": 2643,
+   "line": 2649,
    "class": "INTERNAL",
    "editions": [
     "CLIENT",
@@ -6099,7 +6103,7 @@
    "method": "GET",
    "path": "/api/v1/studio/imports",
    "handler": "backend/masterquo/api/app.py:studio_imports",
-   "line": 2638,
+   "line": 2644,
    "class": "PUBLIC",
    "editions": [
     "CLIENT",
@@ -6115,7 +6119,7 @@
    "method": "POST",
    "path": "/api/v1/studio/launch",
    "handler": "backend/masterquo/api/app.py:studio_launch",
-   "line": 2569,
+   "line": 2575,
    "class": "PUBLIC",
    "editions": [
     "CLIENT",
@@ -6132,7 +6136,7 @@
    "method": "GET",
    "path": "/api/v1/studio/status",
    "handler": "backend/masterquo/api/app.py:studio_status",
-   "line": 2565,
+   "line": 2571,
    "class": "PUBLIC",
    "editions": [
     "CLIENT",
@@ -6148,7 +6152,7 @@
    "method": "GET",
    "path": "/api/v1/svp/ai-jobs",
    "handler": "backend/masterquo/api/app.py:svp_ai_jobs",
-   "line": 3083,
+   "line": 3089,
    "class": "INTERNAL",
    "editions": [
     "CLIENT",
@@ -6161,7 +6165,7 @@
    "method": "POST",
    "path": "/api/v1/svp/clear-auto",
    "handler": "backend/masterquo/api/app.py:svp_clear_auto",
-   "line": 3079,
+   "line": 3085,
    "class": "LEGACY_UI141",
    "editions": [
     "CLIENT",
@@ -6176,7 +6180,7 @@
    "method": "GET",
    "path": "/api/v1/svp/profiles",
    "handler": "backend/masterquo/api/app.py:svp_profiles",
-   "line": 2995,
+   "line": 3001,
    "class": "PUBLIC",
    "editions": [
     "CLIENT",
@@ -6193,7 +6197,7 @@
    "method": "POST",
    "path": "/api/v1/svp/profiles",
    "handler": "backend/masterquo/api/app.py:svp_profile_create",
-   "line": 2999,
+   "line": 3005,
    "class": "PUBLIC",
    "editions": [
     "CLIENT",
@@ -6210,7 +6214,7 @@
    "method": "DELETE",
    "path": "/api/v1/svp/profiles/{pid}",
    "handler": "backend/masterquo/api/app.py:svp_profile_delete",
-   "line": 3007,
+   "line": 3013,
    "class": "PUBLIC",
    "editions": [
     "CLIENT",
@@ -6226,7 +6230,7 @@
    "method": "PATCH",
    "path": "/api/v1/svp/profiles/{pid}",
    "handler": "backend/masterquo/api/app.py:svp_profile_update",
-   "line": 3003,
+   "line": 3009,
    "class": "PUBLIC",
    "editions": [
     "CLIENT",
@@ -6242,7 +6246,7 @@
    "method": "POST",
    "path": "/api/v1/svp/profiles/{pid}/ai-live",
    "handler": "backend/masterquo/api/app.py:svp_profile_ai_live",
-   "line": 3029,
+   "line": 3035,
    "class": "INTERNAL",
    "editions": [
     "CLIENT",
@@ -6255,7 +6259,7 @@
    "method": "POST",
    "path": "/api/v1/svp/profiles/{pid}/ai-propose",
    "handler": "backend/masterquo/api/app.py:svp_ai_propose",
-   "line": 3037,
+   "line": 3043,
    "class": "PUBLIC",
    "editions": [
     "CLIENT",
@@ -6270,7 +6274,7 @@
    "method": "GET",
    "path": "/api/v1/svp/profiles/{pid}/compute",
    "handler": "backend/masterquo/api/app.py:svp_profile_compute",
-   "line": 3017,
+   "line": 3023,
    "class": "LEGACY_UI141",
    "editions": [
     "CLIENT",
@@ -6285,7 +6289,7 @@
    "method": "POST",
    "path": "/api/v1/svp/profiles/{pid}/copy-settings",
    "handler": "backend/masterquo/api/app.py:svp_profile_copy",
-   "line": 3013,
+   "line": 3019,
    "class": "INTERNAL",
    "editions": [
     "CLIENT",
@@ -6298,7 +6302,7 @@
    "method": "POST",
    "path": "/api/v1/svp/profiles/{pid}/freeze",
    "handler": "backend/masterquo/api/app.py:svp_profile_freeze",
-   "line": 3021,
+   "line": 3027,
    "class": "INTERNAL",
    "editions": [
     "CLIENT",
@@ -6311,7 +6315,7 @@
    "method": "POST",
    "path": "/api/v1/svp/profiles/{pid}/live",
    "handler": "backend/masterquo/api/app.py:svp_profile_live",
-   "line": 3025,
+   "line": 3031,
    "class": "INTERNAL",
    "editions": [
     "CLIENT",
@@ -6324,7 +6328,7 @@
    "method": "POST",
    "path": "/api/v1/svp/profiles/{pid}/zones-now",
    "handler": "backend/masterquo/api/app.py:svp_zones_now",
-   "line": 3033,
+   "line": 3039,
    "class": "INTERNAL",
    "editions": [
     "CLIENT",
@@ -6337,7 +6341,7 @@
    "method": "GET",
    "path": "/api/v1/svp/status",
    "handler": "backend/masterquo/api/app.py:svp_status",
-   "line": 2991,
+   "line": 2997,
    "class": "LEGACY_UI141",
    "editions": [
     "CLIENT",
@@ -6352,7 +6356,7 @@
    "method": "GET",
    "path": "/api/v1/svp/visible",
    "handler": "backend/masterquo/api/app.py:svp_visible",
-   "line": 3043,
+   "line": 3049,
    "class": "PUBLIC",
    "editions": [
     "CLIENT",
@@ -6368,7 +6372,7 @@
    "method": "GET",
    "path": "/api/v1/svp/zones",
    "handler": "backend/masterquo/api/app.py:svp_zones",
-   "line": 3050,
+   "line": 3056,
    "class": "PUBLIC",
    "editions": [
     "CLIENT",
@@ -6386,7 +6390,7 @@
    "method": "POST",
    "path": "/api/v1/svp/zones",
    "handler": "backend/masterquo/api/app.py:svp_zone_create",
-   "line": 3061,
+   "line": 3067,
    "class": "PUBLIC",
    "editions": [
     "CLIENT",
@@ -6404,7 +6408,7 @@
    "method": "DELETE",
    "path": "/api/v1/svp/zones/{zid}",
    "handler": "backend/masterquo/api/app.py:svp_zone_delete",
-   "line": 3069,
+   "line": 3075,
    "class": "LEGACY_UI141",
    "editions": [
     "CLIENT",
@@ -6419,7 +6423,7 @@
    "method": "PATCH",
    "path": "/api/v1/svp/zones/{zid}",
    "handler": "backend/masterquo/api/app.py:svp_zone_edit",
-   "line": 3065,
+   "line": 3071,
    "class": "LEGACY_UI141",
    "editions": [
     "CLIENT",
@@ -6434,7 +6438,7 @@
    "method": "GET",
    "path": "/api/v1/svp/zones/{zid}/history",
    "handler": "backend/masterquo/api/app.py:svp_zone_history",
-   "line": 3075,
+   "line": 3081,
    "class": "INTERNAL",
    "editions": [
     "CLIENT",
@@ -6447,7 +6451,7 @@
    "method": "GET",
    "path": "/api/v1/system/resources",
    "handler": "backend/masterquo/api/app.py:system_resources",
-   "line": 4053,
+   "line": 4059,
    "class": "PUBLIC",
    "editions": [
     "CLIENT",
@@ -6464,7 +6468,7 @@
    "method": "GET",
    "path": "/api/v1/telegram",
    "handler": "backend/masterquo/api/app.py:telegram_status",
-   "line": 4012,
+   "line": 4018,
    "class": "LEGACY_UI141",
    "editions": [
     "CLIENT",
@@ -6479,7 +6483,7 @@
    "method": "GET",
    "path": "/api/v1/telegram/account",
    "handler": "backend/masterquo/api/wf32_routes.py:tg_account",
-   "line": 478,
+   "line": 490,
    "class": "PUBLIC",
    "editions": [
     "CLIENT",
@@ -6495,7 +6499,7 @@
    "method": "PUT",
    "path": "/api/v1/telegram/account",
    "handler": "backend/masterquo/api/wf32_routes.py:tg_update",
-   "line": 490,
+   "line": 502,
    "class": "PUBLIC",
    "editions": [
     "CLIENT",
@@ -6511,7 +6515,7 @@
    "method": "POST",
    "path": "/api/v1/telegram/account/bind",
    "handler": "backend/masterquo/api/wf32_routes.py:tg_bind",
-   "line": 482,
+   "line": 494,
    "class": "INTERNAL",
    "editions": [
     "CLIENT",
@@ -6524,7 +6528,7 @@
    "method": "PUT",
    "path": "/api/v1/telegram/account/templates/{kind}",
    "handler": "backend/masterquo/api/wf32_routes.py:tg_template",
-   "line": 494,
+   "line": 506,
    "class": "INTERNAL",
    "editions": [
     "CLIENT",
@@ -6539,7 +6543,7 @@
    "method": "POST",
    "path": "/api/v1/telegram/account/unbind",
    "handler": "backend/masterquo/api/wf32_routes.py:tg_unbind",
-   "line": 486,
+   "line": 498,
    "class": "INTERNAL",
    "editions": [
     "CLIENT",
@@ -6552,7 +6556,7 @@
    "method": "POST",
    "path": "/api/v1/telegram/preview",
    "handler": "backend/masterquo/api/app.py:telegram_preview",
-   "line": 4030,
+   "line": 4036,
    "class": "LEGACY_UI141",
    "editions": [
     "CLIENT",
@@ -6568,7 +6572,7 @@
    "method": "POST",
    "path": "/api/v1/telegram/stats-now",
    "handler": "backend/masterquo/api/app.py:telegram_stats_now",
-   "line": 4047,
+   "line": 4053,
    "class": "LEGACY_UI141",
    "editions": [
     "CLIENT",
@@ -6583,7 +6587,7 @@
    "method": "GET",
    "path": "/api/v1/telegram/template",
    "handler": "backend/masterquo/api/app.py:telegram_template_get",
-   "line": 4016,
+   "line": 4022,
    "class": "LEGACY_UI141",
    "editions": [
     "CLIENT",
@@ -6599,7 +6603,7 @@
    "method": "PUT",
    "path": "/api/v1/telegram/template",
    "handler": "backend/masterquo/api/app.py:telegram_template_put",
-   "line": 4021,
+   "line": 4027,
    "class": "LEGACY_UI141",
    "editions": [
     "CLIENT",
@@ -6615,7 +6619,7 @@
    "method": "POST",
    "path": "/api/v1/telegram/test",
    "handler": "backend/masterquo/api/app.py:telegram_test",
-   "line": 4038,
+   "line": 4044,
    "class": "LEGACY_UI141",
    "editions": [
     "CLIENT",
@@ -6884,7 +6888,7 @@
    "method": "GET",
    "path": "/api/v1/tlg/loot/catalog",
    "handler": "backend/masterquo/api/wf32_routes.py:loot_catalog",
-   "line": 572,
+   "line": 598,
    "class": "INTERNAL",
    "editions": [
     "CLIENT",
@@ -6899,7 +6903,7 @@
    "method": "POST",
    "path": "/api/v1/tlg/loot/evaluate",
    "handler": "backend/masterquo/api/wf32_routes.py:loot_evaluate",
-   "line": 586,
+   "line": 612,
    "class": "INTERNAL",
    "editions": [
     "CLIENT",
@@ -6914,7 +6918,7 @@
    "method": "POST",
    "path": "/api/v1/tlg/loot/grant",
    "handler": "backend/masterquo/api/wf32_routes.py:loot_grant",
-   "line": 600,
+   "line": 626,
    "class": "INTERNAL",
    "editions": [
     "CLIENT",
@@ -6929,7 +6933,7 @@
    "method": "GET",
    "path": "/api/v1/tlg/loot/settings",
    "handler": "backend/masterquo/api/wf32_routes.py:loot_settings",
-   "line": 590,
+   "line": 616,
    "class": "PUBLIC",
    "editions": [
     "CLIENT",
@@ -6945,7 +6949,7 @@
    "method": "PUT",
    "path": "/api/v1/tlg/loot/settings",
    "handler": "backend/masterquo/api/wf32_routes.py:loot_settings_put",
-   "line": 594,
+   "line": 620,
    "class": "PUBLIC",
    "editions": [
     "CLIENT",
@@ -7238,7 +7242,7 @@
    "method": "POST",
    "path": "/api/v1/trainhub/activate",
    "handler": "backend/masterquo/api/app.py:trainhub_activate",
-   "line": 2120,
+   "line": 2124,
    "class": "PUBLIC",
    "editions": [
     "CLIENT",
@@ -7254,7 +7258,7 @@
    "method": "GET",
    "path": "/api/v1/trainhub/components",
    "handler": "backend/masterquo/api/app.py:th_components",
-   "line": 1995,
+   "line": 1999,
    "class": "PUBLIC",
    "editions": [
     "CLIENT",
@@ -7269,7 +7273,7 @@
    "method": "POST",
    "path": "/api/v1/trainhub/components/{cid}/activate",
    "handler": "backend/masterquo/api/app.py:th_component_activate",
-   "line": 2015,
+   "line": 2019,
    "class": "PUBLIC",
    "editions": [
     "CLIENT",
@@ -7285,7 +7289,7 @@
    "method": "POST",
    "path": "/api/v1/trainhub/components/{cid}/cancel",
    "handler": "backend/masterquo/api/app.py:th_component_cancel",
-   "line": 2011,
+   "line": 2015,
    "class": "PUBLIC",
    "editions": [
     "CLIENT",
@@ -7301,7 +7305,7 @@
    "method": "GET",
    "path": "/api/v1/trainhub/components/{cid}/export.zip",
    "handler": "backend/masterquo/api/app.py:th_component_export",
-   "line": 2031,
+   "line": 2035,
    "class": "PUBLIC",
    "editions": [
     "CLIENT",
@@ -7317,7 +7321,7 @@
    "method": "POST",
    "path": "/api/v1/trainhub/components/{cid}/import",
    "handler": "backend/masterquo/api/app.py:th_component_import",
-   "line": 2039,
+   "line": 2043,
    "class": "PUBLIC",
    "editions": [
     "CLIENT",
@@ -7333,7 +7337,7 @@
    "method": "POST",
    "path": "/api/v1/trainhub/components/{cid}/jobs",
    "handler": "backend/masterquo/api/app.py:th_component_job",
-   "line": 1999,
+   "line": 2003,
    "class": "PUBLIC",
    "editions": [
     "CLIENT",
@@ -7349,7 +7353,7 @@
    "method": "POST",
    "path": "/api/v1/trainhub/components/{cid}/rollback",
    "handler": "backend/masterquo/api/app.py:th_component_rollback",
-   "line": 2023,
+   "line": 2027,
    "class": "PUBLIC",
    "editions": [
     "CLIENT",
@@ -7365,7 +7369,7 @@
    "method": "GET",
    "path": "/api/v1/trainhub/data",
    "handler": "backend/masterquo/api/app.py:trainhub_data",
-   "line": 2094,
+   "line": 2098,
    "class": "INTERNAL",
    "editions": [
     "CLIENT",
@@ -7378,7 +7382,7 @@
    "method": "GET",
    "path": "/api/v1/trainhub/dataset.zip",
    "handler": "backend/masterquo/api/app.py:trainhub_dataset_zip",
-   "line": 2159,
+   "line": 2163,
    "class": "LEGACY_UI141",
    "editions": [
     "CLIENT",
@@ -7393,7 +7397,7 @@
    "method": "POST",
    "path": "/api/v1/trainhub/deactivate",
    "handler": "backend/masterquo/api/app.py:trainhub_deactivate",
-   "line": 2138,
+   "line": 2142,
    "class": "LEGACY_UI141",
    "editions": [
     "CLIENT",
@@ -7408,7 +7412,7 @@
    "method": "GET",
    "path": "/api/v1/trainhub/jobs",
    "handler": "backend/masterquo/api/app.py:trainhub_jobs",
-   "line": 2076,
+   "line": 2080,
    "class": "PUBLIC",
    "editions": [
     "CLIENT",
@@ -7424,7 +7428,7 @@
    "method": "POST",
    "path": "/api/v1/trainhub/jobs",
    "handler": "backend/masterquo/api/app.py:trainhub_submit",
-   "line": 2069,
+   "line": 2073,
    "class": "PUBLIC",
    "editions": [
     "CLIENT",
@@ -7440,7 +7444,7 @@
    "method": "GET",
    "path": "/api/v1/trainhub/jobs/{jid}",
    "handler": "backend/masterquo/api/app.py:trainhub_job",
-   "line": 2080,
+   "line": 2084,
    "class": "PUBLIC",
    "editions": [
     "CLIENT",
@@ -7456,7 +7460,7 @@
    "method": "POST",
    "path": "/api/v1/trainhub/jobs/{jid}/cancel",
    "handler": "backend/masterquo/api/app.py:trainhub_cancel",
-   "line": 2087,
+   "line": 2091,
    "class": "PUBLIC",
    "editions": [
     "CLIENT",
@@ -7472,7 +7476,7 @@
    "method": "GET",
    "path": "/api/v1/trainhub/package.zip",
    "handler": "backend/masterquo/api/app.py:trainhub_package_zip",
-   "line": 2146,
+   "line": 2150,
    "class": "LEGACY_UI141",
    "editions": [
     "CLIENT",
@@ -7487,7 +7491,7 @@
    "method": "GET",
    "path": "/api/v1/trainhub/registry",
    "handler": "backend/masterquo/api/app.py:trainhub_registry",
-   "line": 2101,
+   "line": 2105,
    "class": "PUBLIC",
    "editions": [
     "CLIENT",
@@ -7503,7 +7507,7 @@
    "method": "POST",
    "path": "/api/v1/trainhub/rollback",
    "handler": "backend/masterquo/api/app.py:trainhub_rollback",
-   "line": 2130,
+   "line": 2134,
    "class": "PUBLIC",
    "editions": [
     "CLIENT",
@@ -7519,7 +7523,7 @@
    "method": "GET",
    "path": "/api/v1/trainhub/status",
    "handler": "backend/masterquo/api/app.py:trainhub_status",
-   "line": 2053,
+   "line": 2057,
    "class": "PUBLIC",
    "editions": [
     "CLIENT",
@@ -7535,7 +7539,7 @@
    "method": "GET",
    "path": "/api/v1/trainhub/version",
    "handler": "backend/masterquo/api/app.py:trainhub_version",
-   "line": 2106,
+   "line": 2110,
    "class": "INTERNAL",
    "editions": [
     "CLIENT",
@@ -7548,7 +7552,7 @@
    "method": "GET",
    "path": "/api/v1/training",
    "handler": "backend/masterquo/api/app.py:training_state",
-   "line": 1847,
+   "line": 1851,
    "class": "LEGACY_UI141",
    "editions": [
     "CLIENT",
@@ -7563,7 +7567,7 @@
    "method": "GET",
    "path": "/api/v1/training/active",
    "handler": "backend/masterquo/api/app.py:training_active",
-   "line": 3495,
+   "line": 3501,
    "class": "LEGACY_UI141",
    "editions": [
     "CLIENT",
@@ -7579,7 +7583,7 @@
    "method": "POST",
    "path": "/api/v1/training/cancel",
    "handler": "backend/masterquo/api/app.py:training_cancel",
-   "line": 3486,
+   "line": 3492,
    "class": "LEGACY_UI141",
    "editions": [
     "CLIENT",
@@ -7594,7 +7598,7 @@
    "method": "GET",
    "path": "/api/v1/training/compare",
    "handler": "backend/masterquo/api/app.py:training_compare",
-   "line": 3204,
+   "line": 3210,
    "class": "LEGACY_UI141",
    "editions": [
     "CLIENT",
@@ -7609,7 +7613,7 @@
    "method": "POST",
    "path": "/api/v1/training/export",
    "handler": "backend/masterquo/api/app.py:training_export",
-   "line": 3227,
+   "line": 3233,
    "class": "LEGACY_UI141",
    "editions": [
     "CLIENT",
@@ -7624,7 +7628,7 @@
    "method": "GET",
    "path": "/api/v1/training/exports/{name}",
    "handler": "backend/masterquo/api/app.py:training_export_file",
-   "line": 3241,
+   "line": 3247,
    "class": "INTERNAL",
    "editions": [
     "CLIENT",
@@ -7637,7 +7641,7 @@
    "method": "POST",
    "path": "/api/v1/training/import",
    "handler": "backend/masterquo/api/app.py:training_import",
-   "line": 3251,
+   "line": 3257,
    "class": "LEGACY_UI141",
    "editions": [
     "CLIENT",
@@ -7653,7 +7657,7 @@
    "method": "GET",
    "path": "/api/v1/training/models",
    "handler": "backend/masterquo/api/app.py:training_models",
-   "line": 1858,
+   "line": 1862,
    "class": "LEGACY_UI141",
    "editions": [
     "CLIENT",
@@ -7669,7 +7673,7 @@
    "method": "GET",
    "path": "/api/v1/training/readiness",
    "handler": "backend/masterquo/api/app.py:training_readiness",
-   "line": 3164,
+   "line": 3170,
    "class": "LEGACY_UI141",
    "editions": [
     "CLIENT",
@@ -7684,7 +7688,7 @@
    "method": "POST",
    "path": "/api/v1/training/resume",
    "handler": "backend/masterquo/api/app.py:training_resume",
-   "line": 3209,
+   "line": 3215,
    "class": "LEGACY_UI141",
    "editions": [
     "CLIENT",
@@ -7700,7 +7704,7 @@
    "method": "POST",
    "path": "/api/v1/training/rollback",
    "handler": "backend/masterquo/api/app.py:training_rollback",
-   "line": 3527,
+   "line": 3533,
    "class": "LEGACY_UI141",
    "editions": [
     "CLIENT",
@@ -7716,7 +7720,7 @@
    "method": "GET",
    "path": "/api/v1/training/runs",
    "handler": "backend/masterquo/api/app.py:training_runs",
-   "line": 3171,
+   "line": 3177,
    "class": "LEGACY_UI141",
    "editions": [
     "CLIENT",
@@ -7731,7 +7735,7 @@
    "method": "GET",
    "path": "/api/v1/training/runs/{rid}",
    "handler": "backend/masterquo/api/app.py:training_run",
-   "line": 3183,
+   "line": 3189,
    "class": "LEGACY_UI141",
    "editions": [
     "CLIENT",
@@ -7746,7 +7750,7 @@
    "method": "GET",
    "path": "/api/v1/training/runs/{rid}/log",
    "handler": "backend/masterquo/api/app.py:training_run_log",
-   "line": 3188,
+   "line": 3194,
    "class": "LEGACY_UI141",
    "editions": [
     "CLIENT",
@@ -7761,7 +7765,7 @@
    "method": "GET",
    "path": "/api/v1/training/runs/{rid}/report",
    "handler": "backend/masterquo/api/app.py:training_run_report",
-   "line": 3196,
+   "line": 3202,
    "class": "LEGACY_UI141",
    "editions": [
     "CLIENT",
@@ -7776,7 +7780,7 @@
    "method": "POST",
    "path": "/api/v1/training/sh/promote",
    "handler": "backend/masterquo/api/app.py:training_sh_promote",
-   "line": 3264,
+   "line": 3270,
    "class": "LEGACY_UI141",
    "editions": [
     "CLIENT",
@@ -7791,7 +7795,7 @@
    "method": "POST",
    "path": "/api/v1/training/start",
    "handler": "backend/masterquo/api/app.py:training_start",
-   "line": 3277,
+   "line": 3283,
    "class": "LEGACY_UI141",
    "editions": [
     "CLIENT",
@@ -7851,7 +7855,7 @@
    "method": "WS",
    "path": "/api/v1/ws",
    "handler": "backend/masterquo/api/app.py:ws",
-   "line": 4137,
+   "line": 4143,
    "class": "PUBLIC",
    "editions": [
     "CLIENT",
@@ -7867,7 +7871,7 @@
    "method": "GET",
    "path": "/api/v1/zones/context",
    "handler": "backend/masterquo/api/app.py:zones_context",
-   "line": 3102,
+   "line": 3108,
    "class": "PUBLIC",
    "editions": [
     "CLIENT",
@@ -7883,7 +7887,7 @@
    "method": "GET",
    "path": "/api/v1/zones/events",
    "handler": "backend/masterquo/api/app.py:zones_events",
-   "line": 3091,
+   "line": 3097,
    "class": "INTERNAL",
    "editions": [
     "CLIENT",
@@ -7896,7 +7900,7 @@
    "method": "GET",
    "path": "/api/v1/zones/map",
    "handler": "backend/masterquo/api/app.py:zones_map",
-   "line": 1873,
+   "line": 1877,
    "class": "PUBLIC",
    "editions": [
     "CLIENT",
@@ -7913,7 +7917,7 @@
    "method": "GET",
    "path": "/api/v1/zones/profiles",
    "handler": "backend/masterquo/api/app.py:zones_profiles",
-   "line": 3095,
+   "line": 3101,
    "class": "INTERNAL",
    "editions": [
     "CLIENT",
@@ -7926,7 +7930,7 @@
    "method": "GET",
    "path": "/api/v1/zones/status",
    "handler": "backend/masterquo/api/app.py:zones_status",
-   "line": 3087,
+   "line": 3093,
    "class": "LEGACY_UI141",
    "editions": [
     "CLIENT",
@@ -7954,7 +7958,7 @@
    "method": "GET",
    "path": "/media/masterquo/{slot}",
    "handler": "backend/masterquo/api/app.py:media",
-   "line": 3950,
+   "line": 3956,
    "class": "INTERNAL",
    "editions": [
     "CLIENT",

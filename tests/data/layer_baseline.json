@@ -98,26 +98,6 @@
     57
    ]
   },
-  "masterquo.analytics.liquidity_eval -> masterquo.ml.scalp_task": {
-   "from": "L2 analizy",
-   "to": "L4 SHADOW/badania",
-   "kinds": [
-    "FUNCTION"
-   ],
-   "lines": [
-    92
-   ]
-  },
-  "masterquo.analytics.liquidity_eval -> masterquo.scalp.replay": {
-   "from": "L2 analizy",
-   "to": "L4 SHADOW/badania",
-   "kinds": [
-    "FUNCTION"
-   ],
-   "lines": [
-    93
-   ]
-  },
   "masterquo.baskets.service -> masterquo.evaluation.exposure": {
    "from": "L3 rdzeń handlowy",
    "to": "L4 SHADOW/badania",
@@ -187,7 +167,7 @@
     "FUNCTION"
    ],
    "lines": [
-    687
+    695
    ]
   },
   "masterquo.engine.service -> masterquo.scalp.indicators": {
@@ -197,7 +177,7 @@
     "FUNCTION"
    ],
    "lines": [
-    688
+    696
    ]
   },
   "masterquo.events -> masterquo.db.database": {
@@ -217,12 +197,12 @@
     "FUNCTION"
    ],
    "lines": [
-    203,
-    212,
-    310,
-    370,
-    370,
-    370
+    205,
+    214,
+    312,
+    372,
+    372,
+    372
    ]
   },
   "masterquo.forecast.export -> masterquo.training.core": {
@@ -232,7 +212,7 @@
     "FUNCTION"
    ],
    "lines": [
-    145
+    147
    ]
   },
   "masterquo.forecast.export -> masterquo.training.requirements": {
@@ -242,7 +222,7 @@
     "FUNCTION"
    ],
    "lines": [
-    649
+    651
    ]
   },
   "masterquo.indicators.avwap -> masterquo.lab.context_ind.smc": {
@@ -419,7 +399,7 @@
     "FUNCTION"
    ],
    "lines": [
-    808
+    811
    ]
   },
   "masterquo.modelhub.smoke.lab -> masterquo.training.cli": {
@@ -510,7 +490,7 @@
     "FUNCTION"
    ],
    "lines": [
-    159
+    172
    ]
   },
   "masterquo.sh.context -> masterquo.lab.context_ind.smc": {
@@ -520,8 +500,8 @@
     "FUNCTION"
    ],
    "lines": [
-    160,
-    179
+    173,
+    192
    ]
   },
   "masterquo.sh.context -> masterquo.lab.context_ind.vamd": {
@@ -531,8 +511,8 @@
     "FUNCTION"
    ],
    "lines": [
-    161,
-    180
+    174,
+    193
    ]
   },
   "masterquo.sh.context -> masterquo.lab.market_v2": {
@@ -542,7 +522,17 @@
     "FUNCTION"
    ],
    "lines": [
-    96
+    103
+   ]
+  },
+  "masterquo.sh.models -> masterquo.lab.protocol": {
+   "from": "L3 rdzeń handlowy",
+   "to": "L4 SHADOW/badania",
+   "kinds": [
+    "FUNCTION"
+   ],
+   "lines": [
+    267
    ]
   },
   "masterquo.sh.models -> masterquo.mm.artifacts": {
@@ -552,7 +542,17 @@
     "FUNCTION"
    ],
    "lines": [
-    235
+    294
+   ]
+  },
+  "masterquo.sh.models -> masterquo.modelhub.aggregate": {
+   "from": "L3 rdzeń handlowy",
+   "to": "L4 SHADOW/badania",
+   "kinds": [
+    "FUNCTION"
+   ],
+   "lines": [
+    422
    ]
   },
   "masterquo.sh.models -> masterquo.quant.ids": {
@@ -562,7 +562,7 @@
     "FUNCTION"
    ],
    "lines": [
-    236
+    295
    ]
   },
   "masterquo.sh.models -> masterquo.trainhub.registry": {
@@ -572,7 +572,7 @@
     "FUNCTION"
    ],
    "lines": [
-    294
+    359
    ]
   },
   "masterquo.sh.scenario -> masterquo.montecarlo.engine": {
@@ -592,7 +592,7 @@
     "FUNCTION"
    ],
    "lines": [
-    499
+    601
    ]
   },
   "masterquo.sh.service -> masterquo.modelhub.families.service": {
@@ -602,8 +602,8 @@
     "FUNCTION"
    ],
    "lines": [
-    263,
-    360
+    331,
+    445
    ]
   },
   "masterquo.sh.service -> masterquo.tsfm.predictions": {
@@ -613,7 +613,7 @@
     "FUNCTION"
    ],
    "lines": [
-    517
+    619
    ]
   },
   "masterquo.trainhub.jobs -> masterquo.training.core": {

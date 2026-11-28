@@ -319,7 +319,8 @@ class TestModelMapFromRegistry(unittest.TestCase):
     def test_i0012_alias_family_cards_take_tf_and_horizon_from_registry(self):
         import model_docs as MD
         reg = MD._registry()
-        cat = {f["id"]: f for f in MD._catalog()}
+        with mock.patch.dict(os.environ):      # _catalog sets PMW_FAMILIES_DIR for its run - must not leak into later test classes
+            cat = {f["id"]: f for f in MD._catalog()}
         self.assertEqual(MD._tf_h(cat["TH_XGB"], reg), "M1, M5, M15, M30 / h świec (per paczka)")
         self.assertEqual(MD._tf_h(cat["SEQ_GRU_EVENT"], reg), "EVENT / 2 jednostki zdarzeń (16 zdarzeń/jednostka)")
         self.assertEqual(MD._tf_h(cat["TS_ARIMA"], reg), "M5 / 1, 3, 5")                    # own family: unchanged
