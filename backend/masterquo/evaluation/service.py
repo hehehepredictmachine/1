@@ -26,6 +26,7 @@ import sqlite3
 import time
 from pathlib import Path
 
+from .. import costs as C
 from ..mm.ledger import Ledger
 from . import contract as K
 from . import engine as E
@@ -148,18 +149,20 @@ class EvaluationService:
         self._log(c, self._active_prob(r, view), cost)
 
     def _active_cost(self, info: dict) -> tuple[float | None, bool | None]:
-        """Commission (both sides) + slippage stress in PRICE units for 1 lot; spread is already in the entry price."""
+        """Commission (both sides) + slippage stress in PRICE units for 1 lot; spread is already in the entry price.
+        Etap 4 (PMW-COSTS-1): computed by the cost resolver with the declared EVALUATION_ACTIVE policy - the same formula
+        (slippage_stress_points x point x 2 + 2 x commission / (tick_value / tick_size), commission 0 and known False when unknown or
+        not convertible)."""
         try:
-            from ..risk.costs import resolve_commission
             cfg = self.cfg_store.get()
             with self.bridge._lock:
                 deals = list(getattr(self.bridge, "deals", []) or [])
-            comm = resolve_commission(cfg.costs, deals, cfg.mt5.symbol).get("per_lot_per_side")
+            comm = C.resolve_commission(cfg.costs, deals, cfg.mt5.symbol).get("per_lot_per_side")
             tv, ts = float(info.get("trade_tick_value") or 0), float(info.get("trade_tick_size") or info.get("point") or 0)
             mpp = tv / ts if tv > 0 and ts > 0 else None
-            slip = (cfg.costs.slippage_stress_points or 0.0) * float(info.get("point") or 0.0) * 2
-            c = slip + (2 * comm / mpp if comm is not None and mpp else 0.0)
-            return c, comm is not None and mpp is not None
+            cb = C.resolve(C.profile(C.EVALUATION_ACTIVE, cfg.mt5.symbol), commission_per_lot_side=comm, money_per_price=mpp,
+                           slippage=cfg.costs.slippage_stress_points, point=float(info.get("point") or 0.0))
+            return cb.total, cb.commission_known
         except Exception:  # noqa: BLE001 - unknown cost is reported, not invented
             return None, None
 
@@ -189,9 +192,8 @@ class EvaluationService:
     def _sh(self, su: dict, inst: str, snap: dict | None, now: float) -> None:
         c = K.sh_candidate(su, snap=snap).validate()            # 1.46: one SH candidate factory with the coordinator (D4)
         costs = su.get("costs") or {}
-        extra = None
-        if costs.get("round_trip_price") is not None:
-            extra = max(0.0, float(costs["round_trip_price"]) - float(costs.get("spread") or 0.0))   # spread already in the Ask/Bid entry
+        # spread already in the Ask/Bid entry: max(0, SH round trip - spread), None = unknown (cost policy EVALUATION_SH, Etap 4)
+        extra = C.extra_from_round_trip(C.profile(C.EVALUATION_SH, inst), costs.get("round_trip_price"), costs.get("spread"))
         pr = su.get("probability") or {}
         prob = None
         if pr.get("value") is not None:

@@ -412,5 +412,125 @@ class TestScalp(unittest.TestCase):
         self.assertEqual(oks, {True, False})
 
 
+# ====================================================================================================================== EVALUATION
+def _old_eval_active_formula(comm, info, slippage_stress_points):
+    """evaluation/service._active_cost at cf5d941 after the commission source (verbatim)."""
+    tv, ts = float(info.get("trade_tick_value") or 0), float(info.get("trade_tick_size") or info.get("point") or 0)
+    mpp = tv / ts if tv > 0 and ts > 0 else None
+    slip = (slippage_stress_points or 0.0) * float(info.get("point") or 0.0) * 2
+    c = slip + (2 * comm / mpp if comm is not None and mpp else 0.0)
+    return c, comm is not None and mpp is not None
+
+
+def _old_eval_sh_extra(costs):
+    """evaluation/service._sh at cf5d941 (verbatim)."""
+    extra = None
+    if costs.get("round_trip_price") is not None:
+        extra = max(0.0, float(costs["round_trip_price"]) - float(costs.get("spread") or 0.0))
+    return extra
+
+
+def _info(rng):
+    out = {}
+    for k, vals in (("trade_tick_value", [0, 0.0, 1.0, 0.1, rng.uniform(0.01, 10), "1.5", "n/a"]),
+                    ("trade_tick_size", [0, 0.01, 0.001, rng.uniform(0.0001, 1)]), ("point", [0, 0.01, 0.001, 0.00001, "0.01"])):
+        if rng.random() > 0.15:
+            out[k] = rng.choice(vals)
+    return out
+
+
+class TestEvaluation(unittest.TestCase):
+    def test_active_resolver_equals_old_formula(self):
+        from masterquo import costs as C
+        rng = random.Random(SEED + 30)
+        for i in range(N):
+            info = _info(rng)
+            comm = _maybe(rng, rng.choice([0.0, 3.5, rng.uniform(0, 9)]), 0.3)
+            pts = _maybe(rng, rng.choice([0.0, 20.0, rng.uniform(0, 50)]))
+            a = _outcome(_old_eval_active_formula, comm, info, pts)
+
+            def new(comm=comm, info=info, pts=pts):
+                tv, ts = float(info.get("trade_tick_value") or 0), float(info.get("trade_tick_size") or info.get("point") or 0)
+                mpp = tv / ts if tv > 0 and ts > 0 else None
+                cb = C.resolve(C.profile(C.EVALUATION_ACTIVE), commission_per_lot_side=comm, money_per_price=mpp, slippage=pts,
+                               point=float(info.get("point") or 0.0))
+                return cb.total, cb.commission_known
+            self.assertEqual(_outcome(new), a, i)
+
+    def _fake(self, rng, cls):
+        import threading
+        deals = [{"symbol": "XAUUSD-", "type": rng.choice([0, 1]), "volume": 1.0, "entry": rng.choice([0, 1]),
+                  "commission": -rng.choice([0.0, 3.5, 7.0]), "fee": 0.0} for _ in range(rng.randint(0, 8))]
+        cfg = SimpleNamespace(costs=SimpleNamespace(commission_mode=rng.choice(["CONFIGURED", "FROM_DEAL_HISTORY", "UNKNOWN"]),
+                                                    commission_per_lot_per_side=_maybe(rng, rng.choice([0.0, 3.5, rng.uniform(0, 9)]), 0.3),
+                                                    slippage_stress_points=_maybe(rng, rng.choice([0.0, 20.0, rng.uniform(0, 50)]))),
+                              mt5=SimpleNamespace(symbol="XAUUSD-"))
+        fake = SimpleNamespace(cfg_store=SimpleNamespace(get=lambda: cfg), bridge=SimpleNamespace(_lock=threading.Lock(), deals=deals))
+        return fake
+
+    def test_whole_active_cost_old_vs_new(self):
+        old = _old_module("backend/masterquo/evaluation/service.py", "masterquo.evaluation._e4_old_service")
+        from masterquo.evaluation import service as new
+        rng = random.Random(SEED + 31)
+        known = set()
+        for i in range(N):
+            fake, info = self._fake(rng, None), _info(rng)
+            a = _outcome(old.EvaluationService._active_cost, fake, info)
+            self.assertEqual(_outcome(new.EvaluationService._active_cost, fake, info), a, i)
+            known.add(a[1])
+        self.assertEqual(known, {True, False, None})                 # known, unknown / unconvertible, and the failure branch
+
+    def test_sh_extra_resolver_equals_old_formula(self):
+        from masterquo import costs as C
+        rng = random.Random(SEED + 32)
+        for i in range(N):
+            costs = {}
+            if rng.random() > 0.2:
+                costs["round_trip_price"] = rng.choice([None, 0.0, 0.3, rng.uniform(0, 2), 0.1])
+            if rng.random() > 0.2:
+                costs["spread"] = rng.choice([None, 0.0, 0.2, rng.uniform(0, 1.5)])
+            a = _outcome(_old_eval_sh_extra, costs)
+            b = _outcome(C.extra_from_round_trip, C.profile(C.EVALUATION_SH), costs.get("round_trip_price"), costs.get("spread"))
+            self.assertEqual(b, a, i)
+
+    def test_whole_sh_old_vs_new(self):
+        import copy
+
+        import test_sh_setup as TS
+        old = _old_module("backend/masterquo/evaluation/service.py", "masterquo.evaluation._e4_old_service2")
+        from masterquo.evaluation import service as new
+        from masterquo.sh import config as SC
+        from masterquo.sh import setup as SU
+        td = TempData()
+        try:
+            cfg = SC.load()
+            rng = random.Random(SEED + 33)
+            ready = []
+            for side in ("BUY", "SELL"):
+                for strat in ("SCALPING", "HEDGING"):
+                    r = SU.evaluate(strat, "XAUUSD", TS._snap(side), _sh_spec(random.Random(1)), SC.profile(cfg, "XAUUSD", strat), now=TS.NOW,
+                                    m1=TS._m1(side))
+                    if r["status"] == "READY":
+                        ready.append(r)
+            self.assertTrue(ready)
+            extras = set()
+            for i in range(N):
+                su = copy.deepcopy(rng.choice(ready))
+                su["costs"] = {k: v for k, v in (("round_trip_price", _maybe(rng, rng.uniform(0, 2))), ("spread", _maybe(rng, rng.uniform(0, 1.5))),
+                                                  ("commission_known", rng.choice([True, False]))) if rng.random() > 0.1}
+                got = []
+                for mod in (old, new):
+                    cap = []
+                    fake = SimpleNamespace(_log=lambda c, prob, extra, cap=cap: cap.append((c.to_dict(), prob, extra)),
+                                           _sh_n_cal=lambda inst, strat: None)
+                    got.append((_outcome(mod.EvaluationService._sh, fake, copy.deepcopy(su), "XAUUSD", None, TS.NOW), _bits(cap)))
+                self.assertEqual(got[1], got[0], i)
+                self.assertEqual(len(got[0][1]), 1, got[0])                      # the candidate was logged with its extra cost
+                extras.add(got[0][1][0][2] is None)
+            self.assertEqual(extras, {True, False})
+        finally:
+            td.close()
+
+
 if __name__ == "__main__":
     unittest.main()
