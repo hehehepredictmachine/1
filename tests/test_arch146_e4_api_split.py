@@ -330,7 +330,8 @@ def module_names(root: Path) -> list[str]:
 
 def snapshot(root: Path) -> dict:
     sys.path.insert(0, str(root / "backend"))
-    os.environ.setdefault("MASTERQUO_DATA_DIR", tempfile.mkdtemp(prefix="e4b_snap_"))
+    if not os.environ.get("MASTERQUO_DATA_DIR"):          # a folder only when unset (setdefault created one on every call)
+        os.environ["MASTERQUO_DATA_DIR"] = tempfile.mkdtemp(prefix="e4b_snap_")
     import masterquo
     if not Path(masterquo.__file__).resolve().is_relative_to(root.resolve()):
         raise RuntimeError(f"masterquo from {masterquo.__file__}, not from {root}")
