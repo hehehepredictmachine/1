@@ -65,9 +65,33 @@ def _ai_block(agent_result: dict | None, setup: dict | None, agent_status: dict 
             "expires_at": rec.get("expires_at_utc"), "snapshot_id": agent_result.get("snapshot_id")}
 
 
+QUESTION_BLOCK_NOTE = ("Odpowiedź AI na pytanie użytkownika (nowsza od oceny setupu) zaostrza bramkę AI – wejście zablokowane, "
+                       "choć ocena setupu była inna.")
+
+
+def _question_block(agent_question: dict | None, setup: dict, agent_gate: dict | None) -> dict | None:
+    """1.46 arch (I0866, presentation only): an answer to a user question newer than the assessment can make the AI gate stricter
+    (agent._strict_gate adds AI_USER_QUESTION_ANSWER to the gate codes). The AI block of the signal shows the assessment (by_setup), so
+    without this a blocked signal showed only 'ZGODA' of the assessment. Read from the gate the decision used - never changes a status."""
+    g = agent_gate or {}
+    if "AI_USER_QUESTION_ANSWER" not in (g.get("reason_codes") or []) or g.get("status") in ("PASS", "NOT_REQUIRED"):
+        return None
+    out = {"blocks_gate": True, "gate_status": g.get("status"), "note": QUESTION_BLOCK_NOTE, "status": None, "proposed_action": None,
+           "verdict": None, "answer": None, "question": None, "decision_id": None}
+    if agent_question:
+        rec = agent_question.get("record") or {}
+        want = "BUY" if setup.get("direction") == "LONG" else "SELL"
+        out.update(status=agent_question.get("status"), proposed_action=rec.get("proposed_action"), question=agent_question.get("question"),
+                   verdict=("ZGODA" if rec.get("proposed_action") == want else "BRAK_ZGODY") if rec.get("proposed_action") else None,
+                   answer=rec.get("answer_pl") or rec.get("explanation_pl"), decision_id=rec.get("decision_id"))
+    return out
+
+
 def build(d: dict, *, quote: dict | None, row: dict | None, agent_result: dict | None, agent_status: dict | None,
-          context: dict | None, costs: dict | None, attempts: list[dict] | None, ml: dict | None, data_source: str) -> dict | None:
-    """d = decision record; row = tracker row of the selected setup (stage/expiry/terminal); context = M30/H8 summary."""
+          context: dict | None, costs: dict | None, attempts: list[dict] | None, ml: dict | None, data_source: str,
+          agent_question: dict | None = None) -> dict | None:
+    """d = decision record; row = tracker row of the selected setup (stage/expiry/terminal); context = M30/H8 summary;
+    agent_question = the agent's latest USER_QUESTION result for this setup (by_question, I0866 - presentation only)."""
     setup = d.get("setup")
     if not setup:
         return None
@@ -112,6 +136,9 @@ def build(d: dict, *, quote: dict | None, row: dict | None, agent_result: dict |
             ex = "WYKONANO" if st in ("FILLED", "DONE", "PARTIAL") else ("ODRZUCONO" if st in ("REJECTED", "FAILED", "CANCELLED", "ERROR") else "WYSŁANO")
             break
     ai = _ai_block(agent_result, setup, agent_status, True)
+    uq = _question_block(agent_question, setup, d.get("agent_gate"))
+    if uq:
+        ai["user_question"] = uq
     source = "STRATEGIA + AI" if ai.get("verdict") else "STRATEGIA"
     spread = (ask - bid) if (bid is not None and ask is not None) else None
     sl_dist = abs(planned - sl) if (planned is not None and sl is not None) else None

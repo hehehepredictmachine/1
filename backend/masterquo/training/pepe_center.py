@@ -62,6 +62,15 @@ QUALITY_PL = {"ZWALIDOWANY_SHADOW": "zwalidowany", "CZESCIOWO_ZWALIDOWANY": "cz�
               "DO_OCENY_NA_DEV": "wytrenowany – do oceny (holdout jeszcze nie otwarty)"}      # 1.46: was shown as raw "do_oceny_na_dev"
 EXEC_STATE = {"W_TOKU": "RUNNING", "UKONCZONE": "DONE", "POMINIETE": "SKIPPED", "BLAD_TECHNICZNY": "FAILED", "ANULOWANE": "CANCELLED"}
 TERMINAL = ("DONE", "FAILED", "CANCELLED", "SKIPPED")
+CANDLES_UNITS = ("forecast", "scalp_A", "scalp_B", "scalp_C")      # jednostki na .venv_candles
+# limity oczekiwania na zadanie (h). 1.46 (I0070): po limicie zadanie jest ANULOWANE i kolejka czeka na jego koniec (było: stan FAILED,
+# a rodziny nawet DONE, bez anulowania – następne zadanie startowało obok wciąż trenującego, wbrew „jedno zadanie naraz”)
+TIMEOUT_H = {"trainhub": 6, "families": 8, "granite": 6, "export": 2}
+
+
+def _candles_autoinstall() -> bool:
+    """core.ensure_candles installs a missing / broken .venv_candles itself only on Windows with 10_PROGNOZY_INSTALUJ.bat."""
+    return os.name == "nt" and (paths.ROOT_DIR / "10_PROGNOZY_INSTALUJ.bat").exists()
 
 
 def center_dir() -> Path:
@@ -178,8 +187,8 @@ class PepeTrainingCenter:
         """Jednostki, których nie da się dziś trenować (brak środowiska / modułu) – z instrukcją, co zrobić."""
         out = {}
         if not self._candles_ok():
-            for k in ("forecast", "scalp_A", "scalp_B", "scalp_C"):
-                out[k] = "brak środowiska .venv_candles – uruchom INSTALUJ_TRENING.bat (albo 10_PROGNOZY_INSTALUJ.bat)"
+            for k in CANDLES_UNITS:
+                out[k] = "brak sprawnego środowiska .venv_candles – uruchom INSTALUJ_TRENING.bat (albo 10_PROGNOZY_INSTALUJ.bat)"
         try:
             from ..tsfm.settings import find_python
             s = self.rt.tsfm.settings.get()
@@ -205,14 +214,52 @@ class PepeTrainingCenter:
             out["families"] = "rodziny modeli niedostępne (błąd startu)"
         return out
 
-    @staticmethod
-    def _candles_ok() -> bool:
-        return any(p.exists() for p in (paths.ROOT_DIR / ".venv_candles" / "Scripts" / "python.exe", paths.ROOT_DIR / ".venv_candles" / "bin" / "python"))
+    def _candles_ok(self) -> bool:
+        """1.46 (I0074): the RUNNER's rules (core.ensure_candles), not only the existence of .venv_candles: the interpreter from
+        core.candles_python() (MQ_CANDLES_PYTHON or .venv_candles) that is not known to be broken, or - when it is missing / broken - the
+        runner installs it itself (Windows + 10_PROGNOZY_INSTALUJ.bat). Before, a missing .venv_candles blocked forecast / scalp A/B/C
+        here although the runner would install it, and MQ_CANDLES_PYTHON was ignored."""
+        py = tc.candles_python()
+        if py is not None and self._candles_health(py) is not False:
+            return True
+        return _candles_autoinstall()
+
+    def _candles_note(self) -> str:
+        """Informacja przy jednostkach prognoz / scalp, gdy środowisko zainstaluje się (albo naprawi) dopiero przy treningu."""
+        py = tc.candles_python()
+        if py is None:
+            return "środowisko .venv_candles zainstaluje się automatycznie przy treningu (kilka minut)" if _candles_autoinstall() else ""
+        if self._candles_health(py) is False:
+            return ("środowisko .venv_candles niesprawne (brak pakietów) – trening spróbuje je zainstalować ponownie"
+                    if _candles_autoinstall() else "środowisko .venv_candles niesprawne (brak pakietów)")
+        return ""
+
+    CANDLES_HEALTH_TTL_S = 600.0
+
+    def _candles_health(self, py: str) -> bool | None:
+        """core.candles_healthy(py) cached for CANDLES_HEALTH_TTL_S and refreshed in a background thread (a status poll never waits for the
+        import check, up to 120 s). None = not checked yet (treated as usable - the runner checks again before training)."""
+        h = getattr(self, "_candles_h", None) or {}
+        fresh = h.get("py") == py and self.clock() - float(h.get("at") or 0) <= self.CANDLES_HEALTH_TTL_S
+        if not fresh:
+            t = getattr(self, "_candles_thread", None)
+            if t is None or not t.is_alive():
+                self._candles_thread = threading.Thread(target=self._check_candles, args=(py,), name="pepe-candles-check", daemon=True)
+                self._candles_thread.start()
+        return h.get("ok") if h.get("py") == py else None
+
+    def _check_candles(self, py: str) -> None:
+        try:
+            ok = bool(tc.candles_healthy(py, max_age_s=0.0))
+        except Exception:  # noqa: BLE001 - a failed check is "unknown", never a crash of the status
+            return
+        self._candles_h = {"py": py, "ok": ok, "at": self.clock()}
 
     # ------------------------------------------------------------------ status
     def status(self) -> dict:
         pipe = pipeline_status()
         unavailable = self.availability()
+        cnote = "" if any(k in unavailable for k in CANDLES_UNITS) else self._candles_note()     # 1.46 (I0074): info, not a block
         with self._lock:
             queued = {(u, i) for q in self.queue for u in self._covers(q) for i in q["instruments"]}
             cur = self.current
@@ -225,6 +272,8 @@ class PepeTrainingCenter:
                     s = _st("UNAVAILABLE", unavailable[u["id"]])
                 elif u["via"] == "pipeline":
                     s = pipe.get((u["id"], inst)) or _st("NOT_TRAINED", "jeszcze nie trenowany na tym komputerze")
+                    if cnote and u["id"] in CANDLES_UNITS and s["state"] in ("NOT_TRAINED", "FAILED", "SKIPPED"):
+                        s = {**s, "detail": f"{s.get('detail') or ''} – {cnote}".strip(" –")[:400]}
                 else:
                     s = self._extra_status(u["id"], inst)
                     s = self._last_attempt(u["id"], inst, s)
@@ -466,8 +515,15 @@ class PepeTrainingCenter:
                 res = {"state": "CANCELLED", "detail": "anulowane przez użytkownika"}
             q.update(state=res["state"], detail=res.get("detail", ""), finished_at=self.clock())
             self._remember(q)
+            dropped = []
             with self._lock:
                 self.current = None
+                if res.get("still_running"):                     # 1.46 (I0070): never a second training next to one still running
+                    dropped, self.queue = self.queue, []
+            for d in dropped:
+                d.update(state="SKIPPED", detail=f"kolejka zatrzymana: {q.get('name') or q['unit']} nadal działa po anulowaniu (limit czasu)",
+                         finished_at=self.clock())
+                self._remember(d)
 
     # ------------------------------------------------------------------ runners (istniejące mechanizmy)
     def _wait(self, done, *, timeout: float, step: float = 3.0) -> bool:
@@ -480,6 +536,23 @@ class PepeTrainingCenter:
             self._cancel.wait(step)
         return False
 
+    TIMEOUT_GRACE_S = 30 * 60.0
+
+    def _timed_out(self, q: dict, what: str, hours: float, finished) -> dict:
+        """1.46 (I0070): the wait limit passed while the unit still trains - its own job is cancelled (the same _stop as „Anuluj”) and the
+        queue waits up to TIMEOUT_GRACE_S for it to end. If it still runs after that, the rest of the queue is dropped (_loop) instead of
+        starting a second training next to it."""
+        stopped = self._stop(q)
+        q["detail"] = f"przekroczony limit {hours} h – anulowanie, czekam na zakończenie procesu"
+        self._wait(finished, timeout=self.TIMEOUT_GRACE_S, step=5.0)
+        if self._cancel.is_set():
+            return {"state": "CANCELLED", "detail": "anulowane"}
+        if not finished():
+            return {"state": "FAILED", "still_running": True,
+                    "detail": f"TIMEOUT: {what} – przekroczony limit {hours} h; anulowanie zgłoszone ({stopped or '-'}), ale proces nadal działa – "
+                              "kolejka Centrum zatrzymana, żeby nie trenować dwóch modeli naraz"}
+        return {"state": "FAILED", "detail": f"TIMEOUT: {what} – przekroczony limit {hours} h; zadanie anulowane ({stopped or '-'})"}
+
     def _run(self, q: dict) -> dict:
         u, insts = q["unit"], q["instruments"]
         if u == "pipeline":
@@ -489,7 +562,8 @@ class PepeTrainingCenter:
             j = self.rt.trainhub.submit("FULL", inst, dict(TH_DEFAULT))
             q["job_id"] = j.get("id")
             fin = lambda: (self.rt.trainhub.get(j["id"]) or {}).get("status") in ("SUCCEEDED", "FAILED", "CANCELLED", "INTERRUPTED")  # noqa: E731
-            self._wait(fin, timeout=6 * 3600)
+            if not self._wait(fin, timeout=TIMEOUT_H["trainhub"] * 3600) and not self._cancel.is_set() and not fin():
+                return self._timed_out(q, "Centrum TH", TIMEOUT_H["trainhub"], fin)
             jj = self.rt.trainhub.get(j["id"]) or {}
             st = {"SUCCEEDED": "DONE", "CANCELLED": "CANCELLED"}.get(jj.get("status"), "FAILED")
             return {"state": st, "detail": jj.get("error") or jj.get("stage") or ""}
@@ -500,8 +574,11 @@ class PepeTrainingCenter:
 
             def fin():
                 return not any((self.rt.families.job(f, inst) or {}).get("state") in ("RUNNING", "QUEUED") for f in self.rt.families.fams)
-            self._wait(fin, timeout=8 * 3600, step=5.0)
+            if not self._wait(fin, timeout=TIMEOUT_H["families"] * 3600, step=5.0) and not self._cancel.is_set() and not fin():
+                return self._timed_out(q, "rodziny modeli", TIMEOUT_H["families"], fin)
             s = self._extra_status("families", inst)
+            if s["state"] in ("RUNNING", "QUEUED"):          # 1.46 (I0070): never DONE while a family still trains / waits
+                return {"state": "FAILED", "detail": "rodziny modeli nadal w toku po zakończeniu oczekiwania: " + (s.get("detail") or "")}
             return {"state": s["state"] if s["state"] in TERMINAL else "DONE", "detail": s["detail"]}
         if u == "granite":
             from ..tsfm import granite_train as GT
@@ -520,7 +597,10 @@ class PepeTrainingCenter:
             self._granite_inst = inst if r.get("ok") else self._granite_inst
             if not r.get("ok"):
                 return {"state": "SKIPPED", "detail": r.get("reason") or "nie uruchomiono"}
-            self._wait(lambda: (self.rt.tsfm.job("granite_train") or {}).get("state") != "RUNNING", timeout=6 * 3600)
+            def g_fin() -> bool:
+                return (self.rt.tsfm.job("granite_train") or {}).get("state") != "RUNNING"
+            if not self._wait(g_fin, timeout=TIMEOUT_H["granite"] * 3600) and not self._cancel.is_set() and not g_fin():
+                return self._timed_out(q, "Granite TTM", TIMEOUT_H["granite"], g_fin)
             j = self.rt.tsfm.job("granite_train") or {}
             return {"state": "DONE" if j.get("state") in ("DONE", "SUCCEEDED") else "FAILED", "detail": j.get("message") or ""}
         if u == "sdformer":
@@ -612,7 +692,17 @@ class PepeTrainingCenter:
         except Exception as exc:  # noqa: BLE001
             return f"eksport historii nie wystartował: {exc}"[:300]
         q["job_id"] = j.get("id")
-        self._wait(lambda: (th.get(j["id"]) or {}).get("status") in ("SUCCEEDED", "FAILED", "CANCELLED", "INTERRUPTED"), timeout=2 * 3600)
+        def e_fin() -> bool:
+            return (th.get(j["id"]) or {}).get("status") in ("SUCCEEDED", "FAILED", "CANCELLED", "INTERRUPTED")
+        if not self._wait(e_fin, timeout=TIMEOUT_H["export"] * 3600) and not self._cancel.is_set() and not e_fin():
+            # 1.46 (I0070): the export job is cancelled and awaited - it no longer runs on next to the training that follows
+            try:
+                th.cancel(j["id"])
+            except Exception as exc:  # noqa: BLE001 - already finished / unknown job
+                q["detail"] = f"anulowanie eksportu: {type(exc).__name__}"
+            self._wait(e_fin, timeout=self.TIMEOUT_GRACE_S, step=5.0)
+            q["detail"] = ""
+            return f"eksport historii z MT5 przekroczył limit {TIMEOUT_H['export']} h – anulowany"
         jj = th.get(j["id"]) or {}
         q["detail"] = ""
         if jj.get("status") == "SUCCEEDED":

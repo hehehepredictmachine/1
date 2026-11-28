@@ -12,7 +12,6 @@ import re
 import sys
 import time
 from contextlib import asynccontextmanager
-from datetime import datetime
 from pathlib import Path
 
 from fastapi import Body, FastAPI, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
@@ -21,11 +20,17 @@ from pydantic import BaseModel, Field
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from .. import desktop, paths, presets, stats, sysres
+from ..config import ALLOWED_ASSETS
 from ..execution.modes import ModeError
 from ..licensing.gate import LicenseRequired
 from ..media.gifinfo import gif_info
+from ..secrets_store import ALLOWED as _SECRETS_ALLOWED
+from ..secrets_store import UI_SETTABLE as _SECRETS_UI_SETTABLE
+from ..stats import deals_coverage_from_utc  # noqa: F401 - 1.46 arch I0081: old name kept
 from ..timeutil import TIMEFRAMES, iso, utcnow
 from ..version import API_CONTRACT_VERSION, APP_NAME, APP_VERSION, DISPLAY_NAME
+from . import deps as _deps  # 1.46 arch I0087: one instrument validator
+from .common import body_num  # 1.46 arch I0081: old name kept
 from .security import SESSION_COOKIE, LocalSecurity
 
 log = logging.getLogger("masterquo.api")
@@ -93,34 +98,7 @@ class CloseReq(BaseModel):
 
 
 SYMBOL_RX = r"^[A-Za-z0-9._#&$!+\-]{1,40}$"
-
-
-def body_num(body: dict, key: str, default, cast=int, lo=None, hi=None):
-    """1.46: number from a JSON body - a wrong type / NaN / out-of-range value is a 400 with the field name (was an unhandled 500)."""
-    raw = body.get(key) if isinstance(body, dict) else None
-    if raw is None or raw == "":
-        return default
-    if isinstance(raw, bool):
-        raise HTTPException(400, f"INVALID_{key.upper()}")
-    try:
-        v = cast(raw)
-    except (TypeError, ValueError, OverflowError):
-        raise HTTPException(400, f"INVALID_{key.upper()}") from None
-    if v != v or v in (float("inf"), float("-inf")) or (lo is not None and v < lo) or (hi is not None and v > hi):
-        raise HTTPException(400, f"{key.upper()}_OUT_OF_RANGE" + (f" ({lo}..{hi})" if lo is not None or hi is not None else ""))
-    return v
-
-
-def deals_coverage_from_utc(bridge) -> float | None:
-    """1.46: start (UTC epoch) of the period `bridge.deals` covers - each history poll re-reads mt5.deals_history_days back from the poll
-    time (deals_loaded_at, UTC). stats.account_roi clips its equity window to it (a deposit older than the deal history but newer than the
-    first snapshot counted as profit). None = history not loaded / unknown -> account_roi reports deals_coverage NOT_VERIFIED.
-    Read it under bridge._lock together with bridge.deals."""
-    loaded = getattr(bridge, "deals_loaded_at", None)
-    days = getattr(getattr(bridge, "cfg", None), "deals_history_days", None)
-    if not isinstance(loaded, datetime) or loaded.tzinfo is None or isinstance(days, bool) or not isinstance(days, (int, float)) or not days > 0:
-        return None
-    return loaded.timestamp() - float(days) * 86400
+STUDIO_LAUNCH_WAIT_S = 5.0     # 1.46 arch (I0846): how long POST /api/v1/studio/launch checks that Studio really started
 
 
 class AskReq(BaseModel):
@@ -335,11 +313,19 @@ def create_app(rt, port: int) -> FastAPI:
     def state():
         return full_state()
 
+    def _walls_last() -> dict:
+        """The walls snapshot S12 works on - rt.walls.last, read exactly like GET /api/v1/walls. Never WallsService.snapshot() / context()
+        / store.freeze from an API thread (they compute, version and store snapshots - that is the engine thread's job)."""
+        snap = {k: v for k, v in (getattr(rt.walls, "last", None) or {}).items() if not k.startswith("_")}
+        return snap or {"status": "NO_SNAPSHOT_YET", "walls": []}
+
     @app.get("/api/v1/candles")
     def candles(tf: str = Query(...)):
         if tf not in TIMEFRAMES:
             raise HTTPException(400, "INVALID_TIMEFRAME")
-        return rt.engine.chart(tf)
+        # 1.46 arch (I0109): the chart also gets the S12 walls snapshot (same object as /api/v1/walls, signed by snapshot_id) - the
+        # 'volatility' bands stay the panel's model pricing (cfg.volatility, chart only)
+        return {**rt.engine.chart(tf), "walls_snapshot": _walls_last()}
 
     @app.get("/api/v1/volatility")
     def volatility():
@@ -376,7 +362,7 @@ def create_app(rt, port: int) -> FastAPI:
 
     def _asset(asset: str | None) -> str:
         a = asset or rt.cfg.get().assets.active
-        if a not in ("XAUUSD", "BTC"):
+        if a not in ALLOWED_ASSETS:
             raise HTTPException(403, f"ASSET_NOT_ALLOWED:{a}")
         return a
 
@@ -514,7 +500,7 @@ def create_app(rt, port: int) -> FastAPI:
         """Separate process (never in the bot); POST returns at once, the result is in the registry/report."""
         import subprocess
         inst = body.get("asset") or rt.cfg.get().assets.active
-        if inst not in ("XAUUSD", "BTC"):
+        if inst not in ALLOWED_ASSETS:
             raise HTTPException(400, "UNKNOWN_INSTRUMENT")
         comm = body_num(body, "commission", None, float, 0, 1000)      # 1.46: 'abc' was a ValueError -> 500, NaN / negative went to the CLI
         from ..training import core as tc
@@ -1061,7 +1047,7 @@ def create_app(rt, port: int) -> FastAPI:
         sel = [{k: b[k] for k in ("open_utc", "o", "h", "l", "c", "tv")} for b in bars if str(body.get("start_utc")) <= b["open_utc"] <= str(body.get("end_utc"))]
         if not sel:
             raise HTTPException(400, "NO_CLOSED_BARS_IN_RANGE")
-        r = rt.analytics.library.add_sample(rt.cfg.get().mt5.symbol, tf, sel, "CHART_SELECTION" if not rt.bridge._synthetic else "CHART_SELECTION_SYNTHETIC",
+        r = rt.analytics.library.add_sample(rt.cfg.get().mt5.symbol, tf, sel, "CHART_SELECTION" if not rt.bridge.synthetic else "CHART_SELECTION_SYNTHETIC",
                                             body.get("note"))
         if not r["ok"]:
             raise HTTPException(400, r["error"])
@@ -1255,7 +1241,7 @@ def create_app(rt, port: int) -> FastAPI:
         from ..sh.pack import catalog as _CAT
         try:
             cfg = _CAT.save_override(body, who="panel")
-        except (ValueError, KeyError) as exc:
+        except (ValueError, KeyError, TypeError, AttributeError) as exc:      # w2 (I0818): a bad type is a 400, never a 500
             raise HTTPException(400, str(exc)[:400])
         rt.log.info("SH", "PACK_CONFIG", f"Zmiana konfiguracji pakietu 20 wariantów – hash {cfg['hash']}")
         return _CAT.public(cfg)
@@ -1355,7 +1341,7 @@ def create_app(rt, port: int) -> FastAPI:
     @app.get("/api/v1/sh/validation")
     def sh_validation(instrument: str = Query("XAUUSD")):
         """Validation reports of the SH strategies on REAL exported data (written by `sh train`); absent = not run yet."""
-        if instrument not in ("XAUUSD", "BTC"):
+        if instrument not in ALLOWED_ASSETS:
             raise HTTPException(400, "UNKNOWN_INSTRUMENT")
         out = {}
         for strat in ("SCALPING", "HEDGING"):
@@ -1493,7 +1479,11 @@ def create_app(rt, port: int) -> FastAPI:
             rt.bridge.request_reconnect("ACTIVE_ASSET_CHANGED")
         rt.engine.mark_dirty()
         rt.bus.publish("assets", st)
-        return st
+        try:                                              # w2 (I0748, informative): open SH plans of another symbol are not managed now
+            w = rt.sh.open_plans_warning(rt.sh.store, rt.cfg.get().mt5.symbol)
+        except Exception:  # noqa: BLE001 - the switch itself already happened
+            w = None
+        return dict(st, sh_open_plans_warning=w) if w and isinstance(st, dict) else st
 
     LOCK_NOTE = ("Execution Lock został wycofany (1.24, decyzja użytkownika). O wysyłce zleceń decydują: tryb wykonania, potwierdzony "
                  "rachunek (DEMO / REAL), STOP nowych wejść, limity ryzyka użytkownika, aktualne dane i warunki brokera.")
@@ -1608,15 +1598,16 @@ def create_app(rt, port: int) -> FastAPI:
         if mode not in ("PAPER", "AUTO_DEMO", "AUTO_LIVE"):
             raise HTTPException(400, "INVALID_MODE")
         b = rt.bridge
-        with b._lock:
-            deals = list(b.deals)
-            cover = deals_coverage_from_utc(b)        # 1.46: ROI counted deposits older than the deal history (deals_history_days) as profit
+        # 1.46: ROI counted deposits older than the deal history (deals_history_days) as profit -> the deals copy and their coverage come
+        # from ONE atomic snapshot under the bridge lock; 1.46 arch (I0081): one ROI function shared with the Telegram report
+        snap = stats.bridge_deals_snapshot(b)
+        deals = snap[0]
         ds = b.server_day_start_utc()
         ds_raw = ds.timestamp() + b.clock.offset if ds and b.clock.offset is not None else None
         return {"bot": stats.bot_stats(rt.db, mode, b.account_key), "engines": stats.engine_stats(rt.db, mode, b.account_key),
                 "equity": stats.equity_curve(rt.db, "PAPER" if mode == "PAPER" else "ACCOUNT", b.account_key),
                 "account": stats.account_stats(deals, rt.cfg.get().mt5.symbol, ds_raw) if b.account_key else None,
-                "account_roi": stats.account_roi(rt.db, b.account_key, deals, b.clock.offset, deals_from_utc=cover)}
+                "account_roi": stats.account_roi_for_bridge(rt.db, b, snapshot=snap)}
 
     @app.get("/api/v1/news")
     def news():
@@ -1630,7 +1621,7 @@ def create_app(rt, port: int) -> FastAPI:
     def get_config():
         c = rt.cfg.get().model_dump(mode="json")
         return {"config": c, "secrets": {n: {"source": rt.secrets.source(n), "masked": rt.secrets.mask(n)}
-                                         for n in ("ANTHROPIC_API_KEY", "TELEGRAM_BOT_TOKEN", "FRED_API_KEY", "MT5_PASSWORD")},
+                                         for n in _SECRETS_ALLOWED},          # 1.46 arch (I0118): every stored secret (masked only)
                 "editable_note": "Klucze API są przechowywane lokalnie (Windows DPAPI) i nigdy nie są zwracane przez API."}
 
     @app.put("/api/v1/config")
@@ -1685,13 +1676,13 @@ def create_app(rt, port: int) -> FastAPI:
 
     @app.post("/api/v1/secrets")
     def set_secret(req: SecretReq):
-        if req.name not in ("TELEGRAM_BOT_TOKEN", "FRED_API_KEY", "ANTHROPIC_API_KEY", "MT5_PASSWORD"):
+        if req.name not in _SECRETS_UI_SETTABLE:          # 1.46 arch (I0118): the same 4 names as before (one source)
             raise HTTPException(400, "UNKNOWN_SECRET")
         rt.secrets.set(req.name, req.value)
         if req.name == "MT5_PASSWORD":                 # new password: try to connect again (value never logged)
             rt.log.info("MT5", "PASSWORD_SET", "Zapisano lokalnie hasło MT5 (wartość nie jest logowana).")
             if rt.bridge.state != "CONNECTED":
-                rt.bridge.next_retry = 0
+                rt.bridge.retry_now()                  # 1.46 arch (I0089): was a direct write of bridge.next_retry
         return {"ok": True, "source": rt.secrets.source(req.name)}
 
     # ------------------------------------------------------------ agent
@@ -1878,15 +1869,13 @@ def create_app(rt, port: int) -> FastAPI:
     @app.get("/api/v1/training/models")
     def training_models(instrument: str = Query(...)):
         from ..training import panel as tp
-        if instrument not in ("XAUUSD", "BTC"):
+        if instrument not in ALLOWED_ASSETS:
             raise HTTPException(400, "UNKNOWN_INSTRUMENT")
         return tp.models(rt, instrument)
 
     # ---------------------------------------------------------------- PMW-MM master models (inventory, SHADOW live view, ledger, rollback)
     def _mm_inst(instrument: str) -> str:
-        if instrument not in ("XAUUSD", "BTC"):
-            raise HTTPException(400, "UNKNOWN_INSTRUMENT")
-        return instrument
+        return _deps.instrument(instrument, error_code="UNKNOWN_INSTRUMENT")      # 1.46 arch (I0087): as given (no upper), as before
 
     @app.get("/api/v1/mm/status")
     def mm_status(instrument: str = Query("XAUUSD")):
@@ -1987,10 +1976,8 @@ def create_app(rt, port: int) -> FastAPI:
 
     # ---------------------------------------------------------------- 1.28 Centrum treningu + rejestr modeli (wspólny kontrakt)
     def _th_inst(x: str) -> str:
-        x = x.upper() if isinstance(x, str) else ""          # 1.46: a number / object was an AttributeError (.upper) -> 500
-        if x not in ("XAUUSD", "BTC"):
-            raise HTTPException(400, "INSTRUMENT_NOT_ALLOWED")
-        return x
+        # 1.46: a number / object was an AttributeError (.upper) -> 500; 1.46 arch (I0087): one validator, same code / normalisation
+        return _deps.instrument(x, normalize=True, error_code="INSTRUMENT_NOT_ALLOWED")
 
     _SAFE = re.compile(r"^[A-Za-z0-9_\-]{1,64}$")
 
@@ -2081,7 +2068,7 @@ def create_app(rt, port: int) -> FastAPI:
         from ..trainhub import pipeline as _P
         st = Store()
         data = {}
-        for i in ("XAUUSD", "BTC"):
+        for i in ALLOWED_ASSETS:
             man = st.manifest(i)
             data[i] = {"symbol": man.get("symbol") or rt.market_zones.symbol_for(i), "data_kind": man.get("data_kind"),
                        "timeframes": man.get("timeframes") or {}, "last_export": man.get("last_export"), "costs": man.get("costs"),
@@ -2202,11 +2189,15 @@ def create_app(rt, port: int) -> FastAPI:
     @app.get("/api/v1/models/predictions")
     def models_predictions(instrument: str = Query("XAUUSD")):
         from ..modelhub import adapters as _AD
+        from ..quant import ids as _I
         i = _th_inst(instrument)
-        return {"instrument": i, "items": _AD.all_predictions(rt, i), "contract": "PMW-PRED-1"}
+        # 1.46 arch (I0009): + canonical_id (additive) on a COPY of each record - the cached dicts are shared with SH / Quant / the coordinator
+        return {"instrument": i, "items": [{**p, "canonical_id": _I.canonical(p)} for p in _AD.all_predictions(rt, i)], "contract": "PMW-PRED-1"}
 
     @app.get("/api/v1/models/evidence")
     def models_evidence(instrument: str = Query("XAUUSD"), strategy: str = Query("SCALPING")):
+        """Diagnostic view (no consumer in the panels): evidence groups per correlation group of modelhub.aggregate.ROUTES (per TF); the
+        SH matrix shows the Training Center models as the summary row th_direction with these groups in group_by_tf (w2 I0006)."""
         from ..modelhub import aggregate as _AG
         i = _th_inst(instrument)
         if strategy not in ("SCALPING", "HEDGING"):
@@ -2215,7 +2206,9 @@ def create_app(rt, port: int) -> FastAPI:
         return _AG.evidence(_AD.all_predictions(rt, i), strategy, i)
 
     # ------------------------------------------------------------------ Kronos (NeoQuasar/Kronos-small since 1.42.8; Kronos-base 1.37-1.42.7)
-    _KR_TF = ("M1", "M5", "M15", "M30", "H1")
+    # 1.46 arch (I0007): the timeframes the Kronos settings allow (kronos/settings.TF) - M3 was missing here (an enabled M3 gave 400).
+    # Only the tf parameter of the two read-only GET routes (forecast / history) is validated with it; nothing is queued or forced.
+    from ..kronos.settings import TF_ALL as _KR_TF
 
     def _kr_tf(tf: str) -> str:
         tf = tf.upper() if isinstance(tf, str) else ""        # 1.46: a number was an AttributeError (.upper) -> 500
@@ -2356,7 +2349,7 @@ def create_app(rt, port: int) -> FastAPI:
         rt.log.info("RESOURCES", "PROFILE", f"Profil zasobów: {before.get('profile')} → {prof}" + (f" ({manual})" if prof == "MANUAL" else ""))
         if rt.governor is None:
             raise HTTPException(503, "GOVERNOR_UNAVAILABLE")
-        rt.governor._event("PROFILE", f"profil {before.get('profile')} → {prof}")
+        rt.governor.record_event("PROFILE", f"profil {before.get('profile')} → {prof}")
         return rt.governor.public()
 
     @app.get("/api/v1/models/foundation")
@@ -2619,9 +2612,29 @@ def create_app(rt, port: int) -> FastAPI:
                 p, broke_away = start(flags), False       # ERROR_ACCESS_DENIED: this job does not allow breakaway (any other error repeats)
         except OSError as exc:
             raise HTTPException(500, f"STUDIO_START_FAILED:{type(exc).__name__}") from None
+        # 1.46 arch (I0846): started:true was returned right after Popen - an Studio that ended at once (e.g. the single-instance check
+        # of the launcher) was reported as started. Wait up to STUDIO_LAUNCH_WAIT_S (this route is a sync def - a threadpool thread, the
+        # event loop is not blocked): an exit before Studio answers -> started False, reason STUDIO_EXITED:<code>; alive but not yet
+        # answering (first start) -> started True, starting True. Nothing is killed; the bot and MT5 are not touched.
+        poll = getattr(p, "poll", None)
+        rc, starting = None, True
+        if callable(poll):
+            import time as _time
+            end = _time.monotonic() + STUDIO_LAUNCH_WAIT_S
+            while True:
+                if _studio_probe()["running"]:
+                    starting = False
+                    break
+                rc = poll()
+                if rc is not None or _time.monotonic() >= end:
+                    break
+                _time.sleep(0.5)
+        if rc is not None and starting:
+            rt.log.write("WARNING", "STUDIO", "LAUNCH_EXITED", f"Pepe Training Studio zakończyło się od razu (kod {rc}) – nie uruchomiono")
+            return {**st, "started": False, "starting": False, "pid": p.pid, "job_breakaway": broke_away, "reason": f"STUDIO_EXITED:{rc}"}
         rt.log.info("STUDIO", "LAUNCH", f"Uruchomiono Pepe Training Studio ({st['launcher']}, pid {p.pid}, port {st['port']}"
                     + (", w zadaniu silnika – zamknie się razem z nim" if broke_away is False else "") + ")")
-        return {**st, "started": True, "pid": p.pid, "job_breakaway": broke_away}
+        return {**st, "started": True, "starting": starting, "pid": p.pid, "job_breakaway": broke_away}
 
     # ---------------------------------------------------------------- Pepe Data & Training Studio import (1.33) - candidates only
     @app.post("/api/v1/studio/import")
@@ -2650,10 +2663,7 @@ def create_app(rt, port: int) -> FastAPI:
 
     # ---------------------------------------------------------------- PMW-FAM-1 model families (1.33)
     def _fam_inst(instrument):
-        i = str(instrument or rt.cfg.get().assets.active).upper()
-        if i not in ("XAUUSD", "BTC"):
-            raise HTTPException(400, "INSTRUMENT_INVALID")
-        return i
+        return _deps.instrument(instrument, normalize=True, default=lambda: rt.cfg.get().assets.active, error_code="INSTRUMENT_INVALID")
 
     def _fam(fn, *a, **k):
         try:
@@ -2739,7 +2749,8 @@ def create_app(rt, port: int) -> FastAPI:
     @app.get("/api/v1/quant/assessment")
     def quant_assessments(limit: int = Query(30, ge=1, le=200), asset: str | None = None):
         q = _quant()
-        return {"items": q.ledger.assessments(limit, instrument=_asset(asset)), "mode": q.mode(),     # 1.46 arch (I0040): one asset
+        from ..quant.service import with_label_policy
+        return {"items": with_label_policy(q.ledger.assessments(limit, instrument=_asset(asset))), "mode": q.mode(),   # 1.46 arch (I0040): one asset
                 "note": "brak skalibrowanego wyniku = brak wytrenowanego modelu dla tego zdarzenia (nie 0 %, nie 50 %)"}
 
     @app.post("/api/v1/quant/assessment")
@@ -2807,7 +2818,7 @@ def create_app(rt, port: int) -> FastAPI:
         from .. import paths as _P
         from ..tsfm.settings import default_weights_root as _dwr
         argv = [_sys.executable, str(_P.ROOT_DIR / "tools" / "tsfm_setup.py"), "--model", "tabicl", "--root", str(_P.ROOT_DIR), "--weights-root", str(_dwr())]
-        return rt.tsfm.start_tabicl_install(argv)
+        return rt.tsfm.start_job_process("install_tabicl", argv)          # 1.46 arch I0089 / I0212: public facade, not _run_job_proc
 
     # ---- 1.41 research modules (SDformerFlow, cellular feature graph, COA, BChimp, G7 SMC radar, exponential trend channel)
     def _research():
@@ -3147,16 +3158,12 @@ def create_app(rt, port: int) -> FastAPI:
 
     @app.get("/api/v1/mm/ledger")
     def mm_ledger(instrument: str = Query("XAUUSD"), model: str = Query("gpr_logret:LIVE"), limit: int = 200):
-        led = rt.mm._ledger(_mm_inst(instrument))
+        led = rt.mm.ledger(_mm_inst(instrument))
         lim = min(max(limit, 1), 2000)
-        # 1.46: Ledger.rows() orders by source_ts ASC with LIMIT -> the OLDEST `limit` predictions came back ([-limit:] did not help) and the
-        # fresh SHADOW predictions never appeared. The newest window here (read-only), returned in time order like before.
-        with led._lock:
-            rows = [dict(r) for r in led.c.execute("SELECT * FROM (SELECT * FROM predictions WHERE model_id=? ORDER BY source_ts DESC LIMIT ?) "
-                                                   "ORDER BY source_ts", (model, lim)).fetchall()]
-        for r in rows:
-            r["payload"] = json.loads(r["payload"]) if r["payload"] else None
-            r["outcome"] = json.loads(r["outcome"]) if r["outcome"] else None
+        # 1.46: the NEWEST `limit` predictions (the oldest came back and the fresh SHADOW predictions never appeared), in time order.
+        # 1.46 arch (I0089): through Ledger.rows(newest=True) - the same query and JSON decoding under the ledger's own lock (was inline
+        # here on led._lock / led.c)
+        rows = led.rows(model, limit=lim, newest=True)
         return {"summary": led.summary(), "rows": rows}
 
     @app.post("/api/v1/mm/rollback")
@@ -3170,7 +3177,7 @@ def create_app(rt, port: int) -> FastAPI:
     @app.get("/api/v1/training/readiness")
     def training_readiness(instrument: str = Query(...)):
         from ..training import panel as tp
-        if instrument not in ("XAUUSD", "BTC"):
+        if instrument not in ALLOWED_ASSETS:
             raise HTTPException(400, "UNKNOWN_INSTRUMENT")
         return tp.readiness(rt, instrument)
 
@@ -3234,7 +3241,7 @@ def create_app(rt, port: int) -> FastAPI:
     def training_export(body: dict = Body(...)):
         from ..training import panel as tp
         inst = body.get("instrument")
-        if inst not in ("XAUUSD", "BTC"):
+        if inst not in ALLOWED_ASSETS:
             raise HTTPException(400, "UNKNOWN_INSTRUMENT")
         try:
             r = tp.export_package(inst, str(body.get("scope") or "all"), body.get("run_id"))
@@ -3271,7 +3278,7 @@ def create_app(rt, port: int) -> FastAPI:
     def training_sh_promote(body: dict = Body(...)):
         from ..sh import tpmodel as TM
         inst, strat, rid = body.get("instrument"), body.get("strategy"), body.get("run_id")
-        if inst not in ("XAUUSD", "BTC") or strat not in ("SCALPING", "HEDGING") or not rid:
+        if inst not in ALLOWED_ASSETS or strat not in ("SCALPING", "HEDGING") or not rid:
             raise HTTPException(400, "BAD_REQUEST")
         try:
             r = TM.promote(inst, strat, str(rid))
@@ -3285,7 +3292,7 @@ def create_app(rt, port: int) -> FastAPI:
         """Starts `masterquo training run` as a separate process (never inside the bot process; no orders, execution mode untouched)."""
         import subprocess
         from ..training import core as tc
-        insts = ",".join(i for i in ("XAUUSD", "BTC") if i in (body.get("instruments") or []))
+        insts = ",".join(i for i in ALLOWED_ASSETS if i in (body.get("instruments") or []))
         if not insts:
             raise HTTPException(400, "NO_INSTRUMENT")
         prof = body.get("profile") or "PELNY_TRENING"
@@ -3421,7 +3428,7 @@ def create_app(rt, port: int) -> FastAPI:
     @app.get("/api/v1/export/datasets")
     def export_datasets(instrument: str = Query(...)):
         from ..training import export_job as EJ
-        if instrument not in ("XAUUSD", "BTC"):
+        if instrument not in ALLOWED_ASSETS:
             raise HTTPException(400, "UNKNOWN_INSTRUMENT")
         return {"instrument": instrument, "datasets": EJ.datasets(instrument), "default_symbol": _default_symbol(instrument)}
 
@@ -3447,7 +3454,7 @@ def create_app(rt, port: int) -> FastAPI:
         from ..montecarlo import validate as _MV
         if not _re.fullmatch(r"MC-[0-9A-Za-z\-]{8,64}", run_id):
             raise HTTPException(400, "INVALID_RUN_ID")
-        inst, _ = rt.montecarlo._ctx()
+        inst, _ = rt.montecarlo.context()
         d = _MV.root(inst)
         try:
             reg = _json.loads((d / "registry.json").read_text(encoding="utf-8"))
@@ -3518,7 +3525,13 @@ def create_app(rt, port: int) -> FastAPI:
             out["ml"] = {"active": rt.ml.registry.champion_id}
         else:
             db, root = ml_store(instrument, rt.db)
-            row = db.one("SELECT model_id FROM ml_models WHERE status='CHAMPION'")
+            try:
+                row = db.one("SELECT model_id FROM ml_models WHERE status='CHAMPION'")
+            finally:
+                # 1.46 arch (I0096): the Database built here for an inactive instrument was never closed (one per request). Only that
+                # ad-hoc instance is closed (its connection of THIS request thread) - never the main database nor the active ML service's
+                if db is not rt.db and db is not getattr(getattr(rt.ml, "cur", None), "db", None):
+                    db.close()
             out["ml"] = {"active": row["model_id"] if row else None}
         ptr = read_pointer(paths.data_dir() / "lab", instrument)
         out["lab"] = {"pinned": ptr["active"], "models": [{k: m.get(k) for k in ("model_id", "family", "role", "verdict")} for m in rt.lab.trainer.models(instrument)][:20]}
@@ -3528,7 +3541,7 @@ def create_app(rt, port: int) -> FastAPI:
     def training_rollback(body: dict):
         import subprocess
         inst, fam = body.get("instrument"), str(body.get("family") or "")
-        if inst not in ("XAUUSD", "BTC") or not (fam in ("forecast", "scalp", "ml") or fam.startswith(("lab:", "sh:"))):
+        if inst not in ALLOWED_ASSETS or not (fam in ("forecast", "scalp", "ml") or fam.startswith(("lab:", "sh:"))):
             raise HTTPException(400, "BAD_REQUEST")
         if fam.startswith("sh:"):
             from ..sh import tpmodel as TM
@@ -3744,7 +3757,7 @@ def create_app(rt, port: int) -> FastAPI:
     @app.get("/api/v1/ml/scalp")
     def ml_scalp_status(asset: str | None = Query(None)):
         inst = asset or rt.cfg.get().assets.active
-        if inst not in ("XAUUSD", "BTC"):
+        if inst not in ALLOWED_ASSETS:
             raise HTTPException(400, "UNKNOWN_INSTRUMENT")              # 1.46: was ValueError UNKNOWN_INSTRUMENT -> 500
         if inst != rt.ml.inst:
             from types import SimpleNamespace
@@ -3777,14 +3790,14 @@ def create_app(rt, port: int) -> FastAPI:
     @app.post("/api/v1/ml/scalp/prepare")
     def ml_scalp_prepare(body: dict):
         inst = body.get("asset") or rt.cfg.get().assets.active
-        if inst not in ("XAUUSD", "BTC"):
+        if inst not in ALLOWED_ASSETS:
             raise HTTPException(400, "UNKNOWN_INSTRUMENT")
         return _ml_scalp_job(["prepare", "--asset", inst])
 
     @app.post("/api/v1/ml/scalp/train")
     def ml_scalp_train(body: dict):
         inst = body.get("asset") or rt.cfg.get().assets.active
-        if inst not in ("XAUUSD", "BTC"):
+        if inst not in ALLOWED_ASSETS:
             raise HTTPException(400, "UNKNOWN_INSTRUMENT")
         args = ["train", "--asset", inst, "--activate", "none"]
         comm = body_num(body, "commission", None, float, 0, 1000)      # 1.46: 'abc' was a ValueError -> 500, NaN / negative went to the CLI
@@ -3834,7 +3847,7 @@ def create_app(rt, port: int) -> FastAPI:
     def ml_reload():
         """After offline training (training installer): re-read champion of the active instrument's ML registry."""
         rt.ml.registry.reload()
-        rt.ml._pred_cache.clear()
+        rt.ml.clear_prediction_cache()
         return {"ok": True, "instrument": rt.ml.inst, "champion": rt.ml.registry.champion_id}
 
     @app.post("/api/v1/ml/backfill")
@@ -3881,7 +3894,9 @@ def create_app(rt, port: int) -> FastAPI:
         if req.strategy_id not in _reg.STRATEGIES:
             raise HTTPException(400, "UNKNOWN_STRATEGY_ID")
         cur = rt.cfg.get().active.strategies.get(req.strategy_id)
-        patch = {"scan": cur.scan if cur else True, "trade": cur.trade if cur else True}
+        # 1.46 (I0852): without a stored toggle the default trade flag is the registry default used by trade_allowed (engine/active.py) -
+        # signal-only S11/S12 no longer start trading when only 'scan' is switched; an explicit req.trade is still honoured
+        patch = {"scan": cur.scan if cur else True, "trade": cur.trade if cur else (req.strategy_id not in _reg.DEFAULT_NO_TRADE)}
         if req.scan is not None:
             patch["scan"] = req.scan
         if req.trade is not None:

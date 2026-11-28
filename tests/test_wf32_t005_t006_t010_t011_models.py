@@ -65,7 +65,12 @@ class TestAssociationRules(unittest.TestCase):
 
     def test_filter_never_creates_side_assist_only_holds(self):
         from masterquo.ml import association_rules as AR
-        m = AR.train([0b1] * 100 + [0b10] * 100, ["DOWN"] * 80 + ["UP"] * 20 + ["UP"] * 80 + ["DOWN"] * 20, min_rule_count=50, max_rule_len=1)
+        # 1.46 (I0342): rules must hold on the chronological holdout - the two patterns are interleaved in time (in 1.45 mask 0b1 ended
+        # before the holdout and its in-sample edge alone made it "supported")
+        masks = [0b1, 0b10] * 100
+        labs = [y for i in range(100) for y in (("UP" if i % 5 == 0 else "DOWN"), ("DOWN" if i % 5 == 0 else "UP"))]
+        m = AR.train(masks, labs, min_rule_count=50, max_rule_len=1)
+        self.assertEqual(m["validated_rules"], 2)
         obs = AR.assess(m, 0b1, "LONG", mode="OBSERVE")
         self.assertEqual((obs["action"], obs["candidate_direction_supported"]), ("PASS", False))
         self.assertEqual(AR.assess(m, 0b1, "LONG", mode="ASSIST")["action"], "HOLD")

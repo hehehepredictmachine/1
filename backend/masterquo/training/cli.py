@@ -7,7 +7,7 @@
   status [RUN_ID]          JSON state of a run
   report [RUN_ID]          open the HTML report
   rollback                 previous model of one instrument x family (forecast | scalp | ml | lab:<FAMILY>)
-  install / diag           environment checks (INSTALUJ_TRENING.bat / DYAGNOSTYKA_TRENINGU.bat)
+  install / diag           environment checks (INSTALUJ_TRENING.bat / DIAGNOSTYKA_TRENINGU.bat)
   symbols                  terminal + candidate broker symbols with contract metadata (own MT5 connection, read only)
   export / ml-offline / lab-offline   internal steps (child processes of `run`)
 """
@@ -385,9 +385,8 @@ def cmd_diag(a) -> int:
             print("[UWAGA] " + w)
     if info.get("terminals"):
         print("Zainstalowane terminale: " + "; ".join(info["terminals"]))
-    from ..train_all import _health
-    from ..__main__ import _port
-    h = _health(_port())
+    from .. import localapi
+    h = localapi.health(localapi.port(), 3)
     print(f"Bot: {'działa – ' + str(h.get('app')) + ' ' + str(h.get('version')) if h else 'nie działa'}; trening nie zmienia trybu wykonania ani nie składa zleceń.")
     rid = core.Run.latest()
     if rid:

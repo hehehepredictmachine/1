@@ -6,6 +6,10 @@
 //| closed bars (identical to the indicator), then updates exactly    |
 //| once per newly closed bar. This program contains no OrderSend,    |
 //| no CTrade and includes no trade library.                          |
+//| 1.46 arch (I0493): the CSV is opened before the history check (it |
+//| was skipped for the whole session when OnInit found no history),  |
+//| and a deferred start rebuilds from the last InpBars closed bars   |
+//| exactly like OnInit (not from the epoch).                         |
 //+------------------------------------------------------------------+
 #property strict
 #include <PMW\PMW_Kalman.mqh>
@@ -37,35 +41,45 @@ void LogRow(const datetime t, const double c, const int ev)
    FileFlush(g_fh);
   }
 
-int OnInit()
+void OpenCsv()
   {
-   if(!g_kx.Setup(InpQFast, InpR, InpQSlow, InpR, InpP0, InpConfirmBars, InpTolerance, InpWarmup, false))
-      return INIT_PARAMETERS_INCORRECT;
+   if(!InpLogCsv || g_fh != INVALID_HANDLE)
+      return;
+   FolderCreate("PMW");
+   g_fh = FileOpen(InpCsvName, FILE_CSV | FILE_READ | FILE_WRITE | FILE_ANSI | FILE_SHARE_READ, ',');
+   if(g_fh == INVALID_HANDLE)
+      Print("PMW_KalmanShadowEA: CSV open failed ", GetLastError());
+   else
+     {
+      if(FileSize(g_fh) == 0)
+         FileWrite(g_fh, "time", "symbol", "tf", "close", "fast", "slow", "K_fast", "K_slow", "P_fast", "P_slow", "Q_fast", "Q_slow", "R",
+                   "confirm_count", "event", "state", "quality", "version");
+      FileSeek(g_fh, 0, SEEK_END);
+     }
+  }
+
+// rebuild the recursive state from the last InpBars CLOSED bars (no CSV rows: the same as the indicator's warm start)
+bool RebuildState()
+  {
    MqlRates r[];
    ArraySetAsSeries(r, false);
    int n = CopyRates(_Symbol, _Period, 1, InpBars, r);                 // shift 1: closed bars only, oldest first
    if(n <= 0)
-     {
-      Print("PMW_KalmanShadowEA: history not available yet (", GetLastError(), ")");
-      return INIT_SUCCEEDED;                                           // OnTick retries the rebuild
-     }
+      return false;
    for(int i = 0; i < n; i++)
       g_kx.Update(r[i].time, r[i].close);
    g_last = r[n - 1].time;
-   if(InpLogCsv)
-     {
-      FolderCreate("PMW");
-      g_fh = FileOpen(InpCsvName, FILE_CSV | FILE_READ | FILE_WRITE | FILE_ANSI | FILE_SHARE_READ, ',');
-      if(g_fh == INVALID_HANDLE)
-         Print("PMW_KalmanShadowEA: CSV open failed ", GetLastError());
-      else
-        {
-         if(FileSize(g_fh) == 0)
-            FileWrite(g_fh, "time", "symbol", "tf", "close", "fast", "slow", "K_fast", "K_slow", "P_fast", "P_slow", "Q_fast", "Q_slow", "R",
-                      "confirm_count", "event", "state", "quality", "version");
-         FileSeek(g_fh, 0, SEEK_END);
-        }
-     }
+   return true;
+  }
+
+int OnInit()
+  {
+   if(!g_kx.Setup(InpQFast, InpR, InpQSlow, InpR, InpP0, InpConfirmBars, InpTolerance, InpWarmup, false))
+      return INIT_PARAMETERS_INCORRECT;
+   OpenCsv();                                                          // 1.46 arch (I0493): before the history check
+   g_last = 0;                                                         // a re-init (chart change) starts over, like the first start
+   if(!RebuildState())
+      Print("PMW_KalmanShadowEA: history not available yet (", GetLastError(), ") - OnTick retries the rebuild");
    return INIT_SUCCEEDED;
   }
 
@@ -73,6 +87,7 @@ void OnDeinit(const int reason)
   {
    if(g_fh != INVALID_HANDLE)
       FileClose(g_fh);
+   g_fh = INVALID_HANDLE;                                              // an EA keeps its globals across a chart change: OpenCsv reopens
   }
 
 void OnTick()
@@ -80,9 +95,14 @@ void OnTick()
    datetime t1 = iTime(_Symbol, _Period, 1);                          // last CLOSED bar
    if(t1 == 0 || t1 == g_last)
       return;                                                          // same bar: no second update
+   if(g_last == 0)
+     {
+      RebuildState();                                                  // deferred start: last InpBars closed bars, not the whole history
+      return;
+     }
    MqlRates r[];
    ArraySetAsSeries(r, false);
-   int n = CopyRates(_Symbol, _Period, g_last == 0 ? (datetime)0 : g_last + 1, t1, r);
+   int n = CopyRates(_Symbol, _Period, g_last + 1, t1, r);
    if(n <= 0)
       return;
    for(int i = 0; i < n; i++)

@@ -1,8 +1,13 @@
-"""Chronological validation with purging, embargo and grouping (MQ-VALIDATION-1.0.0).
+"""Chronological validation with purging, embargo and grouping (MQ-VALIDATION-1.1.0).
 
 Blocks in time order:  FIT (50%) | TUNE (15%, early stopping / model choice) | CALIBRATION (15%) | TEST (20%, final)
-* all samples of one market event (event_id) - and therefore all versions of one setup - go to ONE block
-  (the block of the event's first sample); correlated signals are never split between train and test;
+* all samples of one market event EPISODE - and all versions of one setup - go to ONE block (the block of the episode's first
+  sample); correlated signals are never split between train and test. 1.1.0 (1.46, I0731): an episode = samples with the same
+  event_id whose label windows chain in time (next asof <= latest label end of the episode + embargo); a later sample opens a new
+  episode. event_id has no time part for several strategies (S09 'MEANREV:LONG:M5', S02 'TREND_CONT:LONG:M5:KAMA', recurring
+  price buckets), so in 1.0.0 ALL their samples went to the block of the first one (FIT; half purged) and TUNE / CALIB / TEST had
+  none of them; walk_forward dropped every sample of such an event from training once one was in validation. Samples of one
+  setup (group_id) always stay in one episode. strategies/registry.event_id_for is NOT changed (the selector deduplicates by it);
 * PURGING: a sample of an earlier block whose label window ends after (start of ANY later block - embargo) is removed
   (an empty block in between does not switch purging off);
   the actual label_end_utc is used, not the row number (labels have different lengths, events are irregular);
@@ -17,7 +22,7 @@ from datetime import datetime, timedelta
 
 import numpy as np
 
-VERSION = "MQ-VALIDATION-1.0.0"
+VERSION = "MQ-VALIDATION-1.1.0"
 FRACTIONS = (0.50, 0.15, 0.15, 0.20)
 BLOCKS = ("fit", "tune", "calib", "test")
 
@@ -26,14 +31,62 @@ def _t(s: str) -> datetime:
     return datetime.fromisoformat(s.replace("Z", "+00:00"))
 
 
+def episodes(rows: list[dict], embargo_minutes: int) -> list[str]:
+    """Group key per row (same order as `rows`): event episode (module docstring). Samples of one event_id stay together while the
+    next asof is within the latest label end of the episode + embargo; samples of one setup (group_id) are always joined."""
+    n = len(rows)
+    parent = list(range(n))
+
+    def find(i: int) -> int:
+        while parent[i] != i:
+            parent[i] = parent[parent[i]]
+            i = parent[i]
+        return i
+
+    def union(a: int, b: int) -> None:
+        ra, rb = find(a), find(b)
+        if ra != rb:
+            parent[max(ra, rb)] = min(ra, rb)
+    emb = timedelta(minutes=embargo_minutes)
+    by_event: dict[str, list[int]] = {}
+    by_group: dict[str, int] = {}
+    for i, r in enumerate(rows):
+        by_event.setdefault(r.get("event_id") or r["group_id"], []).append(i)
+        g = r.get("group_id")
+        if g is not None:
+            if g in by_group:
+                union(by_group[g], i)
+            else:
+                by_group[g] = i
+    for idx in by_event.values():
+        idx = sorted(idx, key=lambda i: (rows[i]["asof_utc"], rows[i]["sample_id"]))
+        end = None
+        for a, b in zip([None] + idx[:-1], idx):
+            if a is not None and end is not None and _t(rows[b]["asof_utc"]) <= end + emb:
+                union(a, b)
+                end = max(end, _t(rows[b]["label_end_utc"]))
+            else:
+                end = _t(rows[b]["label_end_utc"])
+    roots: dict[int, str] = {}
+    out = []
+    for i in range(n):
+        rt = find(i)
+        if rt not in roots:
+            r = rows[rt]
+            roots[rt] = f"{r.get('event_id') or r['group_id']}#{len(roots)}"
+        out.append(roots[rt])
+    return out
+
+
 def split(rows: list[dict], *, embargo_minutes: int, min_block: int, min_class: int, test_after: str | None = None) -> tuple[dict | None, list[str]]:
     rows = sorted(rows, key=lambda r: (r["asof_utc"], r["sample_id"]))
     if not rows:
         return None, ["NO_LABELED_SAMPLES"]
-    # event grouping: an event goes where its first sample lands
+    # episode grouping: an episode goes where its first sample lands
+    ep = episodes(rows, embargo_minutes)
     first_of_event: dict[str, int] = {}
-    for i, r in enumerate(rows):
-        first_of_event.setdefault(r.get("event_id") or r["group_id"], i)
+    for i, k in enumerate(ep):
+        first_of_event.setdefault(k, i)
     n = len(rows)
     bounds, acc = [], 0.0
     for f in FRACTIONS[:-1]:
@@ -45,7 +98,7 @@ def split(rows: list[dict], *, embargo_minutes: int, min_block: int, min_class: 
         bounds[-1] = max(bounds[-1], k)
     blocks = {b: [] for b in BLOCKS}
     for i, r in enumerate(rows):
-        j = first_of_event[r.get("event_id") or r["group_id"]]
+        j = first_of_event[ep[i]]
         bi = sum(1 for b in bounds if j >= b)
         blocks[BLOCKS[bi]].append(r)
     emb = timedelta(minutes=embargo_minutes)
@@ -78,6 +131,7 @@ def walk_forward(rows: list[dict], k: int, embargo_minutes: int) -> list[tuple[l
     n = len(rows)
     folds = []
     emb = timedelta(minutes=embargo_minutes)
+    ep = episodes(rows, embargo_minutes)              # 1.1.0: event episodes, not every sample of an event_id ever seen
     for i in range(1, k + 1):
         cut = int(n * (0.4 + 0.6 * i / (k + 1)))
         end = int(n * (0.4 + 0.6 * (i + 1) / (k + 1))) if i < k else n
@@ -85,8 +139,8 @@ def walk_forward(rows: list[dict], k: int, embargo_minutes: int) -> list[tuple[l
         if not val:
             continue
         start = _t(val[0]["asof_utc"])
-        val_events = {r.get("event_id") or r["group_id"] for r in val}
-        tr = [r for r in rows[:cut] if _t(r["label_end_utc"]) <= start - emb and (r.get("event_id") or r["group_id"]) not in val_events]
+        val_events = set(ep[cut:end])
+        tr = [r for j, r in enumerate(rows[:cut]) if _t(r["label_end_utc"]) <= start - emb and ep[j] not in val_events]
         folds.append((tr, val))
     return folds
 

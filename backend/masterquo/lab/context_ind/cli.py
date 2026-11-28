@@ -4,7 +4,8 @@
   replay           run the engines causally over DEV and report coverage, events, zones and SHADOW would_block shares
   dataset / train  FS_VS_CONTEXT_v1 / CONTEXT_MOVE_M5_V1 (ablation core -> +VAMD -> +FD -> +SMC); synthetic only with --allow-synthetic-fixture
   buffers-verify   import a PWM_BufferInspector report and print hypotheses + mapping validation
-  export-fixture   write frozen OHLC CSV + golden.json for the native self-test (PWM_ContextSelfTest)
+  export-fixture   write frozen OHLC CSV for the native self-test (PWM_ContextSelfTest) from golden.json; an existing golden.json is
+                   kept (frozen reference) - recomputed only with --regenerate-golden or when missing
   native-parity    compare a native export with the Python cores (status axes separate)"""
 from __future__ import annotations
 
@@ -99,6 +100,7 @@ def main(argv: list[str]) -> int:
     s = sub.add_parser("export-fixture")
     s.add_argument("--out", default=str(FIX))
     s.add_argument("--files-dir")
+    s.add_argument("--regenerate-golden", action="store_true", help="przelicz golden.json bieżącym kodem (domyślnie istniejący zostaje)")
     s = sub.add_parser("native-parity")
     s.add_argument("--fixtures", default=str(FIX))
     s.add_argument("--native-status-file")
@@ -162,13 +164,17 @@ def main(argv: list[str]) -> int:
         _print(out)
         return 0
     if a.c == "export-fixture":
-        g = NV.make_golden(Path(a.out) / "golden.json")
+        # 1.46: an existing golden.json is the frozen reference - only its bars are exported. Regenerating it here (the installer runs
+        # this without --out, i.e. into tests/fixtures/context_ind) made PYTHON_VS_GOLDEN compare the current code with itself.
+        gp = Path(a.out) / "golden.json"
+        regen = a.regenerate_golden or not gp.exists()
+        g = NV.make_golden(gp) if regen else json.loads(gp.read_text(encoding="utf-8"))
         if a.files_dir:
             p = Path(a.files_dir) / "PMW" / "ctx_fixture_bars.csv"
             p.parent.mkdir(parents=True, exist_ok=True)
             p.write_text("time,open,high,low,close\n" + "".join(f"{int(b['open_utc'])},{b['o']},{b['h']},{b['l']},{b['c']}\n" for b in g["bars"]),
                          encoding="utf-8")
-        _print({"golden": str(Path(a.out) / "golden.json"), "bars": len(g["bars"])})
+        _print({"golden": str(gp), "bars": len(g["bars"]), "golden_regenerated": regen})
         return 0
     if a.c == "native-parity":
         files = __import__("os").environ.get("MQ_MT5_FILES_DIR")

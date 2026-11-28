@@ -62,10 +62,10 @@ def new_run_id() -> str:
 
 
 def write_json_atomic(path: Path, payload) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_name(path.name + ".tmp")
-    tmp.write_text(json.dumps(payload, indent=1, ensure_ascii=False, default=str), encoding="utf-8")
-    os.replace(tmp, path)
+    """1.46 (I0063): unique temporary file + os.replace (registry_io) - the fixed '<name>.tmp' was shared by every process: two writers
+    (runner, training center, a second run starting) replaced each other's half-written file or failed on its rename."""
+    from ..registry_io import write_json_atomic as _write
+    _write(Path(path), payload)
 
 
 class Run:
@@ -193,29 +193,49 @@ def lock_owner_alive(cur: dict | None) -> bool:
         return False
 
 
+LOCK_GUARD_TIMEOUT_S = 30.0
+
+
+def _lock_guard():
+    """1.46 (I0063): OS file lock (registry_io.file_lock: fcntl.flock / msvcrt.locking, released by the OS when a process dies) around the
+    read -> check -> write of RUNNING.lock. Without it two runners starting at the same moment both read "free" and both wrote themselves
+    as the owner (both trained). The owner record stays in RUNNING.lock (readers: panel, training center, API) - unchanged format."""
+    from ..registry_io import file_lock
+    return file_lock(training_dir() / "RUNNING.lock.lck", timeout_s=LOCK_GUARD_TIMEOUT_S)
+
+
 def acquire_lock(run_id: str) -> str | None:
     """Returns None when acquired, otherwise the id of the run in progress."""
     p = lock_path()
-    try:
-        cur = json.loads(p.read_text(encoding="utf-8"))
-        pid = int(cur.get("pid", 0))
-        # 1.46: ANY other live process holds the lock - also for the same run_id (1.45.0 handed the lock of a running run to a second process
-        # resuming the same run: two processes wrote one run folder / state.json)
-        if lock_owner_alive(cur) and (pid != os.getpid() or cur.get("run_id") != run_id):   # re-entrant only for the SAME run in the SAME process
-            return cur.get("run_id")
-    except (OSError, ValueError, TypeError, AttributeError):
-        pass
-    # 1.46: + start time of the owner (the pid alone was taken for a live owner after pid reuse)
-    write_json_atomic(p, {"run_id": run_id, "pid": os.getpid(), "started": _proc_start(os.getpid()), "at": now()})
-    return None
+
+    def locked() -> str | None:
+        try:
+            cur = json.loads(p.read_text(encoding="utf-8"))
+            pid = int(cur.get("pid", 0))
+            # 1.46: ANY other live process holds the lock - also for the same run_id (1.45.0 handed the lock of a running run to a second
+            # process resuming the same run: two processes wrote one run folder / state.json)
+            if lock_owner_alive(cur) and (pid != os.getpid() or cur.get("run_id") != run_id):   # re-entrant only for the SAME run in the SAME process
+                return cur.get("run_id")
+        except (OSError, ValueError, TypeError, AttributeError):
+            pass
+        # 1.46: + start time of the owner (the pid alone was taken for a live owner after pid reuse)
+        write_json_atomic(p, {"run_id": run_id, "pid": os.getpid(), "started": _proc_start(os.getpid()), "at": now()})
+        return None
+    with contextlib.ExitStack() as stack:
+        try:
+            stack.enter_context(_lock_guard())
+        except TimeoutError:                            # Windows: another process is inside the guard for > 30 s
+            return "BLOKADA_TRENINGU_ZAJETA"
+        return locked()
 
 
 def release_lock(run_id: str) -> None:
     p = lock_path()
     try:
-        if json.loads(p.read_text(encoding="utf-8")).get("run_id") == run_id:
-            p.unlink()
-    except (OSError, ValueError):
+        with _lock_guard():                             # 1.46 (I0063): never removes a lock another runner has just written
+            if json.loads(p.read_text(encoding="utf-8")).get("run_id") == run_id:
+                p.unlink()
+    except (OSError, ValueError, TimeoutError):
         pass
 
 
@@ -242,11 +262,13 @@ def free_ram_mb() -> float | None:
 
 
 def ram_budget_mb(plan: dict) -> int:
-    """Memory one training child may use (user setting; default 8 GB). MQ_RAM_BUDGET_MB overrides the profile."""
+    """Memory one training child may use (user setting; default runtimes.DEFAULT_RAM_BUDGET_MB = 8 GB). MQ_RAM_BUDGET_MB overrides the
+    profile."""
+    from ..runtimes import DEFAULT_RAM_BUDGET_MB
     try:
-        return max(512, int(os.environ.get("MQ_RAM_BUDGET_MB") or plan["profile_params"].get("ram_budget_mb") or 8192))
+        return max(512, int(os.environ.get("MQ_RAM_BUDGET_MB") or plan["profile_params"].get("ram_budget_mb") or DEFAULT_RAM_BUDGET_MB))
     except ValueError:
-        return 8192
+        return DEFAULT_RAM_BUDGET_MB
 
 
 def ram_gate(plan: dict, wait_s: float = 180.0, step_s: float = 10.0, sleep=time.sleep) -> tuple[float, str | None]:
@@ -364,7 +386,8 @@ def run_child(run: Run, tid: str, cmd: list[str], env: dict, timeout_s: float, l
         lf.flush()
         env = dict(env, PYTHONPATH=paths.child_pythonpath(cmd[0]))   # 1.42.11: Python bota dostaje biblioteki aplikacji (DESKTOP)
         p = subprocess.Popen(cmd, cwd=str(paths.ROOT_DIR / "backend"), env=env, stdout=lf, stderr=subprocess.STDOUT, **kw)
-        _job_limit(p, int(env.get("MQ_RAM_BUDGET_MB") or 8192))
+        from ..runtimes import DEFAULT_RAM_BUDGET_MB
+        _job_limit(p, int(env.get("MQ_RAM_BUDGET_MB") or DEFAULT_RAM_BUDGET_MB))
         try:
             beat = time.monotonic()
             while p.poll() is None:
@@ -417,12 +440,23 @@ def bot_python() -> str:
     return sys.executable
 
 
-_CANDLES_OK: dict = {}
+_CANDLES_OK: dict = {}     # process cache: interpreter -> import probe result; reset_candles_cache() is the hook (1.46 arch I0104)
+_CANDLES_AT: dict = {}                      # 1.46 (I0074): time of the check per interpreter (max_age_s)
 
 
-def candles_healthy(py: str) -> bool:
-    """The interpreter exists AND its pinned packages import (a half-installed venv is treated as missing)."""
+def reset_candles_cache() -> None:
+    """Forget the import probes (tests; the installer clears it itself after an installation)."""
+    _CANDLES_OK.clear()
+    _CANDLES_AT.clear()
+
+
+def candles_healthy(py: str, max_age_s: float | None = None) -> bool:
+    """The interpreter exists AND its pinned packages import (a half-installed venv is treated as missing). Cached per process;
+    max_age_s re-checks an older result (the training center polls it - an environment installed meanwhile is seen)."""
+    if max_age_s is not None and time.time() - _CANDLES_AT.get(py, 0.0) > max_age_s:
+        _CANDLES_OK.pop(py, None)
     if py not in _CANDLES_OK:
+        _CANDLES_AT[py] = time.time()
         try:
             r = subprocess.run([py, "-c", "import numpy, pandas, sklearn"], capture_output=True, timeout=120)
             _CANDLES_OK[py] = r.returncode == 0
@@ -465,10 +499,6 @@ def ensure_candles(run: "Run") -> tuple[str | None, str | None]:
 
 
 def candles_python() -> str | None:
-    env = os.environ.get("MQ_CANDLES_PYTHON")
-    if env and Path(env).exists():
-        return env
-    for p in (paths.ROOT_DIR / ".venv_candles" / "Scripts" / "python.exe", paths.ROOT_DIR / ".venv_candles" / "bin" / "python"):
-        if p.exists():
-            return str(p)
-    return None
+    # 1.46 arch (I0117): MQ_CANDLES_PYTHON -> .venv_candles (exists), as before
+    from .. import runtimes
+    return runtimes.find_python("candles", check=Path.exists)

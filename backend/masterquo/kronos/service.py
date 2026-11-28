@@ -45,9 +45,13 @@ TARGET_PL = {"RESOURCE_PAUSED": "wstrzymane przez Memory Governor (za mało pami
              "ERROR": "błąd", "MODEL_UNAVAILABLE": "model niedostępny", "DISABLED": "wyłączony"}
 DIR_PL = {"UP": "wzrost", "DOWN": "spadek", "FLAT": "bocznie"}
 USABLE_MAPPING = ("CONFIRMED", "USER_SPECIFIED", "AUTO_DETECTED")
+CAL_TTL_S = 6 * 3600                  # session calendar cache (KronosService._calendar, also borrowed by TsfmService)
 
 
 class KronosService:
+    # w2 (I0095): optional dependency wired by runtime.py after construction - class default (None = absent), read as self.x
+    governor = None
+
     def __init__(self, cfg_store, bridge, db, bus, log_, *, clock=time.time, settings: SettingsStore | None = None):
         self.cfg_store, self.bridge, self.db, self.bus, self.applog, self.clock = cfg_store, bridge, db, bus, log_, clock
         self.settings = settings or SettingsStore()
@@ -68,7 +72,7 @@ class KronosService:
         self.state = {"status": "STARTING", "code": None, "reason": None, "updated_at": None}
         self.counters = {"enqueued": 0, "deduplicated": 0, "dropped_queue_full": 0, "done": 0, "errors": 0, "timeouts": 0, "worker_starts": 0}
         self.last_used = time.monotonic()
-        self._cal: dict[tuple, tuple] = {}
+        self._cal: dict[tuple, dict] = {}
         self._meta: dict[str, tuple] = {}
         self.jobs: dict[str, dict | None] = {"install": None, "verify": None, "validation": None}
         self._job_procs: dict[str, subprocess.Popen] = {}
@@ -108,6 +112,14 @@ class KronosService:
                 "manifest_components": ms.get("components")}
 
     # ================================================================== worker process
+    def register_with(self, governor) -> None:
+        """1.46 arch (I0089/I0102): register the Kronos worker with the Memory Governor (was a lambda on _kill / proc / running /
+        last_used in runtime._wire_governor). Same callables, evaluated lazily; never released while a forecast runs."""
+        import time as _time
+        governor.register("kronos", "light", lambda: self.proc.pid if (self.proc and self.proc.poll() is None) else None,
+                          release=lambda: self.running is None and self._kill(),
+                          idle=lambda: 0.0 if self.running else _time.monotonic() - self.last_used)
+
     def _kill(self) -> None:
         p, self.proc = self.proc, None
         self.load_info, self.load_key = None, None
@@ -151,7 +163,7 @@ class KronosService:
         return (str(self.weights_dir()), s.device, s.max_context, s.cpu_threads)
 
     def _threads_default(self) -> int:
-        gov = getattr(self, "governor", None)
+        gov = self.governor
         if gov is not None:
             return gov.threads_for("kronos")                                     # 1.40: resource profile
         return max(1, min(4, (os.cpu_count() or 2) // 2))
@@ -179,6 +191,8 @@ class KronosService:
         self._set_state("STARTING", STATUS_PL["STARTING"])
         env = dict(os.environ, PYTHONPATH=str(paths.ROOT_DIR / "backend"), PYTHONIOENCODING="utf-8", HF_HUB_OFFLINE="1",
                    HF_HUB_DISABLE_TELEMETRY="1", MASTERQUO_DATA_DIR=str(paths.data_dir()))
+        from ..licensing import edition as _ed
+        _ed.warn_model_test_hooks(self.applog, "KRONOS", env)              # arch 1.46 I0116: information only (env unchanged)
         errlog = open(paths.logs_dir() / "kronos_worker.log", "a", encoding="utf-8")       # library warnings / tracebacks
         try:
             self.proc = subprocess.Popen([py, "-m", "kronos_runtime.worker"], cwd=str(paths.ROOT_DIR / "backend"), env=env, text=True,
@@ -246,20 +260,44 @@ class KronosService:
                 return b
         return self.bridge.symbol_bars(sym, tf, n)
 
+    CAL_UNUSABLE_TTL_S = 300          # arch 1.46 I0854 - Kronos only (TsfmService borrows _calendar without it: 6 h as before)
+
     def _calendar(self, sym: str, tf: str):
+        """Session calendar of (symbol, TF), cached CAL_TTL_S. Arch 1.46 I0854 (KronosService): an UNUSABLE calendar (empty / short
+        history, e.g. right after the terminal connected) is re-read after CAL_UNUSABLE_TTL_S instead of being kept for 6 h. Direction of
+        entries: inside the 6-hour window in which the code before the fix kept the unusable calendar, a usable one re-read early is
+        marked `limited` (its forecasts: information / ASSIST hold only - kronos.predictions) and expires at the end of that window, so
+        from then on the calendars (and forecasts) are exactly those of the code before the fix. TsfmService borrows this method and has
+        no CAL_UNUSABLE_TTL_S: the unusable TTL is CAL_TTL_S there, i.e. exactly the previous behaviour."""
         src = "M5" if tf == "M1" else tf
         key = (sym, tf)
+        now = self.clock()
+        unusable_ttl = float(getattr(self, "CAL_UNUSABLE_TTL_S", CAL_TTL_S))
         hit = self._cal.get(key)
-        if hit and self.clock() - hit[0] < 6 * 3600:
-            return hit[1], hit[2]
+        if hit and now < hit["until"]:
+            return hit["cal"], hit["err"]
+        legacy = hit.get("legacy_until") if hit else None                   # end of the old 6-h cache of an unusable calendar
+        if legacy is not None and now >= legacy:
+            legacy = None
         count = int(min(8100, 28 * 86400 // TF_SECONDS[src]))
         try:
             bars = self.bridge.symbol_bars(sym, src, count)
         except Exception as exc:  # noqa: BLE001
             return None, f"historia do kalendarza sesji niedostępna: {type(exc).__name__}: {exc}"[:200]
         cal = CAL.Calendar([int(b["t_raw"]) for b in bars if b.get("closed")], CAL.slot_seconds(TF_SECONDS[tf]))
-        self._cal[key] = (self.clock(), cal, None)
+        if cal.usable()[0]:
+            self._cal[key] = {"at": now, "cal": cal, "err": None, "until": legacy if legacy is not None else now + CAL_TTL_S,
+                              "legacy_until": legacy, "limited": legacy is not None}
+        else:
+            lu = legacy if legacy is not None else now + CAL_TTL_S
+            self._cal[key] = {"at": now, "cal": cal, "err": None, "until": min(now + unusable_ttl, lu), "legacy_until": lu,
+                              "limited": False}
         return cal, None
+
+    def _calendar_limited(self, sym: str, tf: str) -> bool:
+        """True while the cached calendar of (symbol, TF) is a usable one re-read inside the old 6-hour window (see _calendar)."""
+        hit = self._cal.get((sym, tf))
+        return bool(hit and hit.get("limited") and self.clock() < hit["until"])
 
     def _point(self, sym: str) -> tuple[float | None, int | None]:
         hit = self._meta.get(sym)
@@ -366,7 +404,7 @@ class KronosService:
                 t.update(state="READY", reason=None)
             return
         self.enqueue({"instrument": inst, "timeframe": tf, "symbol": sym, "bar_key": bar_key, "bars": q["bars"], "quality": t["quality"],
-                      "calendar": cal, "force": force, "enqueued_at": now})
+                      "calendar": cal, "calendar_limited": self._calendar_limited(sym, tf), "force": force, "enqueued_at": now})
         t.update(state="QUEUED", reason=None)
 
     def enqueue(self, job: dict) -> bool:
@@ -415,7 +453,7 @@ class KronosService:
     def run_job(self, job: dict) -> dict | None:
         k = (job["instrument"], job["timeframe"])
         t = self._target(k)
-        gov = getattr(self, "governor", None)
+        gov = self.governor
         if gov is not None:
             essential = any(v.use in ("ASSIST", "REQUIRED") for v in self.settings.get().strategy_use.values())   # 1.42.6: Kronos w decyzjach
             ok, why = gov.admit("kronos", loaded=bool(self.proc and self.proc.poll() is None and self.load_info), essential=essential)
@@ -442,7 +480,7 @@ class KronosService:
         last = bars[-1]
         last_raw = int(last["t_raw"])
         off = last_raw - int(parse_iso(last["open_utc"]).timestamp())           # server offset of these bars (s)
-        y_raw, cinfo = job["calendar"].future(last_raw, tf_sec, H)
+        y_raw, cinfo = job["calendar"].future(last_raw, tf_sec, H, resolve_first_day=True)       # arch 1.46 I0853 (decision_limited)
         if y_raw is None:
             t.update(state=cinfo["status"], reason=cinfo["reason"], last_key=job["bar_key"])
             return None
@@ -475,7 +513,7 @@ class KronosService:
             return None
         fc = self._forecast(job, r, y_raw, off, H, s, cinfo)
         self.last_used = time.monotonic()
-        if getattr(self, "governor", None) is not None:
+        if self.governor is not None:
             self.governor.record("kronos", ms=r.get("ms"))
         self.latest[k] = fc
         self.context_tail[k] = [{"t": b["open_utc"], "o": b["o"], "h": b["h"], "l": b["l"], "c": b["c"]} for b in bars[-120:]]
@@ -511,13 +549,14 @@ class KronosService:
                           "v": (p.get("volume") or [None] * len(y_raw))[i]})
         kind, kind_pl = self.data_kind()
         comps = {c["kind"]: c for c in (self.load_info or {}).get("components") or []}
-        return {"id": uuid.uuid4().hex[:16], "instrument": job["instrument"], "symbol": job["symbol"], "timeframe": tf, "horizon_bars": H,
+        return {"id": uuid.uuid4().hex[:16], "decision_limited": decision_limited(r, job, cinfo), "instrument": job["instrument"], "symbol": job["symbol"], "timeframe": tf, "horizon_bars": H,
                 "created_at": iso(utcnow()), "last_bar_open_utc": last["open_utc"],
                 "last_bar_close_utc": iso(datetime.fromtimestamp(parse_iso(last["open_utc"]).timestamp() + TF_SECONDS[tf], tz=timezone.utc)),
                 "last_close": last_close, "pred": steps, "pred_close_h": pc, "delta_price": delta,
                 "delta_pct": (delta / last_close * 100.0) if last_close else None, "direction": direction, "direction_pl": DIR_PL[direction],
                 "neutral_band": band, "band_rule": f"bocznie, gdy |zmiana| ≤ max({s.direction_band_atr} × ATR14({tf}), {s.direction_band_min_points} × point)",
-                "atr14": a, "point": pt, "digits": digits, "uncertainty": r.get("paths"), "device": r.get("device"), "device_note": r.get("device_note"),
+                "atr14": a, "point": pt, "digits": digits, "uncertainty": r.get("paths"), "paths_error": r.get("paths_error"),
+                "device": r.get("device"), "device_note": r.get("device_note"),
                 "compute_ms": r.get("ms"), "seed": r.get("seed"), "sampling": r.get("sampling"), "context_bars": r.get("context_bars"),
                 "model": comps.get("model"), "tokenizer": comps.get("tokenizer"), "runtime": (self.worker_info or {}).get("runtime"),
                 "model_name": (self.load_info or {}).get("model_name"), "params": (self.load_info or {}).get("params_model"),
@@ -600,22 +639,30 @@ class KronosService:
         return rows
 
     def scorecard(self, inst: str, tf: str) -> dict:
-        """Live SHADOW comparison with the actual move - only settled rows from real (non-synthetic) data count; synthetic separately."""
+        """Live SHADOW comparison with the actual move - only settled rows from real (non-synthetic) data count; synthetic separately.
+        Arch 1.46 I0035: only forecasts of the CURRENT horizon H of this timeframe (settings) - after a change of H the errors of
+        different horizons were averaged; rows of other horizons are only counted (other_horizons). Display only (no gate reads it)."""
         out = {}
+        H = scorecard_horizon(self.settings.get(), tf)
+        hsql, harg = (" AND horizon_bars=?", (H,)) if H else ("", ())
         for label, kinds in (("REAL", ("MT5", "MT5_DEMO", "MT5_REAL")), ("SYNTHETIC", ("SYNTHETIC",))):
             ph = ",".join("?" * len(kinds))
-            rows = self.db.query(f"SELECT * FROM kronos_forecasts WHERE instrument=? AND timeframe=? AND outcome_status='SETTLED' AND data_kind IN ({ph}) "
-                                 "ORDER BY id DESC LIMIT 5000", (inst, tf, *kinds))
+            rows = self.db.query(f"SELECT * FROM kronos_forecasts WHERE instrument=? AND timeframe=? AND outcome_status='SETTLED' AND data_kind IN ({ph})"
+                                 f"{hsql} ORDER BY id DESC LIMIT 5000", (inst, tf, *kinds, *harg))
             pend = self.db.one(f"SELECT COUNT(*) AS n FROM kronos_forecasts WHERE instrument=? AND timeframe=? AND outcome_status='PENDING' "
-                               f"AND data_kind IN ({ph})", (inst, tf, *kinds))["n"]
+                               f"AND data_kind IN ({ph}){hsql}", (inst, tf, *kinds, *harg))["n"]
+            other = {str(r["horizon_bars"]): r["n"] for r in self.db.query(
+                f"SELECT horizon_bars, COUNT(*) AS n FROM kronos_forecasts WHERE instrument=? AND timeframe=? AND outcome_status='SETTLED' "
+                f"AND data_kind IN ({ph}) AND horizon_bars<>? GROUP BY horizon_bars", (inst, tf, *kinds, H or -1))}
             if not rows:
-                out[label] = {"settled": 0, "pending": pend}
+                out[label] = {"settled": 0, "pending": pend, "horizon_bars": H, "other_horizons": other}
                 continue
             rows = rows[::-1]
-            h = rows[0]["horizon_bars"] or 1
+            h = H or rows[0]["horizon_bars"] or 1
             nonover = rows[::h]                                                 # every H-th forecast: horizons do not overlap
             hits = [r["direction_hit"] for r in rows if r["direction_hit"] is not None]
-            out[label] = {"settled": len(rows), "pending": pend, "mae_h": _mean(r["abs_err_h"] for r in rows),
+            out[label] = {"settled": len(rows), "pending": pend, "horizon_bars": H, "other_horizons": other,
+                          "mae_h": _mean(r["abs_err_h"] for r in rows),
                           "naive_mae_h": _mean(r["naive_abs_err_h"] for r in rows), "direction_evaluated": len(hits),
                           "direction_hit_rate": (sum(hits) / len(hits)) if hits else None,
                           "non_overlapping": {"n": len(nonover), "mae_h": _mean(r["abs_err_h"] for r in nonover),
@@ -827,6 +874,8 @@ class KronosService:
         for i, r in reps.items():                    # 1.33: the approval must match the CURRENT symbol / horizon / settings / weights
             d = V.binding_diff(r.get("binding"), V.binding(self, i, tf))
             k = ((r.get("dev") or {}).get("chosen_band_k"))
+            # arch 1.46 I0786: new reports bind the validated band k itself (validation.run), so setting it satisfies both checks; this
+            # explicit check stays for reports from before the fix (their binding holds the settings band of the validation time)
             if k is not None and abs(float(k) - float(s.direction_band_atr)) > 1e-9:
                 d.append(f"pasmo neutralne: zwalidowano k={k}, w ustawieniach {s.direction_band_atr} – ustaw zwalidowane pasmo albo powtórz walidację")
             if d:
@@ -842,3 +891,42 @@ class KronosService:
 def _mean(it) -> float | None:
     xs = [float(x) for x in it if x is not None]
     return sum(xs) / len(xs) if xs else None
+
+
+def scorecard_horizon(settings, tf: str) -> int | None:
+    """Current horizon H (bars) of `tf` from the Kronos / TSFM settings (both have horizon_bars per TF); None = unknown (no filter)."""
+    try:
+        h = int((settings.horizon_bars or {}).get(tf) or 0)
+    except (AttributeError, TypeError, ValueError):
+        return None
+    return h if h > 0 else None
+
+
+LIMITED_PL = {
+    "GPU_FALLBACK_CPU": "prognoza po awaryjnym przejściu GPU → CPU (przed poprawką arch 1.46 każda kolejna prognoza była błędem do restartu "
+                        "procesu modelu)",
+    "PATHS_GPU_ERROR": "prognoza bez pasma ścieżek po błędzie GPU w bloku ścieżek (przed poprawką arch 1.46 cała prognoza była błędem)",
+    "CALENDAR_LEGACY_WINDOW": "kalendarz sesji pobrany ponownie po krótkiej historii (przed poprawką arch 1.46 nieużywalny kalendarz był "
+                              "trzymany 6 h i prognoza była niedostępna)",
+    "CALENDAR_FIRST_DAY": "slot sesji rozstrzygnięty bez pierwszego, niepełnego dnia historii (przed poprawką arch 1.46 slot był "
+                          "niepewny i prognoza niedostępna)",
+}
+
+
+def decision_limited(r: dict, job: dict, cinfo: dict | None) -> dict | None:
+    """Arch 1.46 (fala 2, kierunek wejść): a forecast the code before the fixes I0193 / I0854 / I0853 would NOT have produced. It is
+    stored, shown and may HOLD an ASSIST setup (READY -> WAIT on a contrary forecast); the REQUIRED condition, the PMW-PRED-1 record
+    (Quant features, coordinator) and the OBSERVE context see it as unavailable - exactly as before the fixes. None = a normal forecast."""
+    codes = []
+    if str(r.get("device_note") or "").startswith("GPU_ERROR_FALLBACK_CPU"):
+        codes.append("GPU_FALLBACK_CPU")
+    if r.get("paths_error"):
+        codes.append("PATHS_GPU_ERROR")
+    if job.get("calendar_limited"):
+        codes.append("CALENDAR_LEGACY_WINDOW")
+    if (cinfo or {}).get("first_day_resolved"):
+        codes.append("CALENDAR_FIRST_DAY")
+    if not codes:
+        return None
+    return {"codes": codes, "reason": "; ".join(LIMITED_PL[c] for c in codes) + " – tylko informacja i wstrzymanie ASSIST, "
+                                                                                  "nie potwierdza warunku REQUIRED"}

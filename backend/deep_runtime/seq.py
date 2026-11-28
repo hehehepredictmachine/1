@@ -101,13 +101,30 @@ def train(req):
             "sample_p": sp.tolist(), "device": "cpu", "torch": torch.__version__}
 
 
+_NETS: dict = {}                     # 1.46 (I0215): loaded networks of the persistent worker, keyed by dir + (mtime_ns, size) of both files
+
+
+def _load(d: Path):
+    import torch
+    files = (d / "seq_config.json", d / "model.pt")
+    key = tuple((st.st_mtime_ns, st.st_size) for st in (f.stat() for f in files))
+    hit = _NETS.get(str(d))
+    if hit is not None and hit[0] == key:
+        return hit[1], hit[2]
+    conf = json.loads(files[0].read_text(encoding="utf-8"))
+    net = _net(conf["arch"], conf["n_feat"], conf["hidden"], conf["layers"], conf["dropout"])
+    net.load_state_dict(torch.load(files[1], map_location="cpu", weights_only=True))
+    net.eval()
+    _NETS.pop(str(d), None)
+    _NETS[str(d)] = (key, conf, net)                 # a changed file (new mtime / size) is loaded again - never a stale network
+    while len(_NETS) > 8:
+        _NETS.pop(next(iter(_NETS)))
+    return conf, net
+
+
 def predict(req):
     import torch
-    d = Path(req["dir"])
-    conf = json.loads((d / "seq_config.json").read_text(encoding="utf-8"))
-    net = _net(conf["arch"], conf["n_feat"], conf["hidden"], conf["layers"], conf["dropout"])
-    net.load_state_dict(torch.load(d / "model.pt", map_location="cpu", weights_only=True))
-    net.eval()
+    conf, net = _load(Path(req["dir"]))
     X = np.load(req["x_path"]).astype(np.float32)
     with torch.no_grad():
         l = net(torch.from_numpy(X)).numpy()

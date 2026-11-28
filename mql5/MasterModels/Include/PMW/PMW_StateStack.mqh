@@ -48,7 +48,9 @@ public:
       if(ctx == INVALID_HANDLE) return false;
       string log;
       prg = CLProgramCreate(ctx, PMW_STACK_CL, log);
-      if(prg == INVALID_HANDLE) { Print("PMW stack CL build: ", log); CLContextFree(ctx); return false; }
+      // 1.46 arch (I0509): Free() releases AND resets every handle - a bare CLContextFree(ctx) left ctx set, so the destructor's
+      // Free() released the same context a second time
+      if(prg == INVALID_HANDLE) { Print("PMW stack CL build: ", log); Free(); return false; }
       kpush = CLKernelCreate(prg, "stack_push"); kcorr = CLKernelCreate(prg, "stack_corr");
       for(int k = 0; k < 2; k++) { bbuf[k] = CLBufferCreate(ctx, S * D * sizeof(float), CL_MEM_READ_WRITE); bval[k] = CLBufferCreate(ctx, S * sizeof(int), CL_MEM_READ_WRITE); }
       bdesc = CLBufferCreate(ctx, D * sizeof(float), CL_MEM_READ_WRITE);

@@ -45,13 +45,17 @@ def mr_transform(mr: MR.MiniRocketV2, data: dict, bars: np.ndarray, tick: float,
         if len(bars) else np.zeros((0, mr.lay["F"]), np.float32)
 
 
+def mr_fit_rows(fit: np.ndarray, prof: dict) -> tuple[np.ndarray, str | None]:
+    """FIT rows MiniRocket really trains on: the last `mr_max_fit_rows` of the FIT block (profile budget, stated in a note)."""
+    cap = prof.get("mr_max_fit_rows")
+    if cap and len(fit) > cap:
+        return fit[-cap:], f"budżet profilu: Fit na ostatnich {cap} z {len(fit)} wierszy FIT (jawnie zapisany)"
+    return fit, None
+
+
 def fit_minirocket(data: dict, bars: np.ndarray, Y: np.ndarray, R: np.ndarray, blocks: dict, prof: dict, seed: int, tick: float):
     fit, tune, cal = blocks["FIT"], blocks["TUNE"], blocks["CALIBRATION"]
-    cap = prof.get("mr_max_fit_rows")
-    note = None
-    if cap and len(fit) > cap:
-        note = f"budżet profilu: Fit na ostatnich {cap} z {len(fit)} wierszy FIT (jawnie zapisany)"
-        fit = fit[-cap:]
+    fit, note = mr_fit_rows(fit, prof)
     mr = MR.MiniRocketV2().configure(128, int(prof.get("mr_requested", 10000)), 32)
     mr.fit(mr_windows(data, bars[fit], tick), seed=seed)
     rows = np.concatenate([fit, tune])
@@ -257,10 +261,15 @@ def predict_spike(model, inst: str, data: dict, bars: np.ndarray):
 def save_spike(d: Path, model) -> dict:
     _, net, enc_cfg, encoder = model
     man = net.save(d / "net")
-    return {"net": man, "encoder": encoder, "encoder_cfg": enc_cfg}
+    return {"net": man, "encoder": encoder, "encoder_cfg": enc_cfg, "encoder_version": SB.ENCODER_VERSION}
 
 
 def load_spike(d: Path, meta: dict):
+    ev = (meta.get("sb") or {}).get("encoder_version")
+    if ev != SB.ENCODER_VERSION:
+        # 1.46: tokens of another encoder version would be fed silently (polarity fix 1.1.0) - SHADOW / research family, never a gate
+        raise ValueError(f"INCOMPATIBLE_ARTIFACT: encoder_version={ev or 'MQ-SPIKE-ENC-1.0.0 (brak)'} (oczekiwano {SB.ENCODER_VERSION}) – "
+                         "przetrenuj MQ_SPIKE_BRAIN_FINANCE_V1")
     net = SB.SpikeBrain.load(d / "net", {"architecture_id": SB.ARCH_ID})
     sb = meta.get("sb") or {}
     return ("SB", net, sb.get("encoder_cfg") or {}, sb.get("encoder", "BAR_EVENT_V1"))

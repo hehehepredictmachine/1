@@ -65,6 +65,52 @@ def vol_axis(atr_rel: np.ndarray, i: int, window: int = 200, min_obs: int = 100,
 
 
 # ===================================================================== R23 Market Behavior
+class _AbsList:
+    """Absolute-index list after MarketBehavior.trim: the oldest `off` items are dropped while len() and indices stay absolute. Reading a
+    dropped position raises IndexError - a trimmed instance never silently reads another bar's value."""
+    __slots__ = ("off", "v")
+
+    def __init__(self, v, off: int = 0):
+        self.v, self.off = list(v), off
+
+    def __len__(self) -> int:
+        return self.off + len(self.v)
+
+    def __iter__(self):
+        raise TypeError("ABSOLUTE_LIST_NOT_ITERABLE: historia przycięta (MarketBehavior.trim)")
+
+    def append(self, x) -> None:
+        self.v.append(x)
+
+    def retained(self) -> int:
+        return len(self.v)
+
+    def __getitem__(self, k):
+        n = self.off + len(self.v)
+        if isinstance(k, slice):
+            a, b, st = k.indices(n)
+            if st != 1:
+                raise ValueError("STEP_UNSUPPORTED")
+            if b <= a:
+                return []
+            if a < self.off:
+                raise IndexError(f"TRIMMED_INDEX:{a}<{self.off}")
+            return self.v[a - self.off:b - self.off]
+        if k < 0:
+            k += n
+        if k < self.off or k >= n:
+            raise IndexError(f"TRIMMED_INDEX:{k}")
+        return self.v[k - self.off]
+
+    def drop_before(self, k: int) -> int:
+        d = k - self.off
+        if d <= 0:
+            return 0
+        del self.v[:d]
+        self.off = k
+        return d
+
+
 def _ts(x) -> float:
     from datetime import datetime
     return x if isinstance(x, (int, float)) else datetime.fromisoformat(str(x).replace("Z", "+00:00")).timestamp()
@@ -248,6 +294,46 @@ class MarketBehavior:
         self.legs[lid] = leg
         self.anchors_leg_ids.append(lid)
         self._ev("LEG_FINAL", i, leg_id=lid, role=final_role)
+
+    # ---------------------------------------------------------------- bounded memory (1.46)
+    def retained_bars(self) -> int:
+        return self.c.retained() if isinstance(self.c, _AbsList) else len(self.c)
+
+    def trim(self, keep_bars: int = 1000) -> int:
+        """1.46: bounded memory for long-lived incremental use (sh.context.IncRegime fed bar by bar until the next epoch). Drops the bars
+        older than the last `keep_bars` and every record that no later update() / bias_at() / story() can reach; indices stay absolute.
+        Every later update, bias_at(i) for i >= the oldest reachable index (bias before the next final leg) and story() are IDENTICAL to an
+        untrimmed instance (requires strictly increasing bar times - swing ids are keyed by the bar time). snapshot() / swing_asof() then
+        see only the kept history. Returns the number of dropped bars."""
+        keep = max(int(keep_bars), self.L + self.R + 16)           # pivot window (L + R + 1) and ATR14 (15 closes) of the next bars
+        n = len(self.c)
+        cut = n - keep
+        if cut <= 0:
+            return 0
+        dropped = 0
+        for name in ("h", "lo", "c", "t", "atr"):
+            lst = getattr(self, name)
+            if not isinstance(lst, _AbsList):
+                lst = _AbsList(lst)
+                setattr(self, name, lst)
+            dropped = lst.drop_before(cut)
+        # sealed anchors alternate H / L: the last four hold the latest anchor of each kind (labels, bias) and the ends of the next leg
+        self.anchors = self.anchors[-4:]
+        self.anchors_leg_ids = self.anchors_leg_ids[-4:]            # the next final leg reads only the last one (relative size, retrace)
+        self.legs = {k: self.legs[k] for k in self.anchors_leg_ids}
+        need = set(self.anchors) | {self.tail} | set(self.last_accepted.values()) | set(self.last_same_kind_anchor.values())
+        for lg in self.legs.values():
+            need |= {lg["from_id"], lg["to_id"]}
+        self.swings = {k: v for k, v in self.swings.items() if k in need or v["origin_index"] >= cut}
+        # the oldest bias query still possible: bias_before of the next final leg = bias_at(known_index - 1) of the current last anchor
+        # or of the tail (anything newer is known later); keep the last entry at or before it and everything after
+        refs = [self.swings[x]["known_index"] for x in self.anchors[-1:] + ([self.tail] if self.tail else [])]
+        lo = min([*refs, n - 1]) - 1
+        k = max((j for j, (ix, _) in enumerate(self.bias_hist) if ix <= lo), default=0)
+        if k:
+            self.bias_hist = self.bias_hist[k:]
+        self.events = self.events[-500:]
+        return dropped
 
     # ---------------------------------------------------------------- queries (as-of)
     def provisional_tail(self) -> dict | None:

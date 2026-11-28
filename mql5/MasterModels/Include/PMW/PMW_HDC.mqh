@@ -6,8 +6,11 @@
 //| rotation of the FULL D-bit string, hamming over D bits, signed    |
 //| similarity 1-2H/D, integer class accumulators (online update ==   |
 //| rebuild when corrections are off). Codebooks are not generated   |
-//| here: they are loaded from the artifact / fixture (the Python     |
-//| PCG64 stream is not reproduced in MQL5).                          |
+//| here (the Python PCG64 stream is not reproduced in MQL5): the     |
+//| self-test PMW_MM_SelfTest loads its vectors from the fixture CSV  |
+//| mm_ref_hdc.csv. There is NO MQL5 reader of the hdc_dir3 artefact  |
+//| (state.npz) - a native HDC model cannot be served from it; only   |
+//| the primitives are ported (1.46 arch I0390).                      |
 //+------------------------------------------------------------------+
 #ifndef PMW_HDC_MQH
 #define PMW_HDC_MQH

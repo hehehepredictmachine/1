@@ -20,6 +20,7 @@ import hashlib
 import json
 import math
 import os
+import threading
 import time
 import uuid
 from datetime import datetime, timezone
@@ -701,6 +702,7 @@ def rollback(inst: str) -> dict | None:
 
 
 _cache: dict = {}
+_cache_lock = threading.Lock()
 
 
 def selected_bundle(inst: str) -> tuple[NSSBundle | None, dict | None]:
@@ -714,7 +716,13 @@ def selected_bundle(inst: str) -> tuple[NSSBundle | None, dict | None]:
     if not sel:
         return None, None
     key = (inst, sel["model_hash"], mt)
-    if key not in _cache:
+    # 1.46: one-entry cache read and replaced under a lock and the LOCAL bundle returned - the nss-worker thread and the API thread
+    # (nss_service) both call this; a clear() from the other thread between the store and `return _cache[key]` raised KeyError
+    # (HTTP 500 / no nss_inferences row). Same fix as ml/scalp_task._cache_lock.
+    with _cache_lock:
+        b = _cache.get(key)
+        if b is not None:
+            return b, sel
         # 1.46: a missing / moved / damaged artefact of the selected run is reported (ARTIFACT_UNAVAILABLE, no active gate) instead of
         # raising out of public() (HTTP 500) and _candidate() (no nss_inferences row). run_dir is an ABSOLUTE path written on the machine
         # that trained the run; when it is gone the same run under THIS data folder is tried (read-only, hash-checked, no migration).
@@ -730,7 +738,7 @@ def selected_bundle(inst: str) -> tuple[NSSBundle | None, dict | None]:
                               registered_gated_sides=sel.get("gated_sides") or [])
         _cache.clear()
         _cache[key] = b
-    return _cache[key], sel
+    return b, sel
 
 
 def static_architecture(inst: str | None = None) -> dict:

@@ -24,7 +24,14 @@ CREATE INDEX IF NOT EXISTS rows_task ON rows(instrument, task_hash, status);
 CREATE TABLE IF NOT EXISTS assessments(
   assessment_id TEXT PRIMARY KEY, row_id TEXT, created_at REAL, mode TEXT, engine TEXT, strategy TEXT, direction TEXT, payload_json TEXT);
 CREATE INDEX IF NOT EXISTS ass_recent ON assessments(created_at);
+CREATE TABLE IF NOT EXISTS confidence_scores(
+  plan_hash TEXT PRIMARY KEY, task_hash TEXT, event_key TEXT, instrument TEXT, decision_ts REAL, strategy TEXT, engine TEXT,
+  p_event_raw REAL, calibration_status TEXT, estimator_kind TEXT, context_id TEXT, context_n INTEGER, feature_schema TEXT,
+  model_fingerprint TEXT, computed_at REAL);
+CREATE INDEX IF NOT EXISTS conf_recent ON confidence_scores(computed_at);
 """
+CONFIDENCE_FIELDS = ("plan_hash", "task_hash", "event_key", "instrument", "decision_ts", "strategy", "engine", "p_event_raw",
+                     "calibration_status", "estimator_kind", "context_id", "context_n", "feature_schema", "model_fingerprint", "computed_at")
 
 
 class QuantLedger:
@@ -106,6 +113,20 @@ class QuantLedger:
                             json.dumps(a, default=str)))
             self.c.execute("DELETE FROM assessments WHERE created_at < ?", (time.time() - 30 * 86400,))
             self.c.commit()
+
+    def add_confidence(self, r: dict) -> None:
+        """1.46 arch (I0536): a READY TabICLv2 result lived only in RAM (TabICLService.results, newest 500) and the ledger kept the assessment
+        as it was at submit time (state QUEUED) - no durable p_event_raw for a later calibration check. One row per plan_hash (the newest
+        scoring wins); additive table, nothing is ever deleted from it. Join with rows via spec_json -> plan_hash."""
+        with self._lock:
+            self.c.execute(f"INSERT OR REPLACE INTO confidence_scores({', '.join(CONFIDENCE_FIELDS)}) VALUES ({', '.join('?' * len(CONFIDENCE_FIELDS))})",
+                           tuple(r.get(k) for k in CONFIDENCE_FIELDS))
+            self.c.commit()
+
+    def confidences(self, limit: int = 50, instrument: str | None = None) -> list[dict]:
+        q = "SELECT * FROM confidence_scores" + (" WHERE instrument=?" if instrument else "") + " ORDER BY computed_at DESC LIMIT ?"
+        with self._lock:
+            return [dict(x) for x in self.c.execute(q, (instrument, int(limit)) if instrument else (int(limit),)).fetchall()]
 
     def assessments(self, limit: int = 50, instrument: str | None = None) -> list[dict]:
         """instrument: only assessments whose ledger row is of that instrument (1.46 arch I0040; the payload has no instrument);

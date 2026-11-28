@@ -46,7 +46,7 @@ class BATEncoder:
         g = lambda *s: rng.normal(0, 1 / np.sqrt(s[0]), s)  # noqa: E731
         self.W_in = g(channels, hidden)
         self.W_scale = [g(hidden, hidden) for _ in scales]
-        self.warp = rng.normal(0, 0.1, len(windows))              # learned multi-window warp logits (softmax weights)
+        self.warp = rng.normal(0, 0.1, len(windows))              # multi-window warp logits (softmax weights) - random init (untrained)
         self.W_motion = g(len(windows) * 2, hidden)
         self.Wq, self.Wk, self.Wv = g(hidden, hidden), g(hidden, hidden), g(hidden, hidden)
         self.W_gate = g(hidden, hidden)

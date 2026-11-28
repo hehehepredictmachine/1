@@ -24,6 +24,11 @@ from . import adapters, hedge as hedge_mod, indicators as ind, replay, sessions,
 TFS = {"M1": 1, "M5": 5, "M15": 15, "M30": 30, "H1": 60}
 
 
+# w2 (I0031): the outcome definition of scalp_shadow rows (_outcome / replay.walk on M1, net of costs, full TP1/TP2/BE cycle) - the same
+# label ML scalp samples and NSS reuse; shown in the views next to the other ledgers' policies, never stored
+LABEL_POLICY = "SCALP_REPLAY_NET_V1"
+
+
 class ScalpService:
     def __init__(self, cfg_store, bridge, db, bus, log, news=None, forecast=None):
         self.cfg_store, self.bridge, self.db, self.bus, self.log, self.news, self.forecast = cfg_store, bridge, db, bus, log, news, forecast
@@ -422,14 +427,27 @@ class ScalpService:
         except Exception as exc:  # noqa: BLE001 - observation only
             return {"status": "ERROR", "reason": f"{type(exc).__name__}: {exc}"[:200]}
 
+    def _worker_down(self) -> dict | None:
+        """The analytics worker (.venv_candles) is not running -> the exact reason (disabled candle forecasts, missing environment, first
+        start, restart after an error). 1.46 (I0615): the same condition as before (no service or no process = UNAVAILABLE) - only the
+        reason is precise; the worker is NOT started from here (that would add an input of the Quant MetaModel = a possible new entry)."""
+        if not self.forecast:
+            return {"code": "NO_FORECAST_SERVICE", "reason": "proces analityki (.venv_candles) nie działa – brak usługi prognoz"}
+        if self.forecast.proc:
+            return None
+        fn = getattr(self.forecast, "worker_unavailable", None)
+        why = fn() if callable(fn) else None
+        return why or {"code": "WORKER_NOT_RUNNING", "reason": "proces analityki (.venv_candles) nie działa"}
+
     def setup_quality(self, plan: dict) -> dict:
         """Task-B model (P(TP1 before SL)) for this setup through the analytics worker - only when a compatible model is active."""
         reg = self.registry()
         act = (reg.get("runs") or {}).get(reg.get("active") or "", {})
         if not act.get("setup_model"):
             return {"status": "UNAVAILABLE", "reason": "brak aktywnego modelu jakości setupu (zadanie B) – trening na danych rzeczywistych", "pass": False}
-        if not self.forecast or not self.forecast.proc:
-            return {"status": "UNAVAILABLE", "reason": "proces analityki (.venv_candles) nie działa", "pass": False}
+        why = self._worker_down()
+        if why:
+            return {"status": "UNAVAILABLE", "reason": why["reason"], "reason_code": why["code"], "pass": False}
         try:
             return self.forecast._ask({"cmd": "setup_quality", "features": plan.get("features") or {}, **self._feed_contract()}, 10)
         except Exception as exc:
@@ -451,6 +469,7 @@ class ScalpService:
             for k in ("reasons", "plan", "gates", "hedge", "outcome"):
                 if r.get(k):
                     r[k] = json.loads(r[k])
+            r["label_policy"] = LABEL_POLICY          # w2 (I0031): view field only (the stored row is unchanged)
         return rows
 
     def summary(self) -> dict:
@@ -502,8 +521,9 @@ class ScalpService:
         if not reg.get("active"):
             return {"status": "UNAVAILABLE", "reason": "NO_MODEL – brak wytrenowanego modelu zadania A (1/3/5 min); trening: 17_TRENING_SCALP_ML.bat",
                     "trade_assessment": {"status": "UNAVAILABLE", "reason": "model B (jakość setupu) – brak danych z replayu na rzeczywistej historii"}}
-        if not self.forecast or not self.forecast.proc:
-            return {"status": "UNAVAILABLE", "reason": "proces analityki (.venv_candles) nie działa"}
+        why = self._worker_down()
+        if why:
+            return {"status": "UNAVAILABLE", "reason": why["reason"], "reason_code": why["code"]}
         try:
             m1 = self.bridge.bars("M1", 400, include_forming=False)
             pt = float((self.bridge.symbol_info or {}).get("point") or 0.01)
@@ -511,12 +531,17 @@ class ScalpService:
                                                         spread_price=b["spread"] * pt if b.get("spread") is not None else None) for b in m1],
                    **self._feed_contract()}
             # 1.46 arch I0621: ScalpService.tick and Quant scalp_a asked the worker twice per closed M1 with the same request - one answer
-            # per (active run, registry file version, exact request: bars / revision / symbol / tick); a worker failure is never cached
+            # per (active run, registry file version, exact request: bars / revision / symbol / tick); a worker failure is never cached.
+            # 1.46 (I0754): as_of of the request - the worker answers STALE_DATA when the newest closed M1 is older than the feed allows
+            # (a frozen feed after a disconnect was published as the current task-A forecast). as_of is not in the cache key: a cached answer
+            # is reused only while the newest M1 closed at most FORECAST_CACHE_FRESH_S ago (below the worker's STALE limit, before the next M1 could
+            # have closed); later the worker is asked again with the current as_of, so a frozen feed still turns into STALE_DATA.
+            now = utcnow()
             key = (reg.get("active"), self._registry_sig(), hashlib.sha256(json.dumps(req, sort_keys=True, default=str).encode()).hexdigest())
             hit = getattr(self, "_fc_cache", None)
-            if hit is not None and hit[0] == key:
+            if hit is not None and hit[0] == key and self._fresh_for_cache(m1, now.timestamp()):
                 return copy.deepcopy(hit[1])
-            ans = self.forecast._ask(req, 20)
+            ans = self.forecast._ask({**req, "as_of": iso(now)}, 20)
             self._fc_cache = (key, copy.deepcopy(ans))
             return ans
         except Exception as exc:
@@ -542,6 +567,17 @@ class ScalpService:
             return json.loads(p.read_text(encoding="utf-8"))
         except (OSError, ValueError):
             return {"active": None, "runs": {}}
+
+    FORECAST_CACHE_FRESH_S = 60.0         # I0621 + I0754: newest closed M1 at most this old -> the cached task-A answer is still current
+
+    @classmethod
+    def _fresh_for_cache(cls, m1: list, now_ts: float) -> bool:
+        """True while the newest closed M1 (open + 60 s = its close) closed at most FORECAST_CACHE_FRESH_S before now_ts - the next M1
+        cannot have closed yet and the worker's STALE_DATA limit (90 s) is not reached, so its answer for the same request is unchanged."""
+        try:
+            return bool(m1) and now_ts - (st.ts(m1[-1]["open_utc"]) + 60) <= cls.FORECAST_CACHE_FRESH_S
+        except (KeyError, TypeError, ValueError):
+            return False
 
     def _registry_sig(self):
         """mtime_ns of registry.json (activation / rollback / retraining changes it) - part of the forecast cache key; None if unknown."""

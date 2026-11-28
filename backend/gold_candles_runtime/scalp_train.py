@@ -27,7 +27,7 @@ from pathlib import Path
 
 import numpy as np
 
-from .common import RunLog, code_fingerprint, instrument, sha256_file, use_instrument, versions, write_json_atomic
+from .common import RunLog, auto_admissible, code_fingerprint, instrument, sha256_file, use_instrument, versions, write_json_atomic
 from . import scalp_features as SF
 from .scalp_infer import ScalpModel, activatable, calib_to_json, lr_to_json, mlp_to_json, read_registry, registry_path, scalp_dir
 
@@ -102,12 +102,31 @@ def load(hist: Path, data_kind: str) -> dict:
     return {"meta": meta, "t": t, "o": o, "h": h, "l": lo, "c": c, "tv": tv, "sp": sp, "files": files, "dataset_sha": sha, "hist": str(hist)}
 
 
+def _small_boundaries(t: list[int], cal: int, hold: int) -> tuple[int, int]:
+    """1.46 (I0623), --small-test only: the calendar split 60/20/20 cut at 00:00 UTC can leave a period without bars when it falls on a
+    weekend (synth.m1_bars(8): calibration = Sat + Sun -> every horizon INSUFFICIENT_DATA). Kept when every period has bars (unchanged
+    plan); otherwise the 60 % / 80 % quantiles of the bar times, floored to midnight when that still leaves bars in every period."""
+    ts = sorted(t)
+
+    def filled(c: int, h: int) -> bool:
+        return any(x < c for x in ts) and any(c <= x < h for x in ts) and any(x >= h for x in ts)
+    if filled(cal, hold):
+        return cal, hold
+    day = 86400
+    qc, qh = ts[int(0.6 * len(ts))], ts[int(0.8 * len(ts))]
+    if filled(qc // day * day, qh // day * day):
+        return qc // day * day, qh // day * day
+    return qc, qh
+
+
 def make_plan(t: list[int], d: dict, costs: dict, small: bool) -> dict:
     t0, t1 = min(t), max(t)
     span = t1 - t0
     day = 86400
     cal = (t0 + int(0.6 * span)) // day * day
     hold = (t0 + int(0.8 * span)) // day * day
+    if small:                                       # real data (>= 30 holdout days): the calendar plan, unchanged
+        cal, hold = _small_boundaries(t, cal, hold)
     return {"schema": "masterquo-scalp-training-plan-1", "created_at_utc": _now(), "dataset_sha256": d["dataset_sha"], "data_kind": d["meta"]["data_kind"],
             "symbol": d["meta"]["symbol"], "tick_size": float(d["meta"]["tick_size"]), "feature_contract": SF.VERSION, "features": list(SF.FEATURES),
             "contract_hash": SF.contract_hash(d["meta"]["symbol"], float(d["meta"]["tick_size"])), "horizons_m1": list(SF.HORIZONS),
@@ -463,8 +482,8 @@ def main(argv=None) -> int:
     reg = _registry_for_update()
     reg["runs"][run_id] = entry
     ok, why = activatable(entry, plan["contract_hash"])
-    if ok and overall not in ("TRAINED_SHADOW", "PARTIAL_VALIDATION"):
-        ok, why = False, f"QUALITY_{overall}"       # rejected / unvalidated runs stay RESEARCH, the admitted model keeps running
+    if ok:
+        ok, why = auto_admissible(overall)          # rejected / unvalidated runs stay RESEARCH, the admitted model keeps running
     if ok and not a.no_activate and not a.small_test:
         if reg.get("active") and reg["active"] != run_id:
             reg.setdefault("history", []).append(reg["active"])

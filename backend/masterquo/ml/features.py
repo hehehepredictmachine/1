@@ -36,6 +36,14 @@ LEGACY_CONSTANT_DXY = ("MQ-FEAT-1.0.0", "MQ-FEAT-1.1.0")
 LEGACY_ZONE_SCHEMAS = ("MQ-FEAT-1.0.0", "MQ-FEAT-1.1.0", "MQ-FEAT-1.2.0")
 LEGACY_ZONE_KEY = "_zone_block_sem1"
 NAN = float("nan")
+# 1.46 (I0024): TWO session definitions live in this schema - sess_asia / sess_london / sess_ny are FIXED UTC hours (below), while
+# zone_session comes from the DST-aware session profiles of the zone engine (analytics/session_engine.PROFILES, e.g. Tokyo 09-15,
+# London 08-16:30, New York 08:20-13:30 local). The zone block is computed with ZonesConfig() DEFAULTS (not the user's zone settings),
+# instrument guessed from the symbol prefix and tick = view.point (0.01 when unknown) - training and inference agree, but the ML zone features may
+# differ from the live zone map. Values are unchanged; the trainer records feature_context() in the bundle and Bundle.load compares it
+# with the running code (a silent change of those defaults / profiles is reported as a warning, never as INCOMPATIBLE).
+SESS_UTC_HOURS = {"sess_asia": (0, 7), "sess_london": (7, 12), "sess_ny": (12, 21)}
+ZONE_INSTRUMENT_RULE = "symbol BTC* -> BTC, else XAUUSD; tick = view.point (0.01 when unknown); cfg = ZonesConfig() defaults"
 
 # documented categories (the encoder uses the categories SEEN IN TRAINING - prep.py - so new strategies / TFs are encoded
 # when they appear in the data; this list is the schema description)
@@ -211,7 +219,8 @@ def compute(view: MarketView, cand: dict, asof: datetime) -> dict:
     h = asof.hour + asof.minute / 60
     f["hour_sin"], f["hour_cos"] = math.sin(2 * math.pi * h / 24), math.cos(2 * math.pi * h / 24)
     f["dow"] = float(asof.weekday())
-    f["sess_asia"], f["sess_london"], f["sess_ny"] = float(0 <= asof.hour < 7), float(7 <= asof.hour < 12), float(12 <= asof.hour < 21)
+    for k, (a, b) in SESS_UTC_HOURS.items():                           # fixed UTC hours (not the DST profiles of zone_session)
+        f[k] = float(a <= asof.hour < b)
     ep = cand.get("entry_plan") or {}
     entry = ep.get("trigger_level") or ep.get("reference_price")
     sl_ = cand.get("stop_loss")
@@ -317,3 +326,40 @@ def zone_block(view: MarketView, tfs: dict, cand: dict, entry, stop, asof: datet
         except Exception:  # noqa: BLE001, S110 - a zone failure is a missing feature (NaN), never a crash of the feature pipeline
             pass
     return {**new, LEGACY_ZONE_KEY: old}
+
+
+CONTEXT_KEYS = ("zone_config_hash", "sessions_profile_hash")
+
+
+def feature_context() -> dict:
+    """1.46 (I0024): fingerprint of what the zone block / session features are computed with in THIS code (see SESS_UTC_HOURS):
+    sha256 of ZonesConfig() defaults and of the session definitions (DST profiles used by the zone engine + fixed UTC sess_* hours)."""
+    import hashlib
+    import json
+
+    from ..analytics import session_engine as SE
+    from ..config import ZonesConfig
+    zc = ZonesConfig().model_dump(mode="json")
+    pids = sorted(set((zc.get("session_profile") or {}).values()) | {"LAB_XAU_REFERENCE_V1"})    # zones.engine falls back to the XAU one
+
+    def h(o) -> str:
+        return hashlib.sha256(json.dumps(o, sort_keys=True, default=str).encode("utf-8")).hexdigest()
+    return {"zone_config_hash": h(zc), "sessions_profile_hash": h({"zone_session_profiles": {p: SE.PROFILES.get(p) for p in pids},
+                                                                    "sess_utc_hours": SESS_UTC_HOURS}),
+            "zone_instrument_rule": ZONE_INSTRUMENT_RULE}
+
+
+def feature_context_check(meta: dict) -> dict:
+    """Bundle metadata vs the running code. OK / MISMATCH (a default zone setting or a session profile changed since training - the
+    model now sees zone / session inputs computed differently: retrain) / UNKNOWN (bundle trained before 1.46 recorded nothing).
+    Informational only - it never makes a model INCOMPATIBLE (that would switch an ML ASSIST gate to PASS)."""
+    try:
+        cur = feature_context()
+    except Exception as exc:  # noqa: BLE001 - a fingerprint failure is a warning, never a load failure
+        return {"status": "UNKNOWN", "warnings": [f"nie można policzyć kontekstu cech: {type(exc).__name__}"]}
+    if not any(meta.get(k) for k in CONTEXT_KEYS):
+        return {"status": "UNKNOWN", "warnings": ["model sprzed 1.46: brak hashy konfiguracji stref / profili sesji – zmiana nie jest wykrywana"]}
+    diff = [k for k in CONTEXT_KEYS if meta.get(k) != cur[k]]
+    names = {"zone_config_hash": "domyślna konfiguracja stref (ZonesConfig)", "sessions_profile_hash": "profile sesji (zone_session / sess_*)"}
+    return {"status": "MISMATCH" if diff else "OK", "changed": diff,
+            "warnings": [f"{names[k]} inna niż przy treningu – cechy stref / sesji liczone inaczej; zalecany retrening" for k in diff]}

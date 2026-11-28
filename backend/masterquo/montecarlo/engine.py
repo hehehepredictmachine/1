@@ -58,12 +58,15 @@ class History:
         return len(self.c)
 
 
-def history(bars: list[dict], as_of: float, tf: str = "M1", point: float = 0.01, window: int = 6000, stale_after_s: float | None = None) -> History:
+def history(bars: list[dict], as_of: float, tf: str = "M1", point: float | None = 0.01, window: int = 6000, stale_after_s: float | None = None) -> History:
     """Bars with open + tf <= as_of only (closed before the forecast - no look-ahead). Invalid OHLC dropped and counted; a stale last bar,
-    gaps and jumps are flagged (the caller decides; nothing is silently repaired)."""
+    gaps and jumps are flagged (the caller decides; nothing is silently repaired). point=None = the instrument's point is UNKNOWN
+    (1.46 w2, I0681): a spread given in points (`spread`) is not converted (NaN, flag POINT_UNKNOWN); a price spread (`spread_price`)
+    needs no point."""
     step = TF_S[tf]
     rows = []
     dropped = 0
+    point_missing = False
     for b in bars:
         if not (b.get("open_utc") or b.get("t")):
             dropped += 1                                    # bar without a verified UTC time (clock not measured yet)
@@ -77,7 +80,10 @@ def history(bars: list[dict], as_of: float, tf: str = "M1", point: float = 0.01,
             continue
         sp = b.get("spread_price")
         if sp is None and b.get("spread") is not None:
-            sp = float(b["spread"]) * point
+            if point:
+                sp = float(b["spread"]) * point
+            else:
+                point_missing = True                        # points without a known point: the price spread stays unknown
         rows.append((t, o, h, lo, c, float(sp) if sp is not None else math.nan))
     rows.sort(key=lambda r: r[0])
     rows = rows[-window:]
@@ -98,6 +104,8 @@ def history(bars: list[dict], as_of: float, tf: str = "M1", point: float = 0.01,
         flags.append("PRICE_JUMP_GT_25_MEDIAN_RANGES")
     if not np.isfinite(a[:, 5]).any():
         flags.append("NO_SPREAD_DATA")                                              # 1.46: SELL (Ask = Bid + spread) cannot be evaluated
+    if point_missing:
+        flags.append("POINT_UNKNOWN")                                               # 1.46 w2: spread in points, point unknown (never 0.01)
     hsh = hashlib.sha256(a.tobytes()).hexdigest()[:16]
     return History(tf, a[:, 0], a[:, 1], a[:, 2], a[:, 3], a[:, 4], a[:, 5], flags=flags, dropped=dropped, data_hash=hsh)
 
@@ -235,21 +243,21 @@ def move_scenarios(paths: dict, levels=(2.5, 3.0, 5.0, 7.5, 10.0), horizon: int 
     return out
 
 
-def _calibrator_event_match(cal: dict, plan: Plan, tp: float, horizon: int, point: float) -> bool:
+def _calibrator_event_match(cal: dict, plan: Plan, tp: float, horizon: int, point: float | None) -> bool:
     """1.46: the isotonic calibrator of validate.py was fitted on its own events only (side, TP / SL distance from the entry, horizon
     in bars - calibrator["events"] / ["horizon_bars"]). A level of another plan (other SL / TP / horizon, e.g. a strategy profile) is not
-    calibrated by it; tolerance 1 % of the distance or one point (TP prices rounded to the tick)."""
+    calibrated by it; tolerance 1 % of the distance or one point (TP prices rounded to the tick; unknown point -> 1 % only)."""
     evs, ch = cal.get("events"), cal.get("horizon_bars")
     if not evs or ch is None or int(ch) != int(horizon):
         return False
     tp_d, sl_d = abs(tp - plan.entry), abs(plan.entry - plan.sl)
 
     def near(a: float, ref) -> bool:
-        return abs(a - float(ref)) <= max(0.01 * abs(float(ref)), point)
+        return abs(a - float(ref)) <= max(0.01 * abs(float(ref)), point or 0.0)
     return any(isinstance(ev, dict) and ev.get("side") == plan.side and near(tp_d, ev.get("tp")) and near(sl_d, ev.get("sl")) for ev in evs)
 
 
-def run(bars: list[dict], as_of: float, plans: list[Plan] | None = None, *, tf: str = "M1", point: float = 0.01, variant: str = "BLOCK",
+def run(bars: list[dict], as_of: float, plans: list[Plan] | None = None, *, tf: str = "M1", point: float | None = 0.01, variant: str = "BLOCK",
         n_paths: int = 2000, horizon: int = 60, seed: int = 7, synthetic: bool = False, calibrator: dict | None = None,
         levels=(2.5, 3.0, 5.0, 7.5, 10.0)) -> dict:
     t0 = time.perf_counter()

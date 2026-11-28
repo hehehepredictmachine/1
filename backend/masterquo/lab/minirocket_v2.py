@@ -49,6 +49,11 @@ MAX_RESULT_BYTES = 64 * 1024
 DUAL_MAX_N = 2048
 PARITY_STATES = ("ALGORITHM_VALIDATED", "FROZEN_STATE_PARITY", "FIT_LAYOUT_PARITY", "FIT_RANDOM_SELECTION_PARITY", "HEAD_PARITY",
                  "NATIVE_COMPILED", "NATIVE_EXECUTED")
+# 1.46: what each parity result compares (the self-test PMW_MR2_SelfTest prints its NATIVE_FROZEN_STATE_PARITY line - a Python PASS
+# of FROZEN_STATE_PARITY is NOT native evidence)
+PARITY_SCOPE = {"ALGORITHM_VALIDATED": "PYTHON_VS_NAIVE_ORACLE", "FROZEN_STATE_PARITY": "PYTHON_VS_SKTIME_1.2.0",
+                "FIT_LAYOUT_PARITY": "PYTHON_VS_SKTIME_1.2.0", "FIT_RANDOM_SELECTION_PARITY": "PYTHON_VS_SKTIME_1.2.0",
+                "HEAD_PARITY": "MQL5_INFER_VS_PYTHON", "NATIVE_COMPILED": "MQL5_TERMINAL", "NATIVE_EXECUTED": "MQL5_TERMINAL"}
 
 
 def default_export_dir() -> Path:
@@ -577,7 +582,8 @@ class NativeResultImporter:
 
 def write_result(path: Path, seq: int, model_sha: str, symbol: str, tf: str, bar_time_utc: int, computed_at_utc: int, clock_basis: str,
                  scores: np.ndarray) -> None:
-    """Python writer of the same binary record the MQL5 indicator writes (fixtures/tests)."""
+    """Python writer of the same binary record the MQL5 indicator writes (fixtures/tests). `bar_time_utc` is on the clock named by
+    `clock_basis` (the indicator: BROKER_WALL_TIME) and `tf` is the real chart period (the importer rejects anything but its own tf)."""
     s = np.ascontiguousarray(scores, dtype="<f8").ravel()
     body = (RESULT_MAGIC + struct.pack("<IQqq", 1, seq, bar_time_utc, computed_at_utc) + bytes.fromhex(model_sha)
             + symbol.encode()[:32].ljust(32, b"\0") + tf.encode()[:8].ljust(8, b"\0") + clock_basis.encode()[:24].ljust(24, b"\0")
@@ -614,8 +620,13 @@ def parse_result(raw: bytes) -> dict:
     sc = np.frombuffer(body, dtype="<f8", count=n, offset=o)
     if not np.isfinite(sc).all():
         raise MRError("RESULT_NON_FINITE")
-    return {"seq": seq, "bar_time_utc": bt, "computed_at_utc": ct, "model_sha256": sha, "symbol": sym, "tf": tf, "clock_basis": cb,
-            "scores": sc.tolist()}
+    # 1.46 arch (I0482): the key "bar_time_utc" stays (API contract), but the value is on the clock named by clock_basis - the MQL5
+    # indicator writes broker wall time (BROKER_WALL_TIME), so the record also carries it under an explicit alias
+    out = {"seq": seq, "bar_time_utc": bt, "computed_at_utc": ct, "model_sha256": sha, "symbol": sym, "tf": tf, "clock_basis": cb,
+           "scores": sc.tolist()}
+    if cb == "BROKER_WALL_TIME":
+        out["bar_time_broker"] = bt
+    return out
 
 
 # ===================================================================== benchmark
@@ -647,20 +658,50 @@ def benchmark(requested: int = 10000, L: int = 128, warmup: int = 20, n: int = 1
 
 
 # ===================================================================== fixtures / parity (T111-T117, T120, T122)
+FIXTURE_FIT_SEED = 1                 # SplitMix64 seed of the frozen Fit windows FIDX in the native fixture (1.46 arch I0484)
+NATIVE_FIT_MAX_L = 255               # PMW_MR2_Fit.mq5 keeps hit counts (0..L) in uchar (1.46 arch I0485)
+NATIVE_FIT_MAX_HEADS = 16            # the same bound as the native loaders (META H in 1..16)
+
+
+def layout_sections(lay: dict) -> dict:
+    """DILS / CNTS / QUAN of a layout - carried to MQL5 (SetLayout) instead of recomputing it there: CMiniRocketV2.Configure uses
+    MathLog / MathPow, which need not round like math.log2 / numpy power, so a non-default L could get another layout (1.46 arch I0483)."""
+    return {"DILS": (np.array(lay["dilations"]), "i4"), "CNTS": (np.array(lay["counts"]), "i4"), "QUAN": (lay["quantiles"], "f4")}
+
+
 def export_fixture(path: Path, mr: MiniRocketV2, X: np.ndarray) -> dict:
-    """PMW_MR2_FIXTURE.bin for the native self-test: windows, frozen biases and the expected integer hit counts."""
+    """PMW_MR2_FIXTURE.bin for the native self-test: windows, frozen biases and the expected integer hit counts.
+    1.46 arch: + the layout (DILS/CNTS/QUAN, I0483) and the native Fit check (I0484): frozen Fit window indices FIDX (SplitMix64,
+    FIXTURE_FIT_SEED) and BFIT = the biases of MiniRocketV2.fit(X, indices=FIDX) - PMW_MR2_SelfTest compares its own Fit with them."""
     H, den = mr.counts(X)
+    fidx = fit_window_indices(len(X), len(mr.lay["dilations"]), FIXTURE_FIT_SEED)
+    ref = MiniRocketV2()
+    ref.lay = dict(mr.lay)
+    bfit = ref.fit(X, indices=fidx).biases                             # a separate object: the caller's frozen biases stay untouched
     arrays = {"META": (np.array([mr.lay["L"], mr.lay["F"], len(X), 0], dtype=np.int32), "i4"), "XWIN": (np.asarray(X, np.float32), "f4"),
-              "BIAS": (mr.biases, "f4"), "HITS": (H, "i4"), "DENS": (den, "i4")}
+              "BIAS": (mr.biases, "f4"), "HITS": (H, "i4"), "DENS": (den, "i4"), **layout_sections(mr.lay),
+              "FIDX": (fidx, "i4"), "BFIT": (bfit, "f4")}
     sha = write_model_bin(Path(path), arrays)
-    return {"path": str(path), "sha256": sha, "windows": int(len(X)), "F": mr.lay["F"]}
+    return {"path": str(path), "sha256": sha, "windows": int(len(X)), "F": mr.lay["F"], "fit_seed": FIXTURE_FIT_SEED,
+            "fit_bias_sha256": ref.bias_hash()}
 
 
-def export_train(path: Path, X: np.ndarray, Y: np.ndarray, R: np.ndarray) -> dict:
-    """PMW_MR2_TRAIN.bin for the native small Fit script (train rows only, chosen by the Python protocol)."""
-    arrays = {"META": (np.array([X.shape[1], 0, len(X), Y.shape[1]], dtype=np.int32), "i4"), "XWIN": (np.asarray(X, np.float32), "f4"),
-              "YCLS": (np.asarray(Y, np.int32), "i4"), "RVAL": (np.asarray(R, np.float64), "f8")}
-    return {"path": str(path), "sha256": write_model_bin(Path(path), arrays), "rows": int(len(X))}
+def export_train(path: Path, X: np.ndarray, Y: np.ndarray, R: np.ndarray, requested: int = 10000, max_dilations: int = 32) -> dict:
+    """PMW_MR2_TRAIN.bin for the native small Fit script (train rows only, chosen by the Python protocol).
+    1.46 arch: + the layout (DILS/CNTS/QUAN of layout(L, requested, max_dilations), I0483); L > 255 or heads outside 1..16 are refused
+    before writing - the native Fit keeps hit counts in uchar and would overflow (I0485)."""
+    X = np.asarray(X, np.float32)
+    Y = np.asarray(Y, np.int32)
+    if X.ndim != 2 or Y.ndim != 2 or len(Y) != len(X) or np.shape(R) != Y.shape:
+        raise MRError("TRAIN_SHAPE_MISMATCH")
+    if X.shape[1] > NATIVE_FIT_MAX_L:
+        raise MRError(f"L_TOO_LONG_FOR_NATIVE_FIT: L={X.shape[1]} > {NATIVE_FIT_MAX_L} (uchar hit counts in PMW_MR2_Fit)")
+    if not 1 <= Y.shape[1] <= NATIVE_FIT_MAX_HEADS:
+        raise MRError(f"HEADS_OUT_OF_RANGE: {Y.shape[1]} (1..{NATIVE_FIT_MAX_HEADS})")
+    lay = layout(X.shape[1], requested, max_dilations)
+    arrays = {"META": (np.array([X.shape[1], 0, len(X), Y.shape[1]], dtype=np.int32), "i4"), "XWIN": (X, "f4"),
+              "YCLS": (Y, "i4"), "RVAL": (np.asarray(R, np.float64), "f8"), **layout_sections(lay)}
+    return {"path": str(path), "sha256": write_model_bin(Path(path), arrays), "rows": int(len(X)), "F": lay["F"]}
 
 
 def oracle_counts(x: np.ndarray, d: int, k: int, b: float, centre: bool) -> tuple[int, int]:
@@ -789,5 +830,5 @@ def _parity(fixtures: Path, reference_python: str | None, native_scores: Path | 
     ns = native_status(native_status_file)
     out["NATIVE_COMPILED"], out["NATIVE_EXECUTED"] = ns["NATIVE_COMPILED"], ns["NATIVE_EXECUTED"]
     details["native"] = ns
-    return {"transform_id": TRANSFORM_ID, "version": VERSION, "results": out, "details": details,
+    return {"transform_id": TRANSFORM_ID, "version": VERSION, "results": out, "scope": dict(PARITY_SCOPE), "details": details,
             "note": "bit-exact dotyczy wyłącznie sprawdzonego fixture/dtype/buildu; brak gwarancji globalnej zgodności float32/float64"}

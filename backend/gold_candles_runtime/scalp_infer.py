@@ -8,6 +8,7 @@ from __future__ import annotations
 import json
 import os
 import pickle
+import warnings
 from pathlib import Path
 
 import numpy as np
@@ -134,6 +135,35 @@ def platt(cal: dict | None, p: np.ndarray) -> np.ndarray:
     return 1.0 / (1.0 + np.exp(-(cal["a"] * lg + cal["b"])))
 
 
+def sklearn_mismatch(entry: dict) -> str | None:
+    """1.46 (I0619): the scikit-learn version recorded by the trainer (entry['versions'], common.versions()) vs this environment, compared
+    by major.minor (the pickle format of HGB / quantile models is not stable across those). None = same version or nothing recorded."""
+    trained = (entry.get("versions") or {}).get("scikit_learn")
+    if not trained:
+        return None
+    try:
+        import sklearn
+        cur = sklearn.__version__
+    except ImportError:
+        cur = "brak"
+    if str(trained).split(".")[:2] == str(cur).split(".")[:2]:
+        return None
+    return (f"SKLEARN_VERSION_MISMATCH: model trenowano ze scikit-learn {trained}, środowisko .venv_candles ma {cur} – "
+            "ponów trening scalp (17_TRENING_SCALP_ML.bat)")
+
+
+def _guarded(mismatch: str | None, what: str, fn):
+    """Runs fn(); with a version mismatch a failure becomes a readable SKLEARN_VERSION_MISMATCH (the same failure otherwise)."""
+    if not mismatch:
+        return fn()
+    try:
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")            # InconsistentVersionWarning: the mismatch is reported once, as version_warning
+            return fn()
+    except Exception as exc:
+        raise RuntimeError(f"{mismatch} ({what}: {type(exc).__name__}: {exc})"[:400]) from exc
+
+
 class SetupModel:
     """Task-B model: P(TP1 before SL) for one setup + calibrator + threshold chosen in development."""
 
@@ -141,17 +171,22 @@ class SetupModel:
         sm = entry["setup_model"]
         rd = relocated(entry["run_dir"], scalp_dir())
         self.spec = sm
+        self.version_warning = None
         if sm["selected"] in ("LR", "MLP"):
             self.m = json.loads((rd / sm["file"]).read_text(encoding="utf-8"))
         elif sm["selected"] == "HGB":
-            self.m = load_pickle_verified(rd / sm["file"], entry["artifacts"][sm["file"]])
+            self.version_warning = sklearn_mismatch(entry)
+            self.m = load_pickle_verified(rd / sm["file"], entry["artifacts"][sm["file"]], self.version_warning)
         else:
             self.m = None
 
     def predict(self, X: np.ndarray) -> np.ndarray:
         if self.m is None:
             return np.full(len(X), self.spec["prior"])
-        p = predict_binary_json(self.m, X) if isinstance(self.m, dict) else self.m.predict_proba(X)[:, list(self.m.classes_).index(1)]
+        if isinstance(self.m, dict):
+            p = predict_binary_json(self.m, X)
+        else:
+            p = _guarded(self.version_warning, "predict HGB", lambda: self.m.predict_proba(X)[:, list(self.m.classes_).index(1)])
         return platt(self.spec.get("calibrator"), p)
 
 
@@ -166,11 +201,16 @@ def calibrate(c: dict | None, P: np.ndarray) -> np.ndarray:
     return _full(_softmax(L @ np.asarray(c["coef"]).T + np.asarray(c["intercept"])), c["classes"])
 
 
-def load_pickle_verified(path: Path, sha: str):
+def load_pickle_verified(path: Path, sha: str, mismatch: str | None = None):
+    """Own artifact, checksum verified against our registry. mismatch (sklearn_mismatch of the entry): a failed load is reported as
+    SKLEARN_VERSION_MISMATCH instead of a raw AttributeError / ModuleNotFoundError (1.46, I0619)."""
     if sha256_file(path) != sha:
         raise RuntimeError(f"CHECKSUM_MISMATCH:{path.name}")
-    with open(path, "rb") as f:
-        return pickle.load(f)                          # own artifact, checksum verified against our registry
+
+    def _load():
+        with open(path, "rb") as f:
+            return pickle.load(f)
+    return _guarded(mismatch, path.name, _load)
 
 
 class ScalpModel:
@@ -180,18 +220,24 @@ class ScalpModel:
         self.entry = entry
         rd = relocated(entry["run_dir"], scalp_dir())
         arts = entry["artifacts"]
+        mismatch = sklearn_mismatch(entry)
+        pickled = False
         self.h = {}
         for hz, spec in entry["models"].items():
             m = {"selected": spec["selected"]}
             if spec["selected"] in ("LR", "MLP"):
                 m["clf"] = json.loads((rd / spec["file"]).read_text(encoding="utf-8"))
             elif spec["selected"] == "HGB":
-                m["clf"] = load_pickle_verified(rd / spec["file"], arts[spec["file"]])
+                m["clf"] = load_pickle_verified(rd / spec["file"], arts[spec["file"]], mismatch)
+                pickled = True
             else:
                 m["prior"] = np.asarray(spec["prior"])
             m["cal"] = spec.get("calibrator")
-            m["q"] = load_pickle_verified(rd / spec["quantiles_file"], arts[spec["quantiles_file"]]) if spec.get("quantiles_file") else None
+            m["q"] = load_pickle_verified(rd / spec["quantiles_file"], arts[spec["quantiles_file"]], mismatch) if spec.get("quantiles_file") else None
+            pickled = pickled or m["q"] is not None
             self.h[hz] = m
+        # the pickles loaded with another scikit-learn: the worker reports it (env_warning); portable JSON models never need it
+        self.version_warning = mismatch if pickled else None
 
     def predict(self, X: np.ndarray) -> dict:
         out = {}
@@ -201,10 +247,12 @@ class ScalpModel:
             elif isinstance(m["clf"], dict):
                 P = predict_json(m["clf"], X)
             else:
-                P = _full(m["clf"].predict_proba(X), [int(c) for c in m["clf"].classes_])
+                P = _guarded(self.version_warning, f"predict HGB h{hz}",
+                             lambda m=m: _full(m["clf"].predict_proba(X), [int(c) for c in m["clf"].classes_]))
             P = calibrate(m["cal"], P)
             Q = None
             if m["q"] is not None:
-                Q = np.sort(np.column_stack([m["q"][k].predict(X) for k in ("q10", "q50", "q90")]), axis=1)   # pre-declared non-crossing rule
+                Q = _guarded(self.version_warning, f"kwantyle h{hz}",    # pre-declared non-crossing rule: sort q10 <= q50 <= q90
+                             lambda m=m: np.sort(np.column_stack([m["q"][k].predict(X) for k in ("q10", "q50", "q90")]), axis=1))
             out[hz] = {"P": P, "Q": Q}
         return out

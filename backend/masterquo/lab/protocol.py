@@ -34,6 +34,11 @@ FAMILIES = ("DUMMY", "RULE", "LOGREG", "TREE", "MINIROCKET", "XGB", "RESNET1D", 
 BASELINE_FAMILIES = ("DUMMY", "RULE")
 EXPERIMENTS = ("LOGREG_PCA", "LOGREG_GMM_AUG", "LOGREG_NEUTRALIZED")
 SEEDS = (11, 23, 37)
+# 1.46: sample policy of the sequence windows. NO_WARMUP_IN_WINDOW_V1 = a sample is used only when its whole seq_len window is outside
+# the warm-up (the networks no longer learn on zero-filled tv_pct / vol_pct). It is part of the frozen protocol (protocol_id changes);
+# a protocol without the key (older jobs / artefacts) keeps exactly its previous samples. Inference inputs are unchanged for every artefact.
+SEQ_WINDOW_POLICY = "NO_WARMUP_IN_WINDOW_V1"
+SEQ_FAMILIES = ("MINIROCKET", "RESNET1D", "SEW_SNN")
 
 
 def now() -> str:
@@ -42,7 +47,7 @@ def now() -> str:
 
 def default_protocol(asset: str, *, tf: str = "M5", horizon: int = 12, side: str = "LONG", k_tp: float = 1.5, k_sl: float = 1.0,
                      holdout_frac: float = 0.2, folds: int = 4, seq_len: int = 32, families=FAMILIES, experiments=EXPERIMENTS,
-                     budget: int = 3, min_events: int = 600, p_trade: float = 0.55) -> dict:
+                     budget: int = 3, min_events: int = 600, p_trade: float = 0.55, seq_window: str | None = SEQ_WINDOW_POLICY) -> dict:
     p = {"version": VERSION, "asset": asset, "tf": tf, "horizon_bars": horizon, "side": side, "k_tp_atr": k_tp, "k_sl_atr": k_sl,
          "feature_set": FE.FEATURE_SET, "labels": FE.LABELS, "holdout_frac": holdout_frac, "folds": folds, "embargo_bars": horizon,
          "seq_len": seq_len, "families": list(families), "experiments": list(experiments), "tuning_budget_per_family": budget,
@@ -50,6 +55,8 @@ def default_protocol(asset: str, *, tf: str = "M5", horizon: int = 12, side: str
          "promotion": {"min_fold_share_beating_dummy": 0.75, "min_logloss_gain_vs_dummy": 0.002, "max_ece": 0.10,
                        "min_trades_dev": max(60, min_events // 10), "expectancy_ci_lower_gt": 0.0, "cost_stress_r": 0.10,
                        "note": "progi ustalone przed badaniem; minimalna liczba transakcji wynika z liczby zdarzeń, nie jest uniwersalna"}}
+    if seq_window:
+        p["seq_window"] = seq_window
     p["protocol_id"] = "VP-" + hashlib.sha256(json.dumps(p, sort_keys=True).encode()).hexdigest()[:12]
     return p
 
@@ -262,8 +269,11 @@ def save_artifact(root: Path, fitted: Fitted, manifest: dict) -> Path:
     blob = pickle.dumps({"family": fitted.family, "obj": fitted.obj, "cfg": fitted.cfg,
                          "prep": {k: v for k, v in fitted.prep.items() if k != "neut_fac"}})
     (tmp / "model.pkl").write_bytes(blob)
-    manifest = {**manifest, "sha256": hashlib.sha256(blob).hexdigest(),
-                "dependencies": {"python": platform.python_version(), "numpy": np.__version__, "scikit-learn": sklearn.__version__}}
+    deps = {"python": platform.python_version(), "numpy": np.__version__, "scikit-learn": sklearn.__version__}
+    xgb = _dist_version("xgboost")                       # 1.46: XGB pickles depend on it too (only when installed)
+    if xgb:
+        deps["xgboost"] = xgb
+    manifest = {**manifest, "sha256": hashlib.sha256(blob).hexdigest(), "dependencies": deps}
     (tmp / "manifest.json").write_text(json.dumps(manifest, indent=2, default=str), encoding="utf-8")
     final = root / mid
     if final.exists():
@@ -272,7 +282,36 @@ def save_artifact(root: Path, fitted: Fitted, manifest: dict) -> Path:
     return final
 
 
+def _dist_version(name: str) -> str | None:
+    from importlib import metadata
+    try:
+        return metadata.version(name)
+    except metadata.PackageNotFoundError:
+        return None
+
+
+DRIFT_PACKAGES = ("numpy", "scikit-learn", "xgboost")
+
+
+def dependency_drift(deps: dict | None) -> list[str]:
+    """'package trained->now' for every package of the manifest that differs from the installed one (missing now = '-'): scikit-learn
+    on the full version (the same rule as its InconsistentVersionWarning on unpickling), numpy / xgboost on major.minor."""
+    out = []
+    for name in DRIFT_PACKAGES:
+        was = (deps or {}).get(name)
+        if not was:
+            continue                                     # artefacts without the key (e.g. xgboost before 1.46) load as before
+        now_v = _dist_version(name)
+        n = None if name == "scikit-learn" else 2
+        if now_v is None or str(was).split(".")[:n] != now_v.split(".")[:n]:
+            out.append(f"{name} {was}->{now_v or '-'}")
+    return out
+
+
 def load_artifact(path: Path, *, asset: str, feature_set: str) -> tuple[Fitted, dict]:
+    """1.46: library versions recorded at training are compared with the installed ones -> man['dependency_drift'] (a signal, never a
+    refusal: refusing would change the set of live models). Warnings of unpickling are not captured here (warnings.catch_warnings is
+    process-global and not thread-safe in the running bot); the manifest comparison covers the same version change."""
     man = json.loads((path / "manifest.json").read_text(encoding="utf-8"))
     if man.get("asset") != asset:
         raise ArtifactMismatch(f"ASSET_MISMATCH:{man.get('asset')}!={asset}")
@@ -282,6 +321,7 @@ def load_artifact(path: Path, *, asset: str, feature_set: str) -> tuple[Fitted, 
     if hashlib.sha256(blob).hexdigest() != man.get("sha256"):
         raise ArtifactMismatch("ARTIFACT_CHECKSUM_MISMATCH")
     d = pickle.loads(blob)
+    man["dependency_drift"] = dependency_drift(man.get("dependencies"))
     prep = d["prep"]
     if d["family"] == "LOGREG_NEUTRALIZED":
         prep["neut_fac"] = lambda X: np.column_stack([X[:, FE.FEATURES.index("ema_gap_50")], X[:, FE.FEATURES.index("atr_rel")]])
@@ -389,6 +429,8 @@ class Study:
         fm = FE.feature_matrix(self.bars, p["tf"])
         lb = FE.triple_barrier(self.bars, p["tf"], side=p["side"], horizon=p["horizon_bars"], k_tp=p["k_tp_atr"], k_sl=p["k_sl_atr"], point=self.point)
         ok = (~fm["warmup"]) & (lb["y"] >= 0) & (np.arange(len(self.bars)) >= p["seq_len"])
+        if p.get("seq_window") == SEQ_WINDOW_POLICY:
+            ok &= FE.window_clean(fm["warmup"], np.arange(len(self.bars)), p["seq_len"])
         idx = np.where(ok)[0]
         return {"fm": fm, "lb": lb, "idx": idx}
 
@@ -635,6 +677,7 @@ class LabTrainer:
                     man = {"model_id": mid, "model_version": VERSION, "asset": protocol["asset"], "instrument_id": instrument_id, "data_source": source,
                            "horizon": f"{protocol['tf']}x{protocol['horizon_bars']}", "family": fam, "feature_set": FE.FEATURE_SET, "features": FE.FEATURES,
                            "seq_channels": FE.SEQ_CHANNELS, "seq_len": protocol["seq_len"], "label_spec": res.get("label_spec"),
+                           "seq_window_policy": protocol.get("seq_window") or "ZERO_FILLED_LEGACY",
                            "side": protocol.get("side", "LONG"), "direction_scope": f"{protocol.get('side', 'LONG')}_ONLY",
                            "fit_scope": "DEVELOPMENT_ONLY (przed holdoutem; bez refitu na train+holdout)",
                            "holdout_evaluated": fam in evaluated, "holdout": res.get("holdout") if fam in evaluated else None,
@@ -674,14 +717,44 @@ class LabTrainer:
         return [{k: v for k, v in j.items() if k != "cancel"} for j in sorted(self.jobs.values(), key=lambda j: j["started_at"], reverse=True)][:10]
 
     def models(self, asset: str) -> list[dict]:
-        d = self.root / "models" / asset
-        out = []
-        if d.exists():
-            for m in sorted(d.iterdir()):
-                f = m / "manifest.json"
-                if f.exists() and not m.name.endswith(".tmp"):
-                    man = json.loads(f.read_text(encoding="utf-8"))
-                    out.append({**{k: man.get(k) for k in ("model_id", "asset", "family", "horizon", "role", "verdict", "data_source", "trained_at",
-                                                            "cutoff", "protocol_id", "instrument_id")},
-                                "curve": (man.get("params") or {}).get("curve"), "metrics": man.get("metrics"), "path": m.name})
-        return sorted(out, key=lambda x: x.get("trained_at") or "", reverse=True)
+        return list_models(self.root, asset)
+
+
+def list_models(root: Path, asset: str) -> list[dict]:
+    """Artefacts of `asset` (manifest summary), newest first by trained_at; *.tmp (unfinished save) skipped."""
+    d = Path(root) / "models" / asset
+    out = []
+    if d.exists():
+        for m in sorted(d.iterdir()):
+            f = m / "manifest.json"
+            if f.exists() and not m.name.endswith(".tmp"):
+                man = json.loads(f.read_text(encoding="utf-8"))
+                out.append({**{k: man.get(k) for k in ("model_id", "asset", "family", "horizon", "role", "verdict", "data_source", "trained_at",
+                                                        "cutoff", "protocol_id", "instrument_id")},
+                            "curve": (man.get("params") or {}).get("curve"), "metrics": man.get("metrics"), "path": m.name})
+    return sorted(out, key=lambda x: x.get("trained_at") or "", reverse=True)
+
+
+def effective_models(root: Path, asset: str, models: list[dict] | None = None, *, real_data: bool = False,
+                     skipped: list | None = None) -> list[dict]:
+    """1.46: THE rule of which artefact of every family runs (LabService) and what the SH matrix reports: the pinned one (ACTIVE.json,
+    activation / rollback per family), otherwise the latest by trained_at - also without any pointer (API /api/v1/lab/train never pins).
+    A family pinned to an artefact that is gone runs nothing. Each entry: the manifest summary + `pinned` (bool).
+    real_data (1.46 arch I0072; LabService on the bot's REAL data): a model trained on synthetic data (role fixture_only) never runs -
+    an unpinned family falls back to its newest non-fixture model, a pinned one runs nothing (no silent switch); the model_id of every
+    skipped artefact is appended to `skipped`. Default False = the set reported before (SH matrix row 'lab')."""
+    pinned = read_pointer(root, asset)["active"]
+    out, seen = [], set()
+    for m in list_models(root, asset) if models is None else models:
+        fam = m.get("family")
+        if fam in seen or (fam in pinned and pinned[fam] != m.get("model_id")):
+            continue
+        if real_data and m.get("role") == "fixture_only":
+            if skipped is not None:
+                skipped.append(m.get("model_id"))
+            if fam in pinned:
+                seen.add(fam)
+            continue
+        seen.add(fam)
+        out.append({**m, "pinned": fam in pinned})
+    return out

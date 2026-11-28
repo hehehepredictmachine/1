@@ -49,12 +49,16 @@ class TestTabiclInstallFacade(unittest.TestCase):
         self.assertEqual(re.findall(r"rt\.tsfm\._\w+", src), [])
 
     def test_public_method_delegates_unchanged(self):
+        # merge with the target (I0089): one public facade - TsfmService.start_job_process("install_tabicl", argv) replaced
+        # start_tabicl_install; the same delegation (job name, argv, env=None, on_done=None) is asserted
         from masterquo.tsfm.service import TsfmService
         calls = []
         stub = SimpleNamespace(_run_job_proc=lambda name, argv, env=None, on_done=None: calls.append((name, argv, env, on_done)) or {"ok": True})
         argv = ["py", "tools/tsfm_setup.py", "--model", "tabicl"]
-        self.assertEqual(TsfmService.start_tabicl_install(stub, argv), {"ok": True})
+        self.assertEqual(TsfmService.start_job_process(stub, "install_tabicl", argv), {"ok": True})
         self.assertEqual(calls, [("install_tabicl", argv, None, None)])
+        src = (ROOT / "backend" / "masterquo" / "api" / "app.py").read_text(encoding="utf-8")
+        self.assertIn('rt.tsfm.start_job_process("install_tabicl", argv)', src)
 
 
 # ------------------------------------------------------------------------------------------------------------------------ I0329
@@ -470,15 +474,35 @@ class TestScalpForecastCache(unittest.TestCase):
         sc.cfg_store = SimpleNamespace(get=lambda: SimpleNamespace(mt5=SimpleNamespace(symbol="XAUUSD-")))
         return sc, calls
 
+    @staticmethod
+    def _now(text):
+        from datetime import datetime
+        return mock.patch("masterquo.scalp.service.utcnow", return_value=datetime.fromisoformat(text))
+
     def test_one_worker_request_per_closed_m1(self):
+        # merge with I0754 (as_of): the newest M1 closed 30 s ago (within FORECAST_CACHE_FRESH_S) - the cache stays valid for its request
         bars = [{"open_utc": "2026-11-24T10:00:00Z", "o": 1.0, "h": 1.0, "l": 1.0, "c": 1.0, "tv": 1}]
         sc, calls = self._svc(bars)
-        a, b = sc.forecasts(), sc.forecasts()
+        with self._now("2026-11-24T10:01:30+00:00"):
+            a, b = sc.forecasts(), sc.forecasts()
         self.assertEqual(len(calls), 1)
         self.assertEqual(a, b)
+        self.assertEqual(calls[0]["as_of"], "2026-11-24T10:01:30Z")     # I0754: the worker judges feed freshness
         bars.append({"open_utc": "2026-11-24T10:01:00Z", "o": 1.0, "h": 1.1, "l": 1.0, "c": 1.1, "tv": 1})
-        sc.forecasts()
+        with self._now("2026-11-24T10:02:10+00:00"):
+            sc.forecasts()
         self.assertEqual(len(calls), 2)
+
+    def test_frozen_feed_is_asked_again(self):
+        # merge I0621 + I0754: same bars, but the newest M1 closed minutes ago - never a cached answer, the worker gets the current
+        # as_of each time (and answers STALE_DATA in the real worker)
+        bars = [{"open_utc": "2026-11-24T10:00:00Z", "o": 1.0, "h": 1.0, "l": 1.0, "c": 1.0, "tv": 1}]
+        sc, calls = self._svc(bars)
+        with self._now("2026-11-24T10:01:30+00:00"):
+            sc.forecasts()
+        with self._now("2026-11-24T10:05:00+00:00"):
+            sc.forecasts()
+        self.assertEqual([r["as_of"] for r in calls], ["2026-11-24T10:01:30Z", "2026-11-24T10:05:00Z"])
 
     def test_worker_reuses_checksum_until_file_changes(self):
         from gold_candles_runtime import scalp_infer as SI

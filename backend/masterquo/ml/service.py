@@ -18,6 +18,7 @@ from __future__ import annotations
 import collections
 import json
 import logging
+import math
 import os
 import subprocess
 import sys
@@ -30,14 +31,57 @@ from .. import paths
 from ..db.database import dumps
 from ..timeutil import iso, parse_iso, utcnow
 from . import features as fe
+from . import labels as lb
 from .dataset import SampleStore
-from .labels import LABEL_POLICY_VERSION
 from .registry import Registry
 
 log = logging.getLogger("masterquo.ml")
 PRED_CONTRACT = "MQ-ML-PRED-1.0.0"
 STATUSES = ("COLLECTING", "WAITING_FOR_LABELS", "TRAINING", "VALIDATING", "SHADOW", "ACTIVE", "DEGRADED", "ERROR")
 BACKEND_ROOT = Path(__file__).resolve().parents[2]
+
+
+def scalp_live_metrics(db, instrument: str, ece_min_n: int = 100) -> dict:
+    """1.46 w2 (I0331): live quality of the Scalp ML models (monitoring only - no gate, no training input). Per (side, model hash): the
+    FIRST prediction of every (sample, model hash) - the one made at the decision time, matching the stored sample snapshot - joined
+    with the LABELLED live sample (y = net_R > 0 of the settled cycle): n, Brier, log loss, mean p, base rate, ECE (10 bins, only when
+    n >= ece_min_n) and the SHADOW evaluation of the model's proposed filter (n and mean net_R of the cycles it would take / skip).
+    Predictions without a calibrated p are counted only in the filter part."""
+    rows = db.query("""SELECT p.side AS side, p.model_hash AS mh, p.p AS p, p.proposed_filter AS pf, s.y AS y, s.net_r AS net_r
+                       FROM ml_scalp_predictions p JOIN ml_scalp_samples s ON s.sample_id = p.sample_id
+                       WHERE p.instrument=? AND s.instrument=? AND s.status='LABELED' AND s.y IS NOT NULL AND p.status='READY_INFERENCE'
+                         AND p.prediction_id = (SELECT q.prediction_id FROM ml_scalp_predictions q
+                                                WHERE q.sample_id = p.sample_id AND q.model_hash IS p.model_hash
+                                                ORDER BY q.computed_at, q.prediction_id LIMIT 1)""", (instrument, instrument))
+    groups: dict = {}
+    for r in rows:
+        groups.setdefault(r["side"], {}).setdefault(r["mh"] or "UNKNOWN", []).append(r)
+    res: dict = {}
+    eps = 1e-6
+    for side, by_model in groups.items():
+        for mh, rs in by_model.items():
+            sc = [(float(r["p"]), int(r["y"])) for r in rs if r["p"] is not None]
+            m = {"n": len(sc), "n_labeled_predictions": len(rs), "brier": None, "log_loss": None, "mean_p": None, "base_rate": None, "ece": None}
+            if sc:
+                m["brier"] = sum((p - y) ** 2 for p, y in sc) / len(sc)
+                m["log_loss"] = -sum(y * math.log(min(max(p, eps), 1 - eps)) + (1 - y) * math.log(min(max(1 - p, eps), 1 - eps)) for p, y in sc) / len(sc)
+                m["mean_p"] = sum(p for p, _ in sc) / len(sc)
+                m["base_rate"] = sum(y for _, y in sc) / len(sc)
+                if len(sc) >= ece_min_n:
+                    ece = 0.0
+                    for k in range(10):
+                        b = [(p, y) for p, y in sc if k / 10 <= p < (k + 1) / 10 or (k == 9 and p >= 1.0)]
+                        if b:
+                            ece += len(b) / len(sc) * abs(sum(p for p, _ in b) / len(b) - sum(y for _, y in b) / len(b))
+                    m["ece"] = ece
+            filt = {}
+            for name, val in (("take", 1), ("skip", 0)):
+                nr = [float(r["net_r"]) for r in rs if r["pf"] == val and r["net_r"] is not None]
+                filt[name] = {"n": len(nr), "mean_net_r": sum(nr) / len(nr) if nr else None}
+            m["shadow_filter"] = filt
+            m["note"] = "jakość na żywo (próbki LABELED, pierwsza predykcja na próbkę i model) – monitoring, nie bramka"
+            res.setdefault(side, {})[mh] = m
+    return res
 
 
 class MLService:
@@ -145,7 +189,6 @@ class MLService:
             else:                               # 1.46: no spread in the quote nor in symbol_info was a spread of 0 with quality HIGH
                 spread = 0.0                    # placeholder only: SPREAD_UNKNOWN -> the sample is COST_UNKNOWN (never trained on)
                 flags.append("SPREAD_UNKNOWN")
-        slip = (cfg.costs.slippage_stress_points or 0) * point
         with self.bridge._lock:
             deals = list(getattr(self.bridge, "deals", []) or [])
         res = resolve_commission(cfg.costs, deals, cfg.mt5.symbol)
@@ -159,14 +202,10 @@ class MLService:
             value_1 = None
         if not value_1:
             value_1 = float(info.get("trade_contract_size") or 0) or None
-            flags.append("PRICE_VALUE_FROM_CONTRACT_SIZE_ASSUMES_ACCOUNT_CCY_EQ_QUOTE_CCY")
-        if per_lot is None or not value_1:
-            flags.append("COMMISSION_UNKNOWN")
-            comm = 0.0
-        else:
-            comm = float(per_lot) / float(value_1)
-        return {"spread": float(spread), "slippage": float(slip), "commission": comm, "flags": flags,
-                "commission_source": res.get("source"), "commission_per_lot_per_side": per_lot}
+            flags.append(lb.PRICE_VALUE_FLAG_CONTRACT)
+        # 1.46 w2 (I0048): the one label-cost function shared with the offline backfill (ml/offline.cost_of) - same values as before here
+        return lb.label_cost(spread=spread, point=point, slippage_points=cfg.costs.slippage_stress_points, per_lot=per_lot, value_1=value_1,
+                             flags=flags, commission_source=res.get("source"))
 
     # ------------------------------------------------------------ quotes (for ambiguous bars)
     def _tick_loop(self) -> None:
@@ -495,7 +534,14 @@ class MLService:
     # ------------------------------------------------------------ PMW-UPD-03 SCALP_NET_PROFIT_MARKET_V1 (scalp candidates)
     def on_scalp_candidate(self, plan: dict, *, instrument: str, profile_hash: str, session_epoch, costs: dict, entry_mode: str) -> dict:
         """Called by ScalpService for EVERY candidate before any model filter: the snapshot is stored once (setup x side), then the
-        selected model of this (instrument, profile, side) is evaluated; the prediction is written BEFORE it is published."""
+        selected model of this (instrument, profile, side) is evaluated; the prediction is written BEFORE it is published.
+
+        The inference is switched by the Scalp ML selection only (ml_scalp registry `selected`: OBSERVE / SHADOW_GATE; nothing selected
+        -> NO_MODEL). 1.46 w2 (I0330): ml.mode (the switch of the legacy DT/XGB pipeline, MLConfig) returned ML_OFF here as well - its
+        OFF silently switched off a separate model. The result is an observation (scalp is SHADOW: EXECUTION_AUTHORIZED=false, the plan
+        field `ml_scalp` feeds the dashboard / NSS snapshot only), never a gate.
+        One prediction per (sample, model hash) (I0337): a candidate evaluated again (MT5 reconnect -> new ScalpMachine, deterministic
+        setup_id) gets the stored prediction back - no second row, no second publication."""
         import hashlib
         from . import scalp_task as stk
         from ..scalp.strategy import NET_FEATURE_SCHEMA
@@ -514,8 +560,6 @@ class MLService:
                         (sid, instrument, profile_hash, plan["setup_id"], plan.get("range_id"), side, plan["decision_time"], iso(now), str(session_epoch),
                          NET_FEATURE_SCHEMA, json.dumps(feats), json.dumps(keep, default=str), shash, json.dumps(costs),
                          "UNSUPPORTED_ENTRY_POLICY" if entry_mode != "MARKET" else "PENDING", iso(now)))
-        if self.cfg.mode == "OFF":
-            return {"status": "ML_OFF", "sample_id": sid}
         if entry_mode != "MARKET":
             return {"status": "UNSUPPORTED_ENTRY_POLICY", "sample_id": sid}
         try:
@@ -524,6 +568,10 @@ class MLService:
             return {"status": "ARTIFACT_ERROR", "reason": str(exc)[:200], "sample_id": sid}
         if b is None:
             return {"status": "NO_MODEL", "sample_id": sid, "task_id": stk.TASK_ID}
+        mh = sel.get("model_hash")
+        prev = self.db.one("SELECT * FROM ml_scalp_predictions WHERE sample_id=? AND model_hash=? ORDER BY computed_at LIMIT 1", (sid, mh)) if mh else None
+        if prev:
+            return self._stored_scalp_prediction(prev)
         t0 = time.perf_counter()
         out = b.predict(feats, instrument=instrument, profile_hash=profile_hash, side=side)
         out.update(role=sel["role"], sample_id=sid, snapshot_hash=shash, latency_ms=round((time.perf_counter() - t0) * 1000, 2))
@@ -531,13 +579,25 @@ class MLService:
         exp = now + timedelta(seconds=120)
         self.db.execute("""INSERT INTO ml_scalp_predictions(prediction_id, sample_id, model_hash, role, instrument, side, snapshot_hash, session_epoch, as_of,
                            computed_at, expires_at, status, raw_margin, p, expected_net_r, proposed_filter, detail) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-                        (pid, sid, out.get("model_hash"), sel["role"], instrument, side, shash, str(session_epoch), plan["decision_time"], iso(now), iso(exp),
+                        (pid, sid, out.get("model_hash") or mh, sel["role"], instrument, side, shash, str(session_epoch), plan["decision_time"], iso(now), iso(exp),
                          out["status"], out.get("raw_margin"), out.get("calibrated_probability"), out.get("expected_net_r"),
                          None if out.get("proposed_filter") is None else int(out["proposed_filter"]), json.dumps({"policy": out.get("policy")})))
         out.update(prediction_id=pid, expires_at=iso(exp))
         self.bus.publish("ml_scalp", {k: out.get(k) for k in ("prediction_id", "status", "calibrated_probability", "expected_net_r", "proposed_filter",
                                                              "role", "model_hash", "snapshot_hash", "expires_at")} | {"setup_id": plan["setup_id"], "side": side})
         return out
+
+    @staticmethod
+    def _stored_scalp_prediction(r: dict) -> dict:
+        """The prediction already stored for this (sample, model hash) - returned as made, flagged; never re-published (I0337)."""
+        try:
+            pol = (json.loads(r.get("detail") or "{}") or {}).get("policy")
+        except ValueError:
+            pol = None
+        return {"status": r["status"], "model_hash": r["model_hash"], "role": r["role"], "sample_id": r["sample_id"], "snapshot_hash": r["snapshot_hash"],
+                "raw_margin": r["raw_margin"], "calibrated_probability": r["p"], "expected_net_r": r["expected_net_r"],
+                "proposed_filter": None if r["proposed_filter"] is None else bool(r["proposed_filter"]), "policy": pol,
+                "prediction_id": r["prediction_id"], "computed_at": r["computed_at"], "expires_at": r["expires_at"], "duplicate_of_stored_prediction": True}
 
     def scalp_pending(self, instrument: str, limit: int = 50) -> list[dict]:
         return self.db.query("SELECT sample_id, plan FROM ml_scalp_samples WHERE instrument=? AND status='PENDING' ORDER BY signal_time LIMIT ?", (instrument, limit))
@@ -563,7 +623,10 @@ class MLService:
         reg = json.loads(p.read_text(encoding="utf-8")) if p.exists() else {"selected": {}, "runs": {}}
         last = self.db.query("SELECT * FROM ml_scalp_predictions WHERE instrument=? ORDER BY computed_at DESC LIMIT 10", (instrument,))
         return {"task_id": stk.TASK_ID, "family": stk.FAMILY, "instrument": instrument, "live_samples": cnt, "classes": cls, "selected": reg.get("selected"),
-                "runs": dict(sorted(reg.get("runs", {}).items())[-10:]), "recent_predictions": last, "criteria": stk.CRITERIA}
+                "runs": dict(sorted(reg.get("runs", {}).items())[-10:]), "recent_predictions": last, "criteria": stk.CRITERIA,
+                "live_metrics": scalp_live_metrics(self.db, instrument),
+                "inference_switch": "selected (rejestr ml_scalp: OBSERVE / SHADOW_GATE; brak wyboru = NO_MODEL) – niezależny od ml.mode "
+                                    "(tryb legacy DT/XGB); wynik tylko obserwacyjny (scalp SHADOW, bez bramki)"}
 
     # ------------------------------------------------------------ settings
     def set_mode(self, mode: str) -> dict:
@@ -589,6 +652,10 @@ class MLService:
         self.log.info("ML", "PAUSE", "Trening: " + ("wstrzymany" if on else "wznowiony"))
         return self.status(compact=True)
 
+    def clear_prediction_cache(self) -> None:
+        """1.46 arch (I0089): drop cached predictions (after the registry was re-read by POST /api/v1/ml/reload)."""
+        self._pred_cache.clear()
+
     def rollback(self) -> dict:
         r = self.registry.rollback()
         self._pred_cache.clear()
@@ -598,14 +665,19 @@ class MLService:
     # ------------------------------------------------------------ predictions
     def predict(self, setup_row: dict | None, view, *, role: str = "CHAMPION") -> dict:
         """Contract for one setup version. Cached per (setup_id, version, model_id); features are computed AS-OF the
-        setup's confirmation time when the sample exists (same values as training), else as-of now."""
+        setup's confirmation time when the sample exists (same values as training), else as-of now.
+
+        feature_source (1.46 w2, I0326 - information only): SAMPLE = the stored features of the CONFIRMED sample (the training
+        population), ASOF_NOW = computed now for a setup version without a sample (e.g. WATCH / EARLY rows ranked in ASSIST - a
+        population the model was never trained on). The rank bonus itself is unchanged (S0: any change of the ranking can move the
+        AUTO selection to another, executable setup)."""
         c = self.cfg
         base = {"contract": PRED_CONTRACT, "setup_id": (setup_row or {}).get("setup_id"), "setup_version": (setup_row or {}).get("version"),
                 "model_id": None, "model_family": None, "model_version": None, "feature_schema_version": fe.FEATURE_SCHEMA_VERSION,
                 "asof_utc": None, "raw_score": None, "calibrated_probability": None, "calibration_status": "NONE", "threshold": None,
                 # 1.46 arch (I0329): the label policy version from labels.py (was the literal MQ-LABEL-1.0.0 after the 1.1.0 cost labels)
-                "target_definition": f"net_R > 0 wg planu setupu ({LABEL_POLICY_VERSION})", "readiness": "NOT_READY", "uncertainty_reason": None,
-                "data_quality": None, "explanation_ref": None, "ml_mode": c.mode}
+                "target_definition": f"net_R > 0 wg planu setupu ({lb.LABEL_POLICY_VERSION})", "readiness": "NOT_READY", "uncertainty_reason": None,
+                "data_quality": None, "explanation_ref": None, "ml_mode": c.mode, "feature_source": None}
         if setup_row is None:
             return dict(base, uncertainty_reason="NO_SETUP")
         bundle = self.registry.champion if role == "CHAMPION" else None
@@ -620,11 +692,13 @@ class MLService:
                            (f"{setup_row['setup_id']}:{setup_row['version']}",))
         if samp and samp["features_json"] not in (None, "{}"):
             feats, asof = fe.from_json(json.loads(samp["features_json"]), samp["feature_schema_version"]), samp["asof_utc"]
+            base["feature_source"] = "SAMPLE"
         else:
             if view is None:
                 return dict(base, model_id=mid, uncertainty_reason="NO_MARKET_VIEW")
             now = utcnow()
             feats, asof = fe.compute(view, dict(rec, symbol=setup_row.get("symbol")), now), iso(now)
+            base["feature_source"] = "ASOF_NOW"
         seen = bundle.adapt([feats])[0]          # 1.46: what THIS model sees (an old model: its own zone block) - also for the missing count
         missing = [k for k in bundle.prep.numeric if seen.get(k) is None or (isinstance(seen.get(k), float) and seen[k] != seen[k])]
         raw = float(bundle.raw([feats])[0])
@@ -702,6 +776,30 @@ class MLService:
             return 0.0
         base = float(self.registry.champion.meta.get("base_rate") or 0.5)
         return round(self.cfg.assist_rank_weight * (pred["calibrated_probability"] - base) * 10, 2)
+
+    def assist_rank_scale(self) -> dict:
+        """1.46 arch (I0327, NEUTRAL variant - information only): how large the ASSIST rank bonus of rank_adjust can get compared with the
+        components of the selector's rank (stage bonus <= 8 pts) and its CONFLICT / switch margins. Nothing reads this for a decision:
+        rank_adjust, the selector, the conflict rule and the ML gate are unchanged (a cap would lift some conflicts = a new entry, S0)."""
+        from ..strategies.selector import STAGE_BONUS
+        w = float(self.cfg.assist_rank_weight)
+        champ = self.registry.champion
+        base = float((getattr(champ, "meta", None) or {}).get("base_rate") or 0.5) if champ is not None else 0.5
+        per_p = round(w * 10, 2)
+        max_bonus = round(per_p * max(base, 1.0 - base), 2)
+        stage_max = float(max(STAGE_BONUS.values()))
+        try:
+            act = self.cfg_store.get().active
+            margins = {"conflict_margin": float(act.conflict_margin), "min_switch_margin": float(act.min_switch_margin)}
+        except Exception:  # noqa: BLE001 - information only
+            margins = {"conflict_margin": None, "min_switch_margin": None}
+        applies = self.cfg.mode == "ASSIST" and champ is not None
+        dominates = max_bonus > stage_max
+        return {"applies": applies, "weight": w, "base_rate": base, "points_per_probability": per_p, "max_abs_bonus": max_bonus,
+                "stage_bonus_max": stage_max, **margins, "can_dominate": dominates,
+                "warning": "ML_ASSIST_BONUS_CAN_DOMINATE_RANK" if applies and dominates else None,
+                "note": "bonus ASSIST = waga × (p − base rate) × 10 punktów rankingu; może przestawić wybór setupu ponad premię etapu i "
+                        "margines konfliktu – tylko informacja (wzór, selektor i bramka ML bez zmian)"}
 
     def explain(self, setup_id: str, version: int) -> dict:
         from .models import explain_dt, explain_xgb
@@ -793,6 +891,12 @@ class MLService:
                "last_label_run": self.last_label_run, "last_check": self.last_check, "synthetic": self.synthetic,
                "last_tick_age_s": last_q.get("age_seconds"), "ticks_buffered": len(self.ticks), "backfill": self.backfill_state,
                "note": "Model ocenia setupy strategii; nie generuje własnych sygnałów. Komentarz Claude nie jest etykietą."}
+        try:                                    # 1.46 arch (I0327): information only (neutral variant)
+            out["assist_rank_scale"] = self.assist_rank_scale()
+        except Exception as exc:  # noqa: BLE001 - the status never fails because of an informational field
+            out["assist_rank_scale"] = {"error": f"{type(exc).__name__}: {exc}"[:200]}
+        # 1.46 (I0024): zone defaults / session profiles of the champion's training vs this code - a warning only (never a gate change)
+        out["feature_context"] = champ.meta.get("feature_context") if champ is not None else None
         if not compact:
             out["models"] = self.registry.models()
             out["events"] = self.registry.events()

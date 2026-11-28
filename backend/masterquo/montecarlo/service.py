@@ -43,11 +43,23 @@ class MonteCarloService:
     def stop(self) -> None:
         self._pool.shutdown(wait=False, cancel_futures=True)
 
+    def context(self) -> tuple[str, float]:
+        """1.46 arch (I0089): (active instrument, point) - public name of _ctx (read by the validation-report route)."""
+        return self._ctx()
+
     def _ctx(self):
+        """(instrument, point). 1.46 w2 (I0681): point = symbol_info.point or trade_tick_size, else None (UNKNOWN) - it was guessed as
+        0.01 (bridge without symbol_info: symbol not selected yet while M1 bars are already buffered), and the bars' spread in POINTS
+        became a price spread with the guessed point (a 0.001 broker: Ask 10x too far). Unknown point -> engine.history keeps the
+        spread unknown (NaN, flags NO_SPREAD_DATA / POINT_UNKNOWN): SELL (Ask) is NOT_VERIFIED, BUY / move scenarios (Bid) unchanged."""
         cfg = self.cfg_store.get()
         info = getattr(self.bridge, "symbol_info", None) or {}
-        point = float(info.get("point") or info.get("trade_tick_size") or 0.01)
-        return cfg.assets.active, point
+        pt = info.get("point") or info.get("trade_tick_size")
+        try:
+            point = float(pt) if pt else None
+        except (TypeError, ValueError):
+            point = None
+        return cfg.assets.active, (point if point and math.isfinite(point) and point > 0 else None)
 
     def _variant(self, inst: str) -> tuple[str, dict | None]:
         cal = None if self.synthetic else V.active_calibrator(inst)
@@ -68,7 +80,7 @@ class MonteCarloService:
         chosen, cal = self._variant(inst)
         v = variant or chosen
         levels = tuple(float(x) for x in levels) if levels else DEFAULT_LEVELS.get(inst, ())
-        key = (inst, last, v, horizon, n_paths or self.n_paths, levels, tuple((p.side, round(p.entry, 5), round(p.sl, 5), tuple(round(x, 5) for x in p.tps), p.horizon)
+        key = (inst, last, point, v, horizon, n_paths or self.n_paths, levels, tuple((p.side, round(p.entry, 5), round(p.sl, 5), tuple(round(x, 5) for x in p.tps), p.horizon)
                                                                    for p in plans or []))
         with self._lock:
             if key in self._cache:

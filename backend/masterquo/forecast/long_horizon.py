@@ -92,6 +92,8 @@ def forecast(ts: list[float], px: list[float], horizon: str, *, as_of: float | N
     last = px[-1]
     return {"horizon": horizon, "horizon_seconds": H, "as_of": as_of, "status": "STALE" if age > stale_after else "OK", "data_age_seconds": age,
             "calibration": "CALIBRATED" if calibrated else "UNCALIBRATED", "calib_coverage_q05_q95": cover, "calib_samples": len(cal),
+            # 1.46 (I0640): the label above describes ONLY the q05-q95 band; p_up / p_down / p_flat are never calibrated separately
+            "calibration_scope": "q05_q95_band", "p_calibration": "UNCALIBRATED (częstości empiryczne próbek H, bez osobnej kalibracji)",
             "calib_samples_effective": eff(len(cal)), "calib_band_scale": scale_split, "samples": n, "samples_effective": eff(n),
             "sample_spacing_seconds": step * spacing, "log_return_quantiles": qv, "price_quantiles": {k2: last * math.exp(v) for k2, v in qv.items()},
             "p_down": dn, "p_flat": 1 - up - dn, "p_up": up, "median_log_return": qv["q50"], "mean_log_return": sum(allr) / n,

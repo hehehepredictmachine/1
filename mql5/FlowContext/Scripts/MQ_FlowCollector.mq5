@@ -70,7 +70,8 @@ void OnStart()
          body += StringFormat("%I64d,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s\n", (long)t0[i], Num(r[i].open), Num(r[i].high), Num(r[i].low), Num(r[i].close),
                               Num(ho[i]), Num(hh[i]), Num(hl[i]), Num(hc[i]), Num(sr[i]), Num(sa[i]), Num(sg[i]), Num(s0[i]), Num(s1[i]), Num(s2[i]), Num(s3[i]), Num(s4[i]), Num(s5[i]));
       uchar data[], key[], dg[];
-      StringToCharArray(body, data, 0, StringLen(body), CP_UTF8);
+      // 1.46 arch (I0521): the whole UTF-8 encoding (StringLen counts UTF-16 chars, not bytes); the terminating 0 is dropped
+      int nb = StringToCharArray(body, data, 0, WHOLE_ARRAY, CP_UTF8); if(nb > 0 && data[nb - 1] == 0) ArrayResize(data, nb - 1);
       CryptEncode(CRYPT_HASH_SHA256, data, key, dg);
       string hex = "";
       for(int k = 0; k < ArraySize(dg); k++) hex += StringFormat("%02x", dg[k]);
@@ -78,7 +79,8 @@ void OnStart()
       int fh = FileOpen("PMW\\PMW_FLOW_EXPORT.tmp", FILE_WRITE | FILE_BIN);
       if(fh == INVALID_HANDLE) { Print("MQ_FlowCollector OPEN_FAILED"); return; }
       FileWriteArray(fh, data, 0, ArraySize(data));
-      uchar tail[]; string ts = "#sha256=" + hex + "\n"; StringToCharArray(ts, tail, 0, StringLen(ts), CP_UTF8);
+      uchar tail[]; string ts = "#sha256=" + hex + "\n";
+      int nt = StringToCharArray(ts, tail, 0, WHOLE_ARRAY, CP_UTF8); if(nt > 0 && tail[nt - 1] == 0) ArrayResize(tail, nt - 1);
       FileWriteArray(fh, tail, 0, ArraySize(tail));
       FileClose(fh);
       if(!FileMove("PMW\\PMW_FLOW_EXPORT.tmp", 0, "PMW\\PMW_FLOW_EXPORT.txt", FILE_REWRITE)) Print("MQ_FlowCollector MOVE_FAILED");

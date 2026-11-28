@@ -10,6 +10,8 @@ import time
 from pathlib import Path
 
 INSTR = ("XAUUSD", "BTC")
+EXPORT_INFO_HELP = ("polecenie informacyjne – NIE eksportuje (kod wyjścia 2). Eksport historii REAL_USER_DATA: 00_TRENING_START.bat → Eksport "
+                    "albo `python -m masterquo training export` (działający bot, jeden worker MT5)")
 
 
 def _print(x) -> None:
@@ -46,7 +48,8 @@ def main(argv: list[str]) -> int:
     common(s, False, False)
     s.add_argument("--symbol")
     s.add_argument("--source", choices=("bridge", "import"), default="bridge")
-    s = sub.add_parser("export")
+    # 1.46 arch (I0135): an informational command (it never exports - exit code 2 kept for the .bat launchers); the help says so
+    s = sub.add_parser("export", help=EXPORT_INFO_HELP, description=EXPORT_INFO_HELP)
     common(s, False, False)
     s.add_argument("--symbol")
     s.add_argument("--months", type=int, default=12)
@@ -104,8 +107,8 @@ def main(argv: list[str]) -> int:
                     "blocked": None if ds else "BLOCKED_NO_REAL_DATA"})
             return 0 if ds else 2
         if a.c == "export":
-            print("[INFO] Eksport historii wykonuje działający bot przez istniejący worker MT5 (00_TRENING_START.bat → Eksport). "
-                  "Ta komenda nie łączy się z terminalem (bez drugiego initialize).")
+            print("[INFO] Polecenie informacyjne. Eksport historii wykonuje działający bot przez istniejący worker MT5 (00_TRENING_START.bat → "
+                  "Eksport albo `python -m masterquo training export`). Ta komenda nie łączy się z terminalem (bez drugiego initialize).")
             return 2
         if a.c in ("calibrate", "train-markov", "dataset", "pipeline"):
             ds, err = _raw(a.asset, a.dataset, a.allow_synthetic_fixture)
