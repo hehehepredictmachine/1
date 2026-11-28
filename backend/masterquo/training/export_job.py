@@ -129,6 +129,9 @@ def start(body: dict, *, demo: bool = False, default_symbol=None) -> dict:
     finally:
         log.close()                                   # 1.46: the child has its own copy - the bot kept one open handle per export (leak)
     _PROCS[p.pid] = p
+    # arch146 I0100: ended by Runtime.stop() (own process + python children, never MT5)
+    from .. import procs as _procs
+    _procs.REGISTRY.register(f"export:{p.pid}", p, "export")
     core.write_json_atomic(_job_path(), {"pid": p.pid, "pid_started": core._proc_start(p.pid), "out": str(out), "instrument": inst,
                                          "symbol": sym, "timeframes": tfs, "from": d_from, "to": d_to, "months": None if d_from else months,
                                          "ticks_days": ticks, "started_at": core.now(), "synthetic": bool(demo)})

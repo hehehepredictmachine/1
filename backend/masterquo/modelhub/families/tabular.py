@@ -29,12 +29,17 @@ class Tabular(B.Family):
         return ("AVAILABLE", None) if L.available().get(self.TH_ID) else ("MISSING_DEPENDENCY", "biblioteka niedostępna (np. xgboost)")
 
     def trainhub_state(self, inst: str) -> dict:
+        # arch146 I0010: the one trainhub state (registry.status_of; package keys matched as '<TH_ID>_', the prefix without '_' also matched
+        # other models' keys); artifact / use as before, state + reason of the trainhub view added. The family service has no live view
+        # (no rt): for an ACTIVE package status_of says DISABLED "serwis inferencji ... nie działa" (cause NO_LIVE_VIEW) even while the bot
+        # runs and the model catalog shows READY - that state / reason is NOT a fact about the model, so the family view leaves it out
+        # (the live state is the one of the model catalog); the states that do not need a live view (NO_LIBRARY, NO_ACTIVE, NOT_TRAINED) stay.
         from ...trainhub import registry as R
-        s = R.summary(inst)
-        mine = [v for v in s["versions"] if str(v.get("model_key", "")).startswith(self.TH_ID)]
-        act = {k: v for k, v in (s.get("active") or {}).items() if k.startswith(self.TH_ID)}
-        return {"artifact": "CANDIDATE" if mine else "NOT_TRAINED", "versions": len(mine), "active": act,
-                "use": "SHADOW" if act else "OFF", "note": "trening / aktywacja w Centrum treningu (trainhub)",
+        st = R.status_of(inst, self.TH_ID)
+        act = st["active"]
+        live = {} if st.get("cause") == "NO_LIVE_VIEW" else {"state": st["state"], "reason": st["reason"]}
+        return {"artifact": "CANDIDATE" if st["n_versions"] else "NOT_TRAINED", "versions": st["n_versions"], "active": act,
+                "use": "SHADOW" if act else "OFF", **live, "note": "trening / aktywacja w Centrum treningu (trainhub)",
                 "active_config": [c for c in (self._parse_key(k, v) for k, v in sorted(act.items())) if c]}   # 1.46 arch (I0007), read-only
 
     def _parse_key(self, key: str, version) -> dict | None:

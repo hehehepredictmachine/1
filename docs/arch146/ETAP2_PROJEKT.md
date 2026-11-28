@@ -96,7 +96,7 @@ Mapa jest danymi w `tools/cycles.py` (`LAYERS`, każdy pakiet i moduł najwyższ
 
 | Warstwa | Komponenty |
 |---|---|
-| L0 liście | `masterquo` (pakiet), paths, timeutil, version, events, registry_io, sysres, secrets_store, resources, assets, media, prefs, config, presets, contracts (rekordy kontraktów, tylko stdlib), settings_store (pliki ustawień), localapi (klient lokalnego API dla CLI), runtimes (rejestr środowisk modeli) |
+| L0 liście | `masterquo` (pakiet), paths, timeutil, version, events, registry_io, sysres, secrets_store, resources, assets, media, prefs, config, presets, contracts (rekordy kontraktów, tylko stdlib), settings_store (pliki ustawień), localapi (klient lokalnego API dla CLI), runtimes (rejestr środowisk modeli), procs (rejestr procesów treningu serwera, I0100) |
 | L1 dane | db, mt5, marketdata, data, markets, news, notify, licensing, stats |
 | L2 analizy | indicators, analysis, analytics, svp, zones, orderflow, plans |
 | L3 rdzeń handlowy | strategies, risk, engine, execution, decision, sh, baskets |

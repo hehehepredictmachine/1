@@ -200,6 +200,9 @@ class Runtime:
             self.research = None
         from .training.pepe_center import PepeTrainingCenter                                        # 1.42.10 Centrum Treningowe Pepe (kolejka 1 naraz)
         self.pepe_training = PepeTrainingCenter(self)
+        # arch146 I0100: training children of this server (Runtime.stop part 'procs')
+        from . import procs as _procs
+        self.procs = _procs.REGISTRY
         try:                                                                                        # 1.41 three market profiles, 9 baskets / 90 strategies
             from .baskets.service import BasketService
             self.baskets = BasketService(self)
@@ -444,9 +447,12 @@ class Runtime:
 
     # 1.46: stop order (unchanged); every part stops on its own - an exception in one .stop() skipped all later parts (bridge, MT5
     # worker) and the cleanup of shutdown.token / server.pid in __main__
+    # arch146 I0100: the training children (Centrum Pepe `training run`, model families, panel training / export processes) end AFTER the
+    # engine and the manager - their stop (kill + at most ~3 s wait each) never delays the end of the trading path; before news / bridge /
+    # worker. The MT5 worker / bridge are never in the process registry. 'families' also ends the deep precompute thread (I0790).
     _STOP_ORDER = ("ml", "forecast", "scalp", "sh", "mm", "zones", "indicators", "svp", "market_zones", "trainhub", "trainhub_inference",
-                   "kronos", "tsfm", "montecarlo", "quant", "research", "baskets", "families", "analytics", "lab", "extind", "nss", "mtf", "si",
-                   "liquidity", "scanner", "engine", "manager", "news", "bridge", "worker")
+                   "kronos", "tsfm", "montecarlo", "quant", "research", "baskets", "analytics", "lab", "extind", "nss", "mtf", "si",
+                   "liquidity", "scanner", "engine", "manager", "pepe_training", "families", "procs", "news", "bridge", "worker")
 
     def _stop_part(self, name: str, method: str = "stop") -> None:
         part = getattr(self, name, None)

@@ -25,27 +25,12 @@ from pathlib import Path
 
 from .. import paths
 from . import core as tc
+from . import tasks as TT
 
 INSTRUMENTS = ("XAUUSD", "BTC")
-# modele głównego treningu: id zadania `training run` -> (krótka nazwa, grupa)
-PIPELINE = (
-    ("forecast", "Prognozy świec 5/15/30 min", "Prognozy i kierunek"),
-    ("scalp_A", "Scalp A – kierunek 1/3/5 min", "Scalp"),
-    ("scalp_B", "Scalp B – jakość setupu", "Scalp"),
-    ("scalp_C", "Scalp C – polityka hedge", "Scalp"),
-    ("ml", "Legacy ML – setupy S01–S12", "Strategie"),
-    ("lab", "Lab – LOGREG / TREE / XGB / ResNet / SNN", "Laboratorium"),
-    ("indicator_context", "Kontekst wskaźników SAR / IQ / PAL", "Kontekst rynku"),
-    ("ml_scalp", "Scalp ML – XGBoost wynik netto", "Scalp"),
-    ("neural_scalp", "Neural Scalp – sieć TCN", "Scalp"),
-    ("structure_intelligence", "Structure Intelligence – ruch M1", "Laboratorium"),
-    ("flow_context", "Flow context – reakcja M1", "Kontekst rynku"),
-    ("context_indicators", "Kontekst VAMD / FD / SMC", "Kontekst rynku"),
-    ("sh_models", "SCALPING / HEDGING – model zdarzenia", "Strategie"),
-    ("sh_pack", "Pakiet 20 strategii SC / HG", "Strategie"),
-    ("monte_carlo", "Monte Carlo ścieżek", "Strategie"),
-    ("master_models", "Master models – HDC / GPR / STE", "Laboratorium"),
-)
+# modele głównego treningu: id zadania `training run` -> (krótka nazwa, grupa); arch146 I0131: z jednego rejestru zadań (training/tasks.py),
+# te same id, nazwy i grupy w tej samej kolejności
+PIPELINE = TT.center_pipeline()
 EXTRA = (
     ("trainhub", "Kierunek TH – BASELINE / LOGREG / HGB", "Prognozy i kierunek"),
     ("families", "Rodziny modeli – ARIMA / GARCH / Kalman …", "Rodziny modeli"),
@@ -151,6 +136,7 @@ class PepeTrainingCenter:
         self._thread: threading.Thread | None = None
         self._cancel = threading.Event()
         self._proc: subprocess.Popen | None = None
+        self._stopping = False                               # arch146 I0100: Runtime.stop() – kolejka nie startuje już nowych zadań
         self.history: list[dict] = self._load_history()
         self._granite_inst: str | None = None                # instrument bieżącego / ostatniego dostrajania Granite z Centrum
 
@@ -444,6 +430,33 @@ class PepeTrainingCenter:
             stopped = self._stop(cur)
         return {"ok": True, "dropped": dropped, "stopped": stopped}
 
+    def stop(self) -> dict:
+        """arch146 I0100: Runtime.stop() (zamknięcie aplikacji). Do 1.46 Centrum nie miało stop() – proces `training run` uruchomiony z kolejki
+        trenował dalej po zamknięciu bota (TrainingCenter trainhub swój proces kończy). Teraz: kolejka nie startuje nic nowego, własny proces
+        głównego treningu (i jego drzewo, bez terminala MT5 – procs.kill_tree) jest kończony w ciągu kilku sekund, wpis historii = CANCELLED
+        „przerwany zamknięciem aplikacji” (zapis atomowy). NIE woła cancel() (kolejka zostaje w pamięci), nie usuwa runów, eksportów ani
+        artefaktów; przerwany run kończy się przed krokiem aktywacji (CANCEL w jego katalogu – wznowienie tylko ręcznie). Jednostki innych
+        serwisów (TH, rodziny, Granite, SDformer) kończą ich własne stop()."""
+        from .. import procs as PR
+        with self._lock:
+            self._stopping = True
+            cur, p = self.current, self._proc
+            live = p is not None and p.poll() is None and cur is not None and cur.get("_proc") is p
+            if live:
+                cur["_shutdown"] = True
+        if not live:
+            return {"stopped": []}
+        try:
+            rid = self._own_run_id(cur)
+            if rid:
+                (tc.runs_dir() / rid / "CANCEL").write_text(tc.now(), encoding="utf-8")   # = `training cancel <rid>`: nic nie aktywuje
+        except OSError:
+            pass
+        stopped = PR.stop_procs([("pepe-center:pipeline", p)], timeout_s=3.0)
+        cur.update(state="CANCELLED", detail="przerwany zamknięciem aplikacji", finished_at=self.clock())
+        self._remember(cur)
+        return {"stopped": stopped}
+
     def _stop(self, q: dict) -> str | None:
         try:
             u = q["unit"]
@@ -498,7 +511,7 @@ class PepeTrainingCenter:
     def _loop(self) -> None:
         while True:
             with self._lock:
-                if not self.queue:
+                if not self.queue or self._stopping:             # arch146 I0100: po stop() (zamknięcie aplikacji) nic nowego nie startuje
                     self.current = None
                     if self._thread is threading.current_thread():
                         self._thread = None                      # 1.46: see _ensure_thread
@@ -511,6 +524,12 @@ class PepeTrainingCenter:
                 res = self._run(q)
             except Exception as exc:  # noqa: BLE001 - jedno zadanie nie zatrzymuje kolejki
                 res = {"state": "FAILED", "detail": f"{type(exc).__name__}: {exc}"[:400]}
+            with self._lock:
+                if q.get("_shutdown"):                           # arch146 I0100: stop() już zapisał ten wpis (przerwany zamknięciem)
+                    self.current = None
+                    if self._thread is threading.current_thread():
+                        self._thread = None
+                    return
             if self._cancel.is_set():
                 res = {"state": "CANCELLED", "detail": "anulowane przez użytkownika"}
             q.update(state=res["state"], detail=res.get("detail", ""), finished_at=self.clock())
@@ -713,11 +732,13 @@ class PepeTrainingCenter:
         # inny trening (np. 00_TRENING_START.bat) w toku -> czekamy, nigdy dwa naraz
         if _lock_alive():
             q["detail"] = "czeka na zakończenie innego treningu"
-            self._wait(lambda: not _lock_alive(), timeout=12 * 3600, step=5.0)
+            self._wait(lambda: not _lock_alive() or self._stopping, timeout=12 * 3600, step=5.0)
             if self._cancel.is_set():
                 return {"state": "CANCELLED", "detail": "anulowane"}
         if self._cancel.is_set():                               # 1.46: cancelled before our own process started
             return {"state": "CANCELLED", "detail": "anulowane"}
+        if self._stopping:                                      # arch146 I0100: aplikacja się zamyka – bez nowego procesu treningu
+            return {"state": "CANCELLED", "detail": "przerwany zamknięciem aplikacji"}
         cmd = [sys.executable, "-m", "masterquo", "training", "run", "--instruments", ",".join(q["instruments"]), "--profile", "PELNY_TRENING",
                "--origin", "pepe-center"]
         if q.get("tasks"):
@@ -740,6 +761,8 @@ class PepeTrainingCenter:
             log.close()
             return {"state": "FAILED", "detail": f"nie można uruchomić treningu: {exc}"[:300]}
         p = q["_proc"] = self._proc
+        from .. import procs as PR
+        PR.REGISTRY.register("pepe-center:pipeline", p, "training")   # arch146 I0100: one registry of the server's training children
         while p.poll() is None:
             if self._cancel.wait(3.0):
                 for _ in range(12):                             # 1.46: repeated - a CANCEL written before execute() started is removed by it
@@ -802,8 +825,8 @@ class PepeTrainingCenter:
         exp = [f"{t.get('instrument')}: {_short(t.get('detail'))}" for t in st.get("tasks") or []      # 1.42.11: błąd eksportu na początku
                if t.get("kind") in ("export", "quality") and t.get("execution") == "BLAD_TECHNICZNY"]
         for t in st.get("tasks") or []:
-            if t.get("kind") in ("export", "quality", "activate", "bot") or (t.get("detail") == "nie wybrano w planie"):
-                continue
+            if t.get("kind") in ("export", "quality", "activate", "bot") or (t.get("detail") == "nie wybrano w planie") or t.get("not_applicable"):
+                continue                                         # arch146 I0073: „nie dotyczy instrumentu” (sh_pack BTC) nie jest pominięciem
             ex = t.get("execution")
             if ex in c:
                 c[ex] += 1
@@ -825,10 +848,31 @@ class PepeTrainingCenter:
 
     # ------------------------------------------------------------------ history
     def _load_history(self) -> list[dict]:
+        """arch146 I0101 (wariant bezpieczny): history.json, który nie jest listą wpisów (np. '{}'), dawał KeyError / TypeError z konstruktora
+        – wyjątek wychodził z Runtime() i bot kończył start kodem 5. Teraz: pusta historia, a nieczytelny plik zostaje zachowany jako
+        history.json.corrupt-<czas> (pierwszy _remember() go nie nadpisuje). Tak samo plik, który nie jest UTF-8 (np. zapisany
+        w Notatniku jako ANSI/cp1250) – UnicodeDecodeError nie wychodzi z konstruktora, jak w 1.46.0."""
+        p = center_dir() / "history.json"
         try:
-            return json.loads((center_dir() / "history.json").read_text(encoding="utf-8"))[-100:]
-        except (OSError, ValueError):
+            raw = p.read_text(encoding="utf-8")
+        except OSError:
             return []
+        except UnicodeDecodeError:                               # np. zapis w Notatniku jako ANSI/cp1250 – plik nieczytelny, nie błąd startu
+            raw = None
+        try:
+            d = json.loads(raw) if raw is not None else None
+        except ValueError:
+            d = None
+        if isinstance(d, list):
+            return [x for x in d if isinstance(x, dict)][-100:]
+        keep = p.with_name(f"history.json.corrupt-{time.strftime('%Y%m%dT%H%M%S', time.gmtime())}")
+        try:
+            p.replace(keep)
+            import logging
+            logging.getLogger(__name__).warning("Centrum Treningowe: history.json nie jest listą wpisów – zachowany jako %s, historia od zera", keep.name)
+        except OSError:
+            pass
+        return []
 
     def _remember(self, q: dict) -> None:
         self.history.append({k: q.get(k) for k in ("id", "unit", "name", "instruments", "tasks", "state", "detail", "started_at", "finished_at", "run_id")}

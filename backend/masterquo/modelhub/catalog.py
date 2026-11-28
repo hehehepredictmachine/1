@@ -64,54 +64,11 @@ LOCATION = {
 def _th_entries(inst: str, rt) -> list[dict]:
     from ..trainhub import learn as L
     from ..trainhub import registry as R
-    reg = R.registry(inst)
-    running = set()
-    try:
-        tc = getattr(rt, "trainhub", None) if rt else None
-        if tc is not None:
-            for j in tc.list(20):
-                if j["status"] in ("RUNNING", "QUEUED") and j["instrument"] == inst and j["kind"] in ("TRAIN", "FULL"):
-                    running.update((j.get("params") or {}).get("models") or ["TH_BASELINE", "TH_LOGREG", "TH_HGB"])
-    except Exception:  # noqa: BLE001
-        pass
-    preds = {}
-    inf_err = None                       # 1.46: why there are no predictions at all (no service / the service failed) - never READY then
-    try:
-        inf = getattr(rt, "trainhub_inference", None) if rt else None
-        if inf is not None:
-            preds = {p["model_key"]: p for p in inf.predictions(inst)}
-        else:
-            inf_err = ("DISABLED", "serwis inferencji Centrum treningu nie działa w tym procesie – brak predykcji aktywnej wersji")
-    except Exception as exc:  # noqa: BLE001
-        preds = {}
-        inf_err = ("ERROR", f"inferencja Centrum treningu: {type(exc).__name__}: {exc}"[:200])
-    avail = L.available()
     out = []
     for mid, spec in L.MODELS.items():
-        keys = [k for k in (reg.get("versions") or {}) if k.startswith(mid + "_")]
-        act = {k: v for k, v in (reg.get("active") or {}).items() if k.startswith(mid + "_")}
-        if mid in running:
-            state, reason = "TRAINING", "zadanie treningu w Centrum treningu"
-        elif not avail.get(mid):
-            state, reason = "DISABLED", "biblioteka modelu niedostępna w tym środowisku"
-        elif act:
-            ps = [preds.get(k) for k in act]
-            bad = [p for p in ps if p and p["state"] != "READY"]
-            if bad:
-                state, reason = bad[0]["state"], bad[0]["unavailable_reason"]
-            elif all(ps):
-                state, reason = "READY", "aktywna wersja: " + ", ".join(f"{k}={v}" for k, v in act.items())
-            elif inf_err is not None:
-                state, reason = inf_err
-            else:
-                # 1.46: READY means a result exists (PMW-PRED-2) - an active version without any prediction yet is waiting for data
-                state, reason = "BLOCKED_DATA", "aktywna wersja bez predykcji (czeka na pierwszą zamkniętą świecę): " + \
-                    ", ".join(f"{k}={v}" for k, v in act.items())
-        elif keys:
-            # 1.46: the message said "none inactive" (= all active) in the branch where NO version is active
-            state, reason = "DISABLED", f"{sum(len(reg['versions'][k]) for k in keys)} wersji, żadna nie jest aktywna – aktywacja ręczna w Centrum treningu"
-        else:
-            state, reason = "NOT_TRAINED", "brak paczki – trening w Centrum treningu"
+        # arch146 I0010: one state computation for every view of the trainhub models (registry.status_of) - unchanged here
+        st = R.status_of(inst, mid, rt)
+        state, reason, keys, act = st["state"], st["reason"], st["versions"], st["active"]
         out.append({"id": mid.lower(), "name": spec["name"] + " – kierunek po kosztach (Centrum treningu)", "category": "TRAINABLE",
                     "location": "trainhub/learn.py, trainhub/features.py", "purpose": "P(DOWN/FLAT/UP) ruchu po kosztach w horyzoncie H świec",
                     "required_data": "magazyn świec data/marketdata (M1/M5/M15/M30, eksport z MT5)", "input": "cechy PMW-TH-FEAT-1 (wspólne trening/inferencja)",

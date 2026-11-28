@@ -356,16 +356,19 @@ def probe(item: dict, rt, inst: str, *, snap: dict | None = None, news=None) -> 
             return {"status": "SHADOW_ONLY", "reason": f"przetrenowany model NeoQuasar (bez treningu w bocie); użycie w strategiach: {use} – "
                     "OBSERVE = obserwacja, ASSIST / REQUIRED = wstrzymanie READY -> WAIT po walidacji walk-forward", "detail": {"use": use, "service": st}}
         if mid == "th_direction":
+            # arch146 I0010: the state of trainhub registry.status_of (the same one the catalog and the Quant inventory show) in the SH
+            # vocabulary. An active version with no prediction while the bot runs is DATA_MISSING (was SHADOW_ONLY here, BLOCKED_DATA in the
+            # catalog). Without a live view (rt None - the SH cycle's own matrix) the 1.46 answer stays: SHADOW_ONLY when a package is active.
+            # Presentation only: the row is OBSERVATION (participation INFO / NONE), no decision reads it.
             from ..trainhub import registry as TR
-            act = TR.registry(inst).get("active") or {}
+            st = TR.status_of(inst, None, rt)
+            act = st["active"]
             if not act:
                 return {"status": "NOT_TRAINED", "reason": "brak aktywnej paczki Centrum treningu (trening + ręczna aktywacja)"}
-            inf = getattr(rt, "trainhub_inference", None) if rt else None
-            ps = [p for p in (inf.predictions(inst) if inf else []) if p.get("model_key") in act]
-            bad = [p for p in ps if p["state"] != "READY"]
-            if bad:
-                return {"status": "INCOMPATIBLE" if bad[0]["state"] == "INCOMPATIBLE" else "ERROR", "reason": bad[0]["unavailable_reason"]}
-            return {"status": "SHADOW_ONLY", "reason": "aktywne: " + ", ".join(f"{k}={v}" for k, v in act.items()) + " – obserwacja, nie głos"}
+            if st["state"] == "READY" or st["cause"] == "NO_LIVE_VIEW":
+                return {"status": "SHADOW_ONLY", "reason": "aktywne: " + ", ".join(f"{k}={v}" for k, v in act.items()) + " – obserwacja, nie głos"}
+            sh = {"BLOCKED_DATA": "DATA_MISSING", "DISABLED": "UNAVAILABLE", "INCOMPATIBLE": "INCOMPATIBLE"}.get(st["state"], "ERROR")
+            return {"status": sh, "reason": st["reason"]}
         if mid == "context_move":
             runs = list((base / "context_ind" / inst / "runs").glob("*/report.json"))
             return {"status": "NOT_CONNECTED", "reason": f"{len(runs)} runów; model bez ścieżki inferencji na żywo (F-17) – tylko badania"}

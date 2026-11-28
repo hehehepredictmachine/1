@@ -142,6 +142,10 @@ class TestSVMFallbackVisible(unittest.TestCase):
             class St:
                 def manifest(self, inst):
                     return {}
+
+                def inst_dir(self, inst):                # scalenie z training_studio (I0064): DatasetRef paczki czyta raport jakości Store
+                    from pathlib import Path
+                    return Path(td.dir) / "marketdata" / inst
             cfg = {"base_tf": "M5", "horizon": 1, "k_atr": 0.25, "holdout_frac": 0.2, "n_folds": 2, "embargo_bars": 0, "min_samples": 500,
                    "min_train": 100, "seed": 7, "models": ["TH_BASELINE", "TH_SVM"], "grid_limit": 1, "profile": None, "time_budget_s": None,
                    "commission_price": 0.0, "slippage_price": 0.0, "point": 0.01}

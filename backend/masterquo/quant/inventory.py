@@ -357,6 +357,19 @@ def _extra_rows() -> list[dict]:
     return out
 
 
+def _th_runtime_state(st: dict) -> str:
+    """trainhub registry.status_of (catalog vocabulary) -> runtime_state of this inventory. Without a live view (no running bot) an active
+    package stays SHADOW_ONLY as in 1.46; while the bot runs an active package without a prediction is DATA_MISSING (was SHADOW_ONLY)."""
+    s, cause, act, vers = st["state"], st.get("cause"), st.get("active"), st.get("versions")
+    if s == "READY" or (cause == "NO_LIVE_VIEW" and act):
+        return "SHADOW_ONLY"
+    if s == "TRAINING":
+        return "SHADOW_ONLY" if act else ("CANDIDATE" if vers else "NOT_TRAINED")
+    if s == "DISABLED":
+        return {"NO_ACTIVE": "CANDIDATE", "NO_LIBRARY": "MISSING_DEPENDENCY"}.get(cause, "UNAVAILABLE")
+    return {"BLOCKED_DATA": "DATA_MISSING", "NOT_TRAINED": "NOT_TRAINED", "INCOMPATIBLE": "INCOMPATIBLE"}.get(s, "ERROR")
+
+
 def _probe(entries: list[dict], rt, inst: str) -> None:
     """Live / on-disk state through the EXISTING probes (sh.models.probe, families status, trainhub registry). Never raises."""
     from ..sh import models as SM
@@ -378,13 +391,10 @@ def _probe(entries: list[dict], rt, inst: str) -> None:
                     e["state_reason"] = st.get("implementation_reason") or f"artefakt {st['artifact']}, użycie {st.get('use')}"
                     e["validation"] = "VALIDATED" if st["artifact"] == "APPROVED" else "NOT_VALIDATED"
             elif e["id"].startswith("trainhub:"):
+                # arch146 I0010: the one trainhub state (registry.status_of, the same as the catalog / SH probe) in the probe vocabulary
                 from ..trainhub import registry as TR
-                s = TR.summary(inst)
-                key = e["id"].split(":", 1)[1]
-                mine = [v for v in s.get("versions") or [] if str(v.get("model_key", "")).startswith(key + "_")]
-                act = {k: v for k, v in (s.get("active") or {}).items() if k.startswith(key + "_")}
-                e["runtime_state"] = "SHADOW_ONLY" if act else ("CANDIDATE" if mine else "NOT_TRAINED")
-                e["state_reason"] = (f"aktywne: {act}" if act else f"wersji: {len(mine)}, brak aktywnej paczki")
+                st = TR.status_of(inst, e["id"].split(":", 1)[1], rt)
+                e["runtime_state"], e["state_reason"] = _th_runtime_state(st), st["reason"]
         except Exception as exc:  # noqa: BLE001 - a broken probe is a state, never a crash of the inventory
             e["runtime_state"], e["state_reason"] = "ERROR", f"{type(exc).__name__}: {exc}"[:160]
 
