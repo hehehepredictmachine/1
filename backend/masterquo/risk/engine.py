@@ -26,7 +26,7 @@ import math
 from datetime import datetime, timedelta
 from typing import Callable
 
-from .costs import DEAL_ENTRY_IN, DEAL_ENTRY_OUT, DEAL_ENTRY_OUT_BY
+from .costs import DEAL_ENTRY_IN, DEAL_ENTRY_OUT, DEAL_ENTRY_OUT_BY, active_cost_per_lot
 
 ProfitFn = Callable[[str, float, float, float], "float | None"]
 MarginFn = Callable[[str, float, float], "float | None"]
@@ -133,19 +133,13 @@ def evaluate(*, side: str, levels: dict, quote: dict | None, symbol_info: dict |
         res["reason_codes"] = sorted(set(reasons + ["BROKER_PROFIT_CALC_UNAVAILABLE"]))
         return res
     stop_gross_1 = max(0.0, -loss_1)
+    # Etap 4 (PMW-COSTS-1): COST_STRESS through the cost resolver with the ACTIVE policy (risk/costs.active_cost_per_lot) - the same
+    # formula: 2 x commission + 2 x |broker value of slippage_stress_points x point|, unknown parts 0 in the total with a reason code
     comm = commission.get("per_lot_per_side")
-    comm_rt_1 = 2 * comm if comm is not None else None
-    if comm is None:
-        reasons.append("COST_MODEL_UNKNOWN_COMMISSION")
-    slip_pts = costs_cfg.slippage_stress_points
-    slip_1 = None
-    if slip_pts is not None and point:
-        delta = slip_pts * point
-        v = profit_fn(order_side, 1.0, entry, entry - delta if order_side == "BUY" else entry + delta)
-        slip_1 = 2 * abs(v) if v is not None else None
-    if slip_1 is None:
-        reasons.append("SLIPPAGE_STRESS_NOT_CONFIGURED")
-    cost_1 = (comm_rt_1 or 0.0) + (slip_1 or 0.0)
+    cb = active_cost_per_lot(comm, costs_cfg.slippage_stress_points, point,
+                             lambda delta: profit_fn(order_side, 1.0, entry, entry - delta if order_side == "BUY" else entry + delta), symbol)
+    reasons.extend(cb.reason_codes)
+    comm_rt_1, slip_1, cost_1 = cb.commission, cb.slippage, cb.total
     reward_1 = sum(t["weight"] * g for t, g in zip(targets, gains_1))
     if stop_gross_1 <= 0:
         res["reason_codes"] = sorted(set(reasons + ["STOP_RISK_NOT_POSITIVE"]))

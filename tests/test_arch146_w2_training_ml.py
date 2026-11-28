@@ -296,11 +296,18 @@ class TestTrainhubSlippageRoundTrip(unittest.TestCase):
                          (0.25, "USER_GIVEN_PRICE_UNITS", None))
 
     def test_same_semantics_as_risk_engine(self):
-        """risk/engine: slip_1 = 2 x |profit(slippage_stress_points x point)| per lot - the label cost uses the same 2 fills."""
+        """risk/engine: slip_1 = 2 x |profit(slippage_stress_points x point)| per lot - the label cost uses the same 2 fills.
+        Etap 4 (PMW-COSTS-1): the expression moved unchanged to the cost resolver (ACTIVE policy via risk/costs.active_cost_per_lot,
+        bit-for-bit proof in test_arch146_e4_costs) - risk/engine takes slip_1 from it, the 2 fills are checked by value."""
         import inspect
 
         from masterquo.risk import engine as RE
-        self.assertIn("slip_1 = 2 * abs(v)", inspect.getsource(RE))
+        from masterquo.risk.costs import active_cost_per_lot
+        src = inspect.getsource(RE)
+        self.assertIn("active_cost_per_lot(", src)
+        self.assertIn("comm_rt_1, slip_1, cost_1 = cb.commission, cb.slippage, cb.total", src)
+        cb = active_cost_per_lot(None, 5.0, 0.01, lambda delta: -delta * 100.0)       # 5 points of 0.01 against 1 lot, 100 per 1.0
+        self.assertEqual(cb.slippage, 2 * abs(-5.0 * 0.01 * 100.0))                     # 2 fills
         from masterquo.trainhub import pipeline as P
         self.assertEqual(P.SLIPPAGE_FILLS, 2)
 

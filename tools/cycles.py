@@ -40,6 +40,9 @@ LAYERS: dict[str, int] = {
     # (after the merge of training_studio) the registry of the server's training child processes and kill_tree (I0100, stdlib only;
     # one lazy helper import of training.core._proc_start - baseline edge, candidate for L0 in Etap 4)
     "procs": 0,
+    # (Etap 4 pkt 4) the cost resolver PMW-COSTS-1: declared per-track cost policies + arithmetic, standard library only - every track
+    # (risk / sh in L3, scalp / evaluation / quant in L4) imports it without an upward edge
+    "costs": 0,
     # L1 - data and external I/O: database, MT5 bridge, market data stores, data quality, news, notifications, licence
     "db": 1, "mt5": 1, "marketdata": 1, "data": 1, "markets": 1, "news": 1, "notify": 1, "licensing": 1, "stats": 1,
     # L2 - analyses (deterministic, no order path)
