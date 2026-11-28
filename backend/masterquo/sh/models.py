@@ -334,7 +334,7 @@ def probe(item: dict, rt, inst: str, *, snap: dict | None = None, news=None) -> 
             if st in ("NOT_INSTALLED", "NO_WEIGHTS", "DISABLED", "INSTALLING"):
                 return {"status": "UNAVAILABLE" if st != "NO_WEIGHTS" else "NOT_CONNECTED", "reason": w.state.get("reason") or st,
                         "detail": {"use": use, "service": st}}
-            if st == "ERROR":
+            if st in ("ERROR", "CONFIG"):        # 1.46 (I0205): CONFIG = settings the model never answers (was shown as SHADOW_ONLY)
                 code = w.state.get("code")
                 return {"status": "INCOMPATIBLE" if code in ("INCOMPATIBLE", "CHECKSUM") else "ERROR", "reason": w.state.get("reason"),
                         "detail": {"use": use, "service": st}}

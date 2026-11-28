@@ -155,6 +155,15 @@ def activate(svc, run_id: str) -> dict:
     verdict = ((man.get("metrics") or {}).get("verdict"))
     if verdict != "IMPROVED_VS_BASE":
         return {"ok": False, "reason": f"werdykt testu {verdict}: dotrenowany model nie jest lepszy od bazowego na niewidzianych danych"}
+    # 1.46 (I0845): runs of 1.40-1.46 wrote IMPROVED_VS_BASE on any number of test windows (10-26 typical) - the same minimum sample as
+    # the trainer's verdict is required here, so an old manifest cannot activate a checkpoint "better" on a handful of windows
+    from tsfm_runtime.granite_finetune import MIN_TEST_WINDOWS
+    n_test = (man.get("metrics") or {}).get("test_windows")
+    if n_test is None:
+        n_test = ((man.get("train") or {}).get("windows") or {}).get("test")
+    if n_test is None or int(n_test) < MIN_TEST_WINDOWS:
+        return {"ok": False, "reason": f"za mało okien testowych ({n_test if n_test is not None else 'brak liczby'} < {MIN_TEST_WINDOWS}): "
+                                       "przewaga nad modelem bazowym nie jest wykazana – nie zostanie aktywowany"}
     if (man.get("train") or {}).get("horizon") != int(svc.settings.get().horizon_bars.get((man.get("data") or {}).get("timeframe") or "M5", 0)):
         return {"ok": False, "reason": "checkpoint trenowany dla innego horyzontu niż obecne ustawienia"}
     svc.settings.update({"models": {"granite_ttm": {"checkpoint": run_id}}}, who="granite_activate")

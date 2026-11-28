@@ -1,4 +1,5 @@
-"""Installer / verifier of the Chronos-2 and FinCast weights (stdlib only for `download`; `selftest` needs the model environment).
+"""Installer / verifier of the Chronos-2, Granite TTM and TiRex-2 weights (stdlib only for `download`; `selftest` needs the model
+environment). FinCast is retired (wycofany w 1.40) - the installer refuses it.
 
   python -m tsfm_runtime.install download --model chronos2|granite_ttm|tirex2 --weights-root DIR [--from-dir DIR] [--status-file F]
   python -m tsfm_runtime.install verify   --model chronos2|granite_ttm|tirex2 --weights-root DIR [--selftest] [--status-file F]

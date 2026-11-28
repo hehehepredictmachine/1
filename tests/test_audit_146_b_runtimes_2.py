@@ -440,7 +440,9 @@ class TestGraniteFinetuneSelection(unittest.TestCase):
         self.assertEqual(m["val_mse_saved"], best["val_mse"])
         self.assertLess(m["val_mse_saved"], m["val_mse_base"])
         self.assertNotEqual(saved, -40.0)
-        self.assertEqual(m["verdict"], "IMPROVED_VS_BASE")
+        # 1.46 (I0845): better than the base on the unseen part, but on ~13 test windows (< 100) - no longer IMPROVED_VS_BASE (activatable)
+        self.assertLess(m["test_finetuned"]["mae_h"], m["test_base"]["mae_h"])
+        self.assertEqual((m["verdict"], m["min_test_windows"]), ("INSUFFICIENT_TEST", 100))
 
     def test_small_test_sample_is_stated(self):
         man, _ = self._run(base_head=-40.0)
