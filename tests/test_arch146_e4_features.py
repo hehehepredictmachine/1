@@ -1,8 +1,9 @@
 """Etap 4 (Apollo23 1.46, docs/arch146/ETAP2_PROJEKT.md §3-§6): cechy i ledgery - features/schemas.py + ledgers/ (widok).
 
-* features/schemas.py PMW-FEAT-SCHEMAS-1: rejestr 25 schematów cech (id, wersja, właściciel = moduł buildera, lista cech, fingerprint =
+* features/schemas.py PMW-FEAT-SCHEMAS-1: rejestr schematów cech (id, wersja, właściciel = moduł buildera, lista cech, fingerprint =
   hash WYJŚCIA buildera na zamrożonym fixture PMW-FEAT-FIXTURE-1). Buildery zostają u właścicieli bez zmian. Zmiana buildera bez nowej
-  wersji (nowego id) = test czerwony.
+  wersji (nowego id) = test czerwony. Pokrycie sprawdza strażnik (scan_labels / uncovered): każda etykieta schematu cech zadeklarowana w
+  kodzie jest w rejestrze, w NOT_REGISTERED (z powodem) albo w NOT_FEATURE_SCHEMAS - nowa etykieta bez wpisu = test czerwony.
 * ledgers/view.py PMW-LEDGER-VIEW-1: widok obejmuje wszystkie magazyny z ETAP2 §5 (evaluation, quant/ledger, mm ledger, decision/ledger,
   scalp, ml + pliki) - AUX_ADAPTERS: ledger decyzji PMW-ARC-1, rejestry holdoutu i prób, ledgery plikowe; tylko odczyt, bez migracji,
   writery bez zmian (wiersze testowe zapisują WŁASNE writery właścicieli tam, gdzie to możliwe).
@@ -18,7 +19,11 @@ import _env
 
 REQUIRED_IDS = {"PMW-QUANT-FEAT-1", "PMW-QUANT-FEAT-3", "PMW-QUANT-FEAT-4", "MQ-FEAT-1.3.0", "SCALP_INDICATOR_CONTEXT_V2",
                 "SCALP-SETUP-FEAT-1.0.0", "PMW-TH-FEAT-1", "PMW-MM-EVENT-1", "FS-1.0.0", "SMF-1.0.0", "NSS-FEAT-1.0.0", "PMW-ZONES-SEM-1",
-                "PMW-ZONES-SEM-2"}
+                "PMW-ZONES-SEM-2",
+                # review of Etap 4: working builders of ETAP1 rejestry_cech missing in the first registry
+                "FLOW_CONTEXT_V1", "FS_VS_CONTEXT_v1", "BAR_SEQ_V1", "MICROSTRUCTURE", "PMW_GRAPH50_V1"}
+# ETAP1 rejestry_cech labels without a fingerprint: each must be described (reason) in NOT_REGISTERED
+DESCRIBED_ONLY = {"CLOSE_ONLY", "KRONOS_OHLCV_TIME_V1", "TSFM_*", "BASKET-FEAT-1", "gold-candles-v2.0", "MQ_NEWTONIAN_QUOTES_V2"}
 FIXTURE_DIGEST = "899c42bba3ff4a7d"        # PMW-FEAT-FIXTURE-1 (the generator is frozen with FIXTURE_VERSION)
 
 
@@ -35,14 +40,59 @@ class TestFeatureSchemaRegistry(_Data):
     """ETAP2 §4 'Cechy': 25 schematów wersjonowanych samymi nazwami (ETAP1 rejestry_cech#4) - rejestr z odciskiem formuły."""
 
     def test_registry_covers_the_schemas_of_the_code(self):
+        """Coverage is scanned, not counted: every feature-schema label the code declares is accounted for (no fixed number)."""
         from masterquo.features import schemas as FS
         ids = [s.id for s in FS.SCHEMAS]
         self.assertEqual(len(ids), len(set(ids)))
-        self.assertEqual(len(ids), 25)
         self.assertLessEqual(REQUIRED_IDS, set(ids))
         self.assertEqual(set(FS.FINGERPRINTS), set(ids))                  # every schema has a frozen fingerprint, nothing else
         self.assertEqual({s.family for s in FS.SCHEMAS},
-                         {"quant", "ml", "zones", "extind", "scalp", "gold_candles", "trainhub", "mm", "lab", "sh", "research"})
+                         {"quant", "ml", "zones", "extind", "scalp", "gold_candles", "trainhub", "mm", "lab", "sh", "research", "modelhub"})
+        found = FS.scan_labels()
+        self.assertEqual(FS.uncovered(), {}, "a feature schema of the code is neither registered nor described in NOT_REGISTERED")
+        # the scan sees the labels of the review (constants, a modelhub DATA schema, keyword / f-string literals)
+        for lbl in ("FLOW_CONTEXT_V1", "FS_VS_CONTEXT_v1", "BAR_SEQ_V1", "KRONOS_OHLCV_TIME_V1", "TSFM_*", "BASKET-FEAT-1", "PMW_GRAPH50_V1",
+                    "PMW-MM-EVENT-1:*", "STE-SPLITS-8x16:*", "CLOSE_ONLY", "MQ-FEAT-1.3.0", "SCALP-SETUP-FEAT-1.0.0"):
+            self.assertIn(lbl, found, lbl)
+        self.assertEqual({k: FS.covered(k) for k in ("KRONOS_OHLCV_TIME_V1", "TSFM_*", "BASKET-FEAT-1", "PMW_GRAPH50_PORT_V1", "EVENT_UNITS_V1",
+                                                     "PMW-MM-EVENT-1:*", "STE-SPLITS-8x16:*", "MQ-DT-SIGNAL-RANKER-1.0.0")},
+                         {"KRONOS_OHLCV_TIME_V1": "not_registered", "TSFM_*": "not_registered", "BASKET-FEAT-1": "not_registered",
+                          "PMW_GRAPH50_PORT_V1": "schema:PMW_GRAPH50_V1", "EVENT_UNITS_V1": "schema:PMW-MM-EVENT-1",
+                          "PMW-MM-EVENT-1:*": "schema:PMW-MM-EVENT-1", "STE-SPLITS-8x16:*": "schema:STE-SPLITS-8x16",
+                          "MQ-DT-SIGNAL-RANKER-1.0.0": "not_feature"})
+        self.assertLessEqual(DESCRIBED_ONLY, set(FS.NOT_REGISTERED))
+        self.assertTrue(all(len(v) > 40 for v in FS.NOT_REGISTERED.values()))     # a reason, not a placeholder
+        self.assertEqual(set(FS.NOT_REGISTERED) & set(ids), set())
+        # every registered id / label declared as a constant / literal by the code is seen by the scan (the scan is not blind to them)
+        scanned = {s.id for s in FS.SCHEMAS if any(FS.covered(k) == f"schema:{s.id}" for k in found)}
+        self.assertEqual(set(ids) - scanned, {"PMW-ZONES-SEM-2", "PMW-MM-FEATURES-1/HDC", "MICROSTRUCTURE"})
+        # zones.engine SEMANTICS (no feature list there; SEM-1 is reached through the shared alias PMW-ZONE-FEAT-1 of zones/features.py),
+        # HDC = schema_id(names) computed, MICROSTRUCTURE = the family ID (the owner declares no feature label) - all three checked by
+        # test_owner_declares_the_label_and_owns_the_builder
+
+    def test_coverage_guard_catches_a_new_label(self):
+        """A new feature schema in the code without a registry entry turns the guard red (the scan is not a tautology)."""
+        import tempfile
+
+        from masterquo.features import schemas as FS
+        with tempfile.TemporaryDirectory() as td:
+            pkg = Path(td) / "masterquo" / "newarea"
+            (pkg / "families").mkdir(parents=True)
+            (Path(td) / "masterquo" / "vendor").mkdir()
+            (pkg / "model.py").write_text('FEATS = ["a", "b"]\nSCHEMA = "NEW_AREA_V1"\nVERSION = 3\n', encoding="utf-8")
+            (pkg / "other.py").write_text('FEATURE_SCHEMA = "NEW-FEAT-1.0.0"\nSCHEMA = "NOT_AN_OWNER_V1"\n'
+                                          'def f(p):\n    return dict(feature_schema=f"NEWP_{p}", x={"feature_schema": "FS-1.0.0"})\n',
+                                          encoding="utf-8")
+            (pkg / "families" / "fam.py").write_text('class F:\n    DATA = {"kind": "BARS", "schema": "NEW_SEQ_V9"}\n', encoding="utf-8")
+            (Path(td) / "masterquo" / "vendor" / "x.py").write_text('FEATURE_SCHEMA = "VENDORED"\n', encoding="utf-8")
+            bad = FS.uncovered(Path(td))
+        self.assertEqual(set(bad), {"NEW_AREA_V1", "NEW-FEAT-1.0.0", "NEWP_*"})   # FS-1.0.0 registered; SCHEMA of a module without a
+        self.assertEqual(bad["NEW-FEAT-1.0.0"], ["masterquo/newarea/other.py:1:FEATURE_SCHEMA"])   # feature list ignored; vendor skipped
+        with tempfile.TemporaryDirectory() as td:
+            fam = Path(td) / "masterquo" / "modelhub" / "families"
+            fam.mkdir(parents=True)
+            (fam / "fam.py").write_text('class F:\n    DATA = {"kind": "BARS", "schema": "NEW_SEQ_V9"}\n', encoding="utf-8")
+            self.assertEqual(set(FS.uncovered(Path(td))), {"NEW_SEQ_V9"})
 
     def test_owner_declares_the_label_and_owns_the_builder(self):
         import importlib
@@ -76,6 +126,15 @@ class TestFeatureSchemaRegistry(_Data):
         self.assertEqual(FS.names("SCALP-NET-FEAT-1.0.0")[:len(ST.SETUP_FEATURES)], list(ST.SETUP_FEATURES))
         for v in ("PMW-QUANT-FEAT-1", "PMW-QUANT-FEAT-4"):
             self.assertEqual(FS.get(v).names_kind, "FIXTURE")
+        from masterquo.lab.context_ind import task as CT
+        from masterquo.lab.flow_context import task as FT
+        self.assertEqual((FS.names("FLOW_CONTEXT_V1"), FS.names("FS_VS_CONTEXT_v1")), (FT.FEATS, CT.FEATS))
+        out = FS.output("FLOW_CONTEXT_V1")
+        self.assertEqual((out["schema"], out["F"].shape[1]), (FT.SCHEMA, len(FT.FEATS)))
+        self.assertEqual(FS.output("FS_VS_CONTEXT_v1")["F"].shape[1], len(CT.FEATS))
+        self.assertEqual(FS.output("BAR_SEQ_V1")["per_bar"].shape[1], len(FS.names("BAR_SEQ_V1")))
+        self.assertEqual(FS.output("MICROSTRUCTURE")["live"][0].shape[1], len(FS.names("MICROSTRUCTURE")))
+        self.assertEqual({s.id for s in FS.SCHEMAS if s.names_kind == "DESCRIBED"}, {"GPR_LAG1_LOGRET", "BAR_SEQ_V1", "MICROSTRUCTURE"})
         self.assertTrue(any(n.startswith("ctx:regime_sh=") for n in FS.names("PMW-QUANT-FEAT-4")))
         self.assertFalse(any(n.startswith("ctx:regime=") for n in FS.names("PMW-QUANT-FEAT-4")))
         self.assertTrue(any(n.startswith("ctx:regime=") for n in FS.names("PMW-QUANT-FEAT-1")))
@@ -112,6 +171,14 @@ class TestFeatureSchemaRegistry(_Data):
             t, X, nm = TF.build(cols, base, 0.01)
             th[base] = {"t": t[-200:], "X": X[-200:], "names": nm}
         self.assertEqual(fp(th), FS.FINGERPRINTS["PMW-TH-FEAT-1"])
+        from masterquo.lab.context_ind import task as CT
+        from masterquo.modelhub.families import micro as MI
+        r = CT.features(FS._b("M5", 700), 0.01)
+        self.assertEqual(fp({"F": r["F"][-500:], "t": r["t"][-500:], "atr": r["atr"][-500:], "smc_hash": r["smc_hash"]}),
+                         FS.FINGERPRINTS["FS_VS_CONTEXT_v1"])
+        books = FS._books()
+        self.assertEqual(fp({"live_window_s": 60.0, "live": MI.features_from_books(books), "legacy": MI.features_from_books(books, window_s=30.0)}),
+                         FS.FINGERPRINTS["MICROSTRUCTURE"])
 
     def test_builder_change_without_version_bump_is_red(self):
         """A formula change under the same id is detected - and only for the schemas whose builder it touches."""
@@ -154,6 +221,22 @@ class TestFeatureSchemaRegistry(_Data):
         orig_sf = ST.setup_features
         with mock.patch.object(ST, "setup_features", lambda *a: {k: (float("nan") if v == 0.0 else v) for k, v in orig_sf(*a).items()}):
             self.assertIn("SCALP-SETUP-FEAT-1.0.0", red("SCALP-SETUP-FEAT-1.0.0"))
+        # the schemas added by the review: a change of their owner's formula / constant is red only for them
+        from masterquo.lab.context_ind import task as CT
+        from masterquo.lab.flow_context import task as FT
+        from masterquo.modelhub.families import micro as MI
+        from masterquo.modelhub.families import seqdata as SD
+        new = ("FLOW_CONTEXT_V1", "FS_VS_CONTEXT_v1", "BAR_SEQ_V1", "MICROSTRUCTURE")
+        with mock.patch.object(FT, "SR_EVERY", 10):                         # S/R snapshot every 10th bar instead of the 15th
+            self.assertEqual(red(*new), {"FLOW_CONTEXT_V1"})
+        vamd = CT.VM.VAMD
+        with mock.patch.object(CT.VM, "VAMD", lambda cfg: vamd({"P": 5})):  # another VAMD period under FS_VS_CONTEXT_v1
+            self.assertEqual(red(*new), {"FS_VS_CONTEXT_v1"})
+        atr_rel = SD.atr_rel
+        with mock.patch.object(SD, "atr_rel", lambda bars, n=14: atr_rel(bars, 20)):
+            self.assertEqual(red(*new), {"BAR_SEQ_V1"})
+        with mock.patch.object(MI, "BOOK_LEVELS", 3):                       # depth_imbalance over 3 levels instead of 5
+            self.assertEqual(red(*new), {"MICROSTRUCTURE"})
         # a version bump in the owner without a registry entry is red as well (the registry must get the new id)
         from masterquo.ml import features as MF
         with mock.patch.object(MF, "FEATURE_SCHEMA_VERSION", "MQ-FEAT-1.4.0"):
@@ -190,6 +273,23 @@ class TestFeatureSchemaRegistry(_Data):
         from masterquo.features import schemas as FS
         t = FS.tag("PMW-MM-EVENT-1")
         self.assertEqual(t["feature_schema_id"], FS.label("PMW-MM-EVENT-1"))
+        # labels = the strings artifacts / records CARRY: graph CA = research/service.py feature_schema_id (SCHEMA:ORDER_HASH)
+        import inspect
+
+        from masterquo.research import etc as ETC
+        from masterquo.research import graph_ca as GCA
+        from masterquo.research import service as RS
+        carried = f"{GCA.SCHEMA}:{GCA.ORDER_HASH}"
+        self.assertIn('"feature_schema_id": f"{GR.SCHEMA}:{GR.ORDER_HASH}"', inspect.getsource(RS))
+        self.assertEqual((FS.label("PMW_GRAPH50_V1"), FS.get("PMW_GRAPH50_V1").aliases), (carried, (GCA.VERSION,)))
+        self.assertEqual(FS.tag(carried)["feature_schema_id"], carried)
+        self.assertEqual(FS.check_manifest(carried, {}), {"status": "LEGACY", "id": "PMW_GRAPH50_V1"})
+        self.assertEqual(FS.check_manifest(carried, {"feature_fingerprint": FS.FINGERPRINTS["PMW_GRAPH50_V1"]})["status"], "OK")
+        self.assertEqual(FS.resolve(ETC.schema_hash(ETC.DEFAULT)), "PMW_ETC_FEATURES_V1")      # SCHEMA:VERSION:params hash
+        self.assertEqual(FS.resolve("GPR_LAG1_LOGRET;retune=3"), "GPR_LAG1_LOGRET")
+        self.assertEqual(FS.resolve(FS.label("STE-SPLITS-8x16")), "STE-SPLITS-8x16")
+        self.assertIsNone(FS.resolve("PMW-ZONE-FEAT-1"))                  # an alias shared by SEM-1 / SEM-2 is never resolved
+        self.assertIsNone(FS.resolve("PMW_GRAPH50_PORT_V1"))               # the port version alone is not the carried label
         self.assertEqual(FS.check_manifest("SMF-1.0.0", {})["status"], "LEGACY")             # artifacts of today: accepted as today
         self.assertEqual(FS.check_manifest("SMF-1.0.0", {"feature_fingerprint": FS.FINGERPRINTS["SMF-1.0.0"]})["status"], "OK")
         self.assertEqual(FS.check_manifest("SMF-1.0.0", {"feature_fingerprint": "0" * 16})["status"], "MISMATCH")

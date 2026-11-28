@@ -1,7 +1,13 @@
-"""PMW-FEAT-SCHEMAS-1: registry of every feature schema in the code (1.46 arch, Etap 4 pkt 2; docs/arch146/ETAP2_PROJEKT.md §3 / §4).
+"""PMW-FEAT-SCHEMAS-1: registry of the feature schemas of the code (1.46 arch, Etap 4 pkt 2; docs/arch146/ETAP2_PROJEKT.md §3 / §4).
 
-Before: 25 independent feature schemas versioned by NAMES only (constants or a hash of the name list) - a change of a formula, a seed or
-a missing-value policy under the same name and version was not detected anywhere (ETAP1 rejestry_cech#4).
+Before: independent feature schemas (ETAP1 rejestry_cech: "co najmniej 25") versioned by NAMES only (constants or a hash of the name
+list) - a change of a formula, a seed or a missing-value policy under the same name and version was not detected anywhere (#4).
+Coverage is checked, not claimed: scan_labels() reads (AST, nothing imported) every feature-schema label the code declares - constants
+FEATURE_SCHEMA* / FEATURE_SET* / *FEATURES_ID anywhere, SCHEMA / VERSION* / SEMANTICS in owner modules (a module-level feature list or a
+*features.py file), feature_schema= / model_feature_schema= literals, `"schema"` of a modelhub family DATA - and uncovered() lists the
+labels that are neither a registered schema (id / label / alias) nor in NOT_REGISTERED (feature schema WITHOUT a fingerprint, with the
+reason) nor in NOT_FEATURE_SCHEMAS (a model / artifact format found by the scan). The test requires uncovered() == {}. Feature builders
+that declare no label at all (internal inputs of modelhub statistical families: arima exog, garch, breakout, rl ...) are outside the scan.
 
 This module only DESCRIBES and MEASURES. The builders stay in their owner modules, unchanged; nothing here is called by a model, a
 strategy, a gate or a writer (no decision can change):
@@ -17,15 +23,21 @@ strategy, a gate or a writer (no decision can change):
                 change without a new schema id (= version) turns the test red. A deliberate change = new version in the owner + new
                 entry here (old artifacts keep their id and are never fed the new meaning - IMPL_BRIEF pkt 4);
 * tag() / check_manifest()  for artifacts that will record it later: an artifact without a fingerprint is legacy-compatible (as today),
-                a different fingerprint under the same id is a mismatch. No owner calls them yet (owners' code is not changed here).
+                a different fingerprint under the same id is a mismatch; check_manifest() takes the label an artifact CARRIES (resolve()).
+                NOT WIRED in Etap 4 (not_done): no writer records feature_fingerprint and no loader compares it - a new manifest key and a
+                load-time decision change files in data/ and loading behaviour, so they are a separate step (plan: an ADDITIVE key
+                feature_fingerprint in NEW manifests only, old artifacts = LEGACY exactly as today, MISMATCH reported before it may block).
 """
 from __future__ import annotations
 
+import ast
+import fnmatch
 import hashlib
 import importlib
 import importlib.util
 import json
 import math
+import re
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -506,17 +518,77 @@ def _hdc_id():
     return MMF.schema_id(_hdc_names())
 
 
+def _graph_label():
+    from ..research import graph_ca as GCA
+    return f"{GCA.SCHEMA}:{GCA.ORDER_HASH}"                                 # research/service.py feature_schema_id
+
+
+def _ste_label():
+    """mm/jobs.py manifest: 'STE-SPLITS-8x16:' + ','.join(ste_flownet.CHANNELS) (a literal there, no constant)."""
+    from ..mm import ste_flownet as STE
+    lit = _literal("masterquo.mm.jobs", '"STE-SPLITS-8x16:" + ",".join(SF.CHANNELS)', "STE-SPLITS-8x16:")()
+    return lit + ",".join(STE.CHANNELS) if not lit.startswith("LITERAL_MISSING") else lit
+
+
+def _flow_context():
+    from ..lab.flow_context import task as FT
+    r = FT.features(_b("M1", 1500), TICK, TICK)                             # > WARM (1000): the Markov3 / bucket columns are live
+    return {"F": r["F"][-600:], "t": r["t"][-600:], "atr": r["atr"][-600:], "schema": r["schema"], "names": r["names"]}
+
+
+def _context_ind():
+    from ..lab.context_ind import task as CT
+    r = CT.features(_b("M5", 700), TICK)
+    return {"F": r["F"][-500:], "t": r["t"][-500:], "atr": r["atr"][-500:], "smc_hash": r["smc_hash"]}
+
+
+def _bar_seq():
+    from ..modelhub.families import seqdata as SD
+    b = _b("M5", 400)
+    X, y, idx = SD.build(b, L=64, H=6, cost_rel=0.0001)                     # the SEQ_LSTM / SEQ_GRU defaults (lookback 64, H = 6)
+    return {"per_bar": SD.per_bar(b)[-300:], "X": X[-12:], "y": y, "idx": idx, "live": SD.live_window(b, 64)}
+
+
+def _books() -> list[dict]:
+    """Synthetic broker book snapshots (1 s polling) around the last M1 closes: 5 levels per side, a few empty best levels, one-level
+    books and a 9 s gap (accumulator reset) - SYNTHETIC like the bars, it checks indicators/ofi.py + micro.features_from_books."""
+    g = _Rng(31)
+    mid, t, out = fixture()["M1"][-1]["c"], float(T_END - 1300), []
+    for k in range(1200):
+        t += 9.0 if k == 600 else 1.0
+        mid = round(mid + TICK * round(1.6 * g.n()), 2)
+        sp = TICK * (1 + int(3 * g.u()))
+        bid = round(mid - sp / 2, 2)
+        ask = round(bid + sp, 2)
+        lv = 1 if k % 53 == 7 else 5
+        bids = [(round(bid - TICK * j, 2), round(0.5 + 9 * g.u(), 2)) for j in range(lv)]
+        asks = [(round(ask + TICK * j, 2), round(0.5 + 9 * g.u(), 2)) for j in range(lv)]
+        if k % 97 == 11:
+            bids[0], asks[0] = (bids[0][0], 0.0), (asks[0][0], 0.0)        # empty best sizes: best_imbalance / microprice None
+        out.append({"t": t, "bids": bids, "asks": asks})
+    return out
+
+
+def _micro():
+    from ..modelhub.families import micro as MI
+    books = _books()
+    live = MI.features_from_books(books)                                    # window = the live IndicatorService window (training)
+    legacy = MI.features_from_books(books, window_s=MI.LEGACY_OFI_WINDOW_S)  # artifacts of 1.33-1.45 (no ofi_window_s in micro.json)
+    return {"live_window_s": MI.live_ofi_window_s(), "live": live, "legacy": legacy}
+
+
 # ---------------------------------------------------------------------------------------------------------------------- registry
 @dataclass(frozen=True)
 class Schema:
     id: str                                  # the owner's schema label (feature_schema, FEATURE_SET, VERSION ...)
     version: str
-    family: str                              # quant | ml | zones | extind | scalp | gold_candles | trainhub | mm | lab | sh | research
+    family: str                              # quant | ml | zones | extind | scalp | gold_candles | trainhub | mm | lab | sh | research | modelhub
     owner: str                               # builder 'module:function' - stays in the owner module, unchanged
     id_of: Callable[[], str]                 # the owner's declaration of the id (constant / literal) - must equal `id`
     names_of: Callable[[], list[str]]        # the declared feature list of the owner (or the names produced on the fixture)
     run: Callable[[], object]                # the builder on the frozen fixture
-    names_kind: str = "DECLARED"             # DECLARED (owner list) | FIXTURE (names depend on the producers present - Quant)
+    names_kind: str = "DECLARED"             # DECLARED (owner list) | FIXTURE (names depend on the producers present - Quant) |
+                                             # DESCRIBED (the owner has no list constant: names / formulas of its docstring / metrics)
     catalog: str | None = None               # registry of features/catalog.py (PMW-FEAT-DICT-1) the names belong to
     consumers: tuple[str, ...] = ()
     notes: str = ""
@@ -578,12 +650,12 @@ SCHEMAS: tuple[Schema, ...] = (
            consumers=("mm.event_engine (event_engine_dir3)", "quant.adapters EventGRU", "modelhub families seq (EVENT_UNITS_V1)"),
            notes="id = 'PMW-MM-EVENT-1:' + nazwy (zapis mm/jobs.py, odczyt quant/adapters); VERSION przetwarzania PMW-MM-EVENTS-1",
            aliases=("PMW-MM-EVENTS-1", "EVENT_UNITS_V1"), label="PMW-MM-EVENT-1:dt_log,dmid,abs_dmid,sgn,spread,dspread,act_log,spread_ok"),
-    Schema("STE-SPLITS-8x16", "1", "mm", "masterquo.mm.ste_flownet:build_samples",
-           _literal("masterquo.mm.jobs", '"STE-SPLITS-8x16:"', "STE-SPLITS-8x16"),
+    Schema("STE-SPLITS-8x16", "1", "mm", "masterquo.mm.ste_flownet:build_samples", _ste_label,
            lambda: list(importlib.import_module("masterquo.mm.ste_flownet").CHANNELS), _ste, consumers=("mm.ste_flownet",),
-           notes="manifest: 'STE-SPLITS-8x16:' + kanały (mm/jobs.py); VERSION modelu PMW-MM-STEFLOW-1", aliases=("PMW-MM-STEFLOW-1",)),
+           notes="manifest: 'STE-SPLITS-8x16:' + kanały (literał mm/jobs.py); VERSION modelu PMW-MM-STEFLOW-1", aliases=("PMW-MM-STEFLOW-1",),
+           label="STE-SPLITS-8x16:up_count,down_count,sum_dmid,sum_absdmid,spread_mean,dt_mean,act_mean"),
     Schema("GPR_LAG1_LOGRET", "1", "mm", "masterquo.mm.gpr:samples", _literal("masterquo.mm.jobs", '"GPR_LAG1_LOGRET"', "GPR_LAG1_LOGRET"),
-           lambda: ["x = ln(C[k]/C[k-1])", "y = ln(C[k+h]/C[k])"], _gpr, consumers=("mm.gpr", "mm.service (kalibracja live)"),
+           lambda: ["x = ln(C[k]/C[k-1])", "y = ln(C[k+h]/C[k])"], _gpr, "DESCRIBED", consumers=("mm.gpr", "mm.service (kalibracja live)"),
            notes="jedna cecha (lag-1 log-zwrot) i cel; mm/service dopisuje ';retune=N' w ledgerze"),
     Schema("FS-1.0.0", "1.0.0", "lab", "masterquo.lab.features:feature_matrix", _attr("masterquo.lab.features", "FEATURE_SET"),
            _attr("masterquo.lab.features", "FEATURES"), _lab_fs, catalog="lab", consumers=("lab (modele M*, protokół walidacji)",),
@@ -600,10 +672,31 @@ SCHEMAS: tuple[Schema, ...] = (
            lambda: list(importlib.import_module("masterquo.mm.bat_encoder").CHANNELS), _bat, consumers=("mm.bat_encoder (SHADOW)",)),
     Schema("PMW_ETC_FEATURES_V1", "1", "research", "masterquo.research.etc:snapshot / series_asof", _attr("masterquo.research.etc", "SCHEMA"),
            lambda: list(importlib.import_module("masterquo.research.etc").FEATURES), _etc, consumers=("research ETC (rm:* Quant)",),
-           notes="pełny id cech: schema_hash(p) = SCHEMA:VERSION:hash parametrów"),
-    Schema("PMW_GRAPH50_PORT_V1", "1", "research", "masterquo.research.graph_ca:extract", _attr("masterquo.research.graph_ca", "VERSION"),
+           notes="rekordy niosą schema_hash(p) = SCHEMA:VERSION:hash parametrów (resolve() po prefiksie 'id:'); odcisk na parametrach domyślnych",
+           aliases=("PMW_ETC_SRC_PORT_V1",)),
+    Schema("PMW_GRAPH50_V1", "1", "research", "masterquo.research.graph_ca:extract", _graph_label,
            lambda: list(importlib.import_module("masterquo.research.graph_ca").NAMES), _graph, consumers=("research graph CA (rm:* Quant)",),
-           notes="kolejność nazw: ORDER_HASH"),
+           notes="id = graph_ca.SCHEMA; rekordy research/service.py niosą SCHEMA:ORDER_HASH (hash kolejności nazw); VERSION portu "
+                 "PMW_GRAPH50_PORT_V1 = alias", aliases=("PMW_GRAPH50_PORT_V1",), label="PMW_GRAPH50_V1:1c0ac94e7e25"),
+    # Etap 4 review: schemas with working builders the first registry missed (ETAP1 rejestry_cech) - found by scan_labels()
+    Schema("FLOW_CONTEXT_V1", "1", "lab", "masterquo.lab.flow_context.task:features", _attr("masterquo.lab.flow_context.task", "SCHEMA"),
+           _attr("masterquo.lab.flow_context.task", "FEATS"), _flow_context, consumers=("lab flow context (FLOW_CONTEXT_MOVE_M1_V1)",),
+           notes="load_candidate odrzuca artefakt z innym schema / FEATS (nazwy); odcisk na profilu domyślnym właściciela (prof=None), "
+                 "M1 > WARM (Markov3 / kubełki)"),
+    Schema("FS_VS_CONTEXT_v1", "1", "lab", "masterquo.lab.context_ind.task:features", _attr("masterquo.lab.context_ind.task", "SCHEMA"),
+           _attr("masterquo.lab.context_ind.task", "FEATS"), _context_ind, consumers=("lab context indicators (CONTEXT_MOVE_M5_V1, F-17)",),
+           notes="VAMD / FD / SMC as-of każdej świecy; odcisk na profilu domyślnym (prof=None) + smc_hash stanu SMC"),
+    Schema("BAR_SEQ_V1", "1", "modelhub", "masterquo.modelhub.families.seqdata:build", lambda: importlib.import_module(
+           "masterquo.modelhub.families.seq").SeqBase.DATA["schema"],
+           lambda: ["ln(C[i]/C[i-1])", "(H-L)/C", "(C-O)/C", "ln(1+tick_volume)"], _bar_seq, "DESCRIBED",
+           consumers=("modelhub SEQ_LSTM / SEQ_GRU (.venv_deep)",),
+           notes="per_bar + okna L=64 + etykieta H=6 (seqdata.build), okno live (live_window); scaler.json niesie schema BAR_SEQ_V1"),
+    Schema("MICROSTRUCTURE", "1", "modelhub", "masterquo.modelhub.families.micro:features_from_books",
+           lambda: importlib.import_module("masterquo.modelhub.families.micro").Micro.ID,
+           lambda: ["best_imbalance", "depth_imbalance", "ofi_window", "microprice_dev/spread"], _micro, "DESCRIBED",
+           consumers=("modelhub MICROSTRUCTURE (klasyfikator reakcji 10 s)",),
+           notes="właściciel nie deklaruje etykiety cech: id = ID rodziny (manifest.json family); micro.json niesie ofi_window_s - odcisk "
+                 "na syntetycznych migawkach arkusza (_books) dla okna live i LEGACY_OFI_WINDOW_S"),
 )
 # frozen fingerprints of the CURRENT builders (PMW-FEAT-FIXTURE-1). Never edit a value to make a test pass: a different output under
 # the same id means the builder's semantics changed - give the owner a new version and add a new entry instead.
@@ -632,13 +725,32 @@ FINGERPRINTS: dict[str, str] = {
     "SH-TPMODEL-1.0.0": "65319d9ecc5ec4ed",
     "PMW-BAT-EVENT-ENCODER-1": "53dc2009c0d7f7c1",
     "PMW_ETC_FEATURES_V1": "db78a4e8b7d446a3",
-    "PMW_GRAPH50_PORT_V1": "961710b796d0c941",
+    "PMW_GRAPH50_V1": "961710b796d0c941",
+    "FLOW_CONTEXT_V1": "73a2557de12f3780",
+    "FS_VS_CONTEXT_v1": "99f4e7c0f57dfd84",
+    "BAR_SEQ_V1": "7e8a9e5c34b583df",
+    "MICROSTRUCTURE": "3608ec9329cd0da5",
 }
+# feature schemas of the code WITHOUT a fingerprint here - label (exact, or a glob: '*' = a formatted part) -> why
 NOT_REGISTERED = {
     "CLOSE_ONLY": "mm/jobs.py job_kalman: wejście = surowe zamknięcia (brak buildera cech do odcisku)",
-    "MQ_NEWTONIAN_QUOTES_V2 (lab/tick_store.FEATURES)": "archiwum kinematyczne z ticków (wymaga migawek kwotowań; nie jest wejściem modelu bota)",
+    "MQ_NEWTONIAN_QUOTES_V2": "lab/tick_store.FEATURES - archiwum kinematyczne z ticków (wymaga migawek kwotowań; nie jest wejściem modelu bota)",
+    "KRONOS_OHLCV_TIME_V1": "kronos/predictions.py: surowe OHLCV + znaczniki czasu do zewnętrznego modelu Kronos (tokenizer w .venv_kronos) - "
+                            "bot nie liczy cech, brak buildera do odcisku",
+    "TSFM_*": "tsfm/predictions.py, tsfm/service.py: TSFM_<profil> (CLOSE_V1 = szereg close, CLOSE_OHLCV_PAST_V1 = close + kowarianty OHLC / "
+              "wolumen, tsfm/core.predict_request) - surowe szeregi do zewnętrznych modeli TSFM, bot nie liczy cech",
+    "BASKET-FEAT-1": "baskets/catalog.py: opis pola model_feature_schema w katalogu strategii koszyków (setup_score, model_agreement, p_event_raw "
+                     "jako osobne pola) - brak buildera i brak modelu trenowanego na tym schemacie",
+    "gold-candles-v2.0": "gold_candles/features.py:feature_frame (pandas, .venv_candles): Config.contract_hash() = sha256 BAJTÓW data.py / "
+                         "patterns.py / features.py / model.py, sprawdzany przy ładowaniu (model.py: contract_hash) - każda zmiana formuły "
+                         "już unieważnia artefakt; etykieta nie jest stałą modułu (literał w data.py), skan jej nie widzi",
+}
+# labels the scan finds in owner modules that are NOT feature schemas (model / artifact formats) - label -> what it is
+NOT_FEATURE_SCHEMAS = {
+    "MQ-DT-SIGNAL-RANKER-1.0.0": "ml/dt_ranker.SCHEMA - format artefaktu modelu DT rankera; jego cechy = MQ-DT-RANK-FEAT-1.0.0",
 }
 BY_ID: dict[str, Schema] = {s.id: s for s in SCHEMAS}
+BY_LABEL: dict[str, str] = {s.label: s.id for s in SCHEMAS if s.label}
 
 
 def get(sid: str) -> Schema:
@@ -686,21 +798,116 @@ def check(ids: list[str] | None = None) -> list[dict]:
 def registry() -> list[dict]:
     """Metadata of every schema (no builder is run): id, version, family, owner, names, consumers, frozen fingerprint."""
     return [{"id": s.id, "label": s.label or s.id, "version": s.version, "family": s.family, "owner": s.owner, "names_kind": s.names_kind, "catalog": s.catalog,
-             "names": names(s.id) if s.names_kind == "DECLARED" else None, "consumers": list(s.consumers), "aliases": list(s.aliases),
+             "names": names(s.id) if s.names_kind in ("DECLARED", "DESCRIBED") else None, "consumers": list(s.consumers), "aliases": list(s.aliases),
              "fingerprint": FINGERPRINTS.get(s.id), "notes": s.notes} for s in SCHEMAS]
 
 
+def resolve(carried: str | None) -> str | None:
+    """Registry id of the label an artifact / record CARRIES: the id, the exact `label`, or the id followed by ':' / ';' and a parameter
+    part (PMW_ETC_FEATURES_V1:<VERSION>:<params hash>, GPR_LAG1_LOGRET;retune=N). Aliases are NOT resolved (PMW-ZONE-FEAT-1 is shared by
+    SEM-1 and SEM-2; older MQ-FEAT versions are other formulas). None = not a registered schema."""
+    if not carried:
+        return None
+    c = str(carried)
+    if c in BY_ID:
+        return c
+    if c in BY_LABEL:
+        return BY_LABEL[c]
+    return next((s.id for s in SCHEMAS if c.startswith((s.id + ":", s.id + ";"))), None)
+
+
 def tag(sid: str) -> dict:
-    """What an artifact trained on `sid` can record (no owner writes it yet)."""
-    get(sid)
-    return {"feature_schema_id": label(sid), "feature_fingerprint": FINGERPRINTS.get(sid), "feature_registry": VERSION}
+    """What an artifact trained on `sid` (id or carried label) can record - NOT WIRED: no owner writes it (see the module docstring)."""
+    rid = resolve(sid) or sid
+    get(rid)
+    return {"feature_schema_id": label(rid), "feature_fingerprint": FINGERPRINTS.get(rid), "feature_registry": VERSION}
 
 
 def check_manifest(sid: str, man: dict | None) -> dict:
-    """LEGACY (artifact without a fingerprint - accepted as today) | OK | MISMATCH (same id, other formula) | UNKNOWN_SCHEMA."""
-    if sid not in BY_ID:
+    """LEGACY (artifact without a fingerprint - accepted as today) | OK | MISMATCH (same id, other formula) | UNKNOWN_SCHEMA.
+    `sid` = the registry id or the label the artifact carries (resolve()). NOT WIRED: no loader calls it (see the module docstring)."""
+    rid = resolve(sid)
+    if rid is None:
         return {"status": "UNKNOWN_SCHEMA", "id": sid}
     fp = (man or {}).get("feature_fingerprint")
     if fp is None:
-        return {"status": "LEGACY", "id": sid}
-    return {"status": "OK" if fp == FINGERPRINTS.get(sid) else "MISMATCH", "id": sid, "artifact": fp, "code": FINGERPRINTS.get(sid)}
+        return {"status": "LEGACY", "id": rid}
+    return {"status": "OK" if fp == FINGERPRINTS.get(rid) else "MISMATCH", "id": rid, "artifact": fp, "code": FINGERPRINTS.get(rid)}
+
+
+# ---------------------------------------------------------------------------------------------------------------------- coverage guard
+SCAN_ROOTS = ("masterquo", "gold_candles", "gold_candles_runtime")      # packages of backend/ (backend/vendor is never scanned)
+_NAME_ANY = re.compile(r"^(\w*FEATURE_SCHEMA\w*|FEATURE_SET\w*|\w*FEATURES?_ID)$")          # a feature-schema label wherever it is
+_NAME_OWNER = re.compile(r"^(SCHEMA|VERSION\d*|SEMANTICS|LEGACY_SEMANTICS)$")                 # ... and these names in owner modules
+_FEATURE_LISTS = {"FEATS", "FEATURES", "FEATURE_NAMES", "NAMES", "CHANNELS", "SETUP_FEATURES", "NET_FEATURES", "SEQ_CH"}
+_KEYS = {"feature_schema", "model_feature_schema"}
+
+
+def _label_of(node) -> str | None:
+    """A literal label: a string, 'text' + <expr> -> 'text*', an f-string with a literal start ('*' for each formatted part)."""
+    if isinstance(node, ast.Constant) and isinstance(node.value, str):
+        return node.value
+    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
+        left = _label_of(node.left)
+        return None if left is None else left.rstrip("*") + "*"
+    if isinstance(node, ast.JoinedStr):
+        out = "".join(v.value if isinstance(v, ast.Constant) else "*" for v in node.values)
+        return None if out.startswith("*") else out
+    return None
+
+
+def scan_labels(root: Path | None = None) -> dict[str, list[str]]:
+    """{label: ['<file>:<line>:<where>']} of every feature-schema label declared in the sources under `root` (default: backend/). Reads
+    the files with ast (nothing is imported or executed). A label is cut at the first space ('BASKET-FEAT-1 (setup_score, ...)')."""
+    base = Path(root) if root else Path(__file__).resolve().parents[2]
+    found: dict[str, list[str]] = {}
+
+    def add(v, p, line, where):
+        if v:
+            found.setdefault(v.split(" ")[0], []).append(f"{p.relative_to(base).as_posix()}:{line}:{where}")
+    for pkg in SCAN_ROOTS:
+        if not (base / pkg).is_dir():
+            continue
+        for p in sorted((base / pkg).rglob("*.py")):
+            if "vendor" in p.relative_to(base).parts:
+                continue
+            tree = ast.parse(p.read_text(encoding="utf-8"))
+            top = {t.id: n for n in tree.body if isinstance(n, ast.Assign | ast.AnnAssign)
+                   for t in (n.targets if isinstance(n, ast.Assign) else [n.target]) if isinstance(t, ast.Name)}
+            owner = p.name.endswith("features.py") or bool(_FEATURE_LISTS & set(top))
+            for name, n in top.items():
+                if n.value is not None and (_NAME_ANY.match(name) or (owner and _NAME_OWNER.match(name))):
+                    add(_label_of(n.value), p, n.lineno, name)
+            for n in ast.walk(tree):
+                if isinstance(n, ast.keyword) and n.arg in _KEYS:
+                    add(_label_of(n.value), p, n.value.lineno, f"{n.arg}=")
+                elif isinstance(n, ast.Dict):
+                    for k, v in zip(n.keys, n.values, strict=True):
+                        if isinstance(k, ast.Constant) and k.value in _KEYS:
+                            add(_label_of(v), p, v.lineno, f'"{k.value}"')
+                elif isinstance(n, ast.ClassDef) and "modelhub" in p.parts:
+                    for st in n.body:
+                        if isinstance(st, ast.Assign) and isinstance(st.value, ast.Dict) and any(isinstance(t, ast.Name) and t.id == "DATA"
+                                                                                                for t in st.targets):
+                            for k, v in zip(st.value.keys, st.value.values, strict=True):
+                                if isinstance(k, ast.Constant) and k.value == "schema":
+                                    add(_label_of(v), p, v.lineno, f"{n.name}.DATA schema")
+    return found
+
+
+def covered(lbl: str) -> str | None:
+    """Where a scanned label is accounted for: 'schema:<id>' (id / label / alias, '*' matched as a glob) | 'not_registered' |
+    'not_feature' | None (a feature schema of the code the registry does not know - the guard fails)."""
+    for s in SCHEMAS:
+        if any(fnmatch.fnmatchcase(x, lbl) for x in (s.id, s.label or s.id, *s.aliases)):
+            return f"schema:{s.id}"
+    if lbl in NOT_REGISTERED:
+        return "not_registered"
+    if lbl in NOT_FEATURE_SCHEMAS:
+        return "not_feature"
+    return None
+
+
+def uncovered(root: Path | None = None) -> dict[str, list[str]]:
+    """Labels found by scan_labels() that are not accounted for (must be empty: register the schema or describe it in NOT_REGISTERED)."""
+    return {k: v for k, v in scan_labels(root).items() if covered(k) is None}
