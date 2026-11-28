@@ -11,6 +11,7 @@ CREATE INDEX IF NOT EXISTS idx_extind_source_seq ON extind_snapshots(source_inst
 CREATE INDEX IF NOT EXISTS idx_extind_source_avail ON extind_snapshots(source_instance, available_at);
 CREATE INDEX IF NOT EXISTS idx_extind_received ON extind_snapshots(adapter, received_at);
 CREATE INDEX IF NOT EXISTS idx_extind_mapping ON extind_snapshots(adapter, mapping_status);
--- as_of: the newest approved row of every source of (adapter, instrument) at or before t (one adapter on two charts / terminals)
+-- as_of: the newest approved row of every source of (adapter, instrument) at or before t (one adapter on two charts / terminals);
+-- partial on the mapping only - the time_status filter of as_of is checked on the row (it may admit more than 'OK')
 CREATE INDEX IF NOT EXISTS idx_extind_asof_source ON extind_snapshots(adapter, instrument, source_instance, available_at)
-    WHERE mapping_status='MAPPING_APPROVED' AND time_status='OK';
+    WHERE mapping_status='MAPPING_APPROVED';
