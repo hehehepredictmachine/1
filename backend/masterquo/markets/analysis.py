@@ -11,7 +11,9 @@ from __future__ import annotations
 import math
 
 from ..engine import volzones
-from ..strategies import indicators as ind
+
+# 1.46 arch (Etap 4): indicators.series = the same functions as strategies.indicators (shim)
+from ..indicators import series as ind
 
 MODEL_VERSION = "MQ-MARKETSCAN-1.0.0"
 TFS = ("H1", "H4", "D1")

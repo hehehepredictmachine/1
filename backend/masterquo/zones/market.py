@@ -45,7 +45,8 @@ import copy
 import hashlib
 import statistics
 
-from ..strategies import indicators as ind
+# 1.46 arch (Etap 4): indicators.series = the same functions as strategies.indicators (shim) - no analysis-layer -> strategies import
+from ..indicators import series as ind
 from .series import Series, iso
 
 VERSION = "PMW-MZ-1"
