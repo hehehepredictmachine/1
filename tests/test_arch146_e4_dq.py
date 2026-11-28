@@ -790,5 +790,50 @@ class TestQuantSnapshotQcSameAsBefore(unittest.TestCase):
             self.assertEqual(snap["quote_state"], exp, case)
 
 
+# ============================================================================================ offline reports
+def _md_rows(rnd, n, faults):
+    rows = []
+    for t in _times(rnd, n, 300, 1_793_000_100 // 300 * 300, faults):
+        o, h, lo, c = _price_tuple(rnd, faults)
+        rows.append((t, o, h, lo, c, 10, 12, 0, t + 7200, 0))
+    return rows
+
+
+class TestOfflineReportsSameAsBefore(unittest.TestCase):
+    def test_marketdata_check_rows(self):
+        from masterquo.marketdata import quality as MQ
+        rnd = random.Random(430)
+        for case in range(300):
+            rows = _md_rows(rnd, rnd.choice((0, 1, 20, 200)), case % 3 != 0)
+            if case % 40 == 0 and rows:
+                r = list(rows[-1])
+                r[rnd.randrange(1, 5)] = None                                   # a None price raises TypeError - the same one
+                rows[-1] = tuple(r)
+            self.assertEqual(_outcome(MQ.check_rows, rows), _outcome(_legacy_check_rows, rows), f"case {case}")
+
+    def test_marketdata_report(self):
+        from masterquo.marketdata import quality as MQ
+        rnd = random.Random(431)
+        for case in range(250):
+            tf = rnd.choice(("M1", "M5", "M15", "H1"))
+            step = MQ.TF_SECONDS[tf]
+            t = _times(rnd, rnd.choice((0, 1, 2, 60, 300)), step, 1_793_000_000 // step * step + rnd.choice((0, 0, 0, 7)), case % 3 != 0)
+            cols = {"time": t, "open": [], "high": [], "low": [], "close": [], "spread": [rnd.choice((None, 10, 12)) for _ in t],
+                    "real_volume": [rnd.choice((0, 0, 5)) for _ in t], "dst_ambiguous": [rnd.choice((0, 0, 1)) for _ in t]}
+            for _ in t:
+                o, h, lo, c = _price_tuple(rnd, case % 3 != 0)
+                for k, v in zip(("open", "high", "low", "close"), (o, h, lo, c), strict=True):
+                    cols[k].append(v)
+            req = rnd.choice((None, (None, None), (t[0] - 5 * 86400 if t else 1_793_000_000, None)))
+            self.assertEqual(_outcome(MQ.report, cols, tf, req), _outcome(_legacy_md_report, cols, tf, req), f"case {case}")
+
+    def test_forecast_export_geometry(self):
+        from masterquo.forecast import export as EX
+        rnd = random.Random(432)
+        for case in range(3000):
+            o, h, lo, c = _price_tuple(rnd, True)
+            self.assertEqual(EX._geometry_ok(o, h, lo, c), _legacy_export_geometry_ok(o, h, lo, c), case)
+
+
 if __name__ == "__main__":
     unittest.main()
