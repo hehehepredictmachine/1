@@ -30,6 +30,8 @@ from .nets import SEWSNN, ResNet1D, train as train_net
 
 VERSION = "MQ-LAB-VAL-1.0.0"
 FAMILIES = ("DUMMY", "RULE", "LOGREG", "TREE", "MINIROCKET", "XGB", "RESNET1D", "SEW_SNN")
+# 1.46 arch (I0225): reference baselines (base rate / rule) - one source for the Quant inventory role (TOOL) and the adapter analytic_role
+BASELINE_FAMILIES = ("DUMMY", "RULE")
 EXPERIMENTS = ("LOGREG_PCA", "LOGREG_GMM_AUG", "LOGREG_NEUTRALIZED")
 SEEDS = (11, 23, 37)
 # 1.46: sample policy of the sequence windows. NO_WARMUP_IN_WINDOW_V1 = a sample is used only when its whole seq_len window is outside
@@ -733,15 +735,25 @@ def list_models(root: Path, asset: str) -> list[dict]:
     return sorted(out, key=lambda x: x.get("trained_at") or "", reverse=True)
 
 
-def effective_models(root: Path, asset: str, models: list[dict] | None = None) -> list[dict]:
+def effective_models(root: Path, asset: str, models: list[dict] | None = None, *, real_data: bool = False,
+                     skipped: list | None = None) -> list[dict]:
     """1.46: THE rule of which artefact of every family runs (LabService) and what the SH matrix reports: the pinned one (ACTIVE.json,
     activation / rollback per family), otherwise the latest by trained_at - also without any pointer (API /api/v1/lab/train never pins).
-    A family pinned to an artefact that is gone runs nothing. Each entry: the manifest summary + `pinned` (bool)."""
+    A family pinned to an artefact that is gone runs nothing. Each entry: the manifest summary + `pinned` (bool).
+    real_data (1.46 arch I0072; LabService on the bot's REAL data): a model trained on synthetic data (role fixture_only) never runs -
+    an unpinned family falls back to its newest non-fixture model, a pinned one runs nothing (no silent switch); the model_id of every
+    skipped artefact is appended to `skipped`. Default False = the set reported before (SH matrix row 'lab')."""
     pinned = read_pointer(root, asset)["active"]
     out, seen = [], set()
     for m in list_models(root, asset) if models is None else models:
         fam = m.get("family")
         if fam in seen or (fam in pinned and pinned[fam] != m.get("model_id")):
+            continue
+        if real_data and m.get("role") == "fixture_only":
+            if skipped is not None:
+                skipped.append(m.get("model_id"))
+            if fam in pinned:
+                seen.add(fam)
             continue
         seen.add(fam)
         out.append({**m, "pinned": fam in pinned})

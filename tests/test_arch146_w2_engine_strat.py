@@ -567,12 +567,13 @@ class TestI0114DeadCode(unittest.TestCase):
 
     def test_export_train_is_implemented_by_the_lab_protocol(self):
         """Merged with wave 2a, group lab (I0481): export-train writes PMW_MR2_TRAIN.bin with exactly the rows `train` gives MiniRocket
-        (si_families.export_native_train - no guessed rows); the NOT_IMPLEMENTED stub of I0114 is gone. Without a dataset it is blocked."""
+        (structure_task.export_native_train - no guessed rows; merge with lab_models I0085: moved from si_families, which imported
+        structure_task lazily - an import cycle); the NOT_IMPLEMENTED stub of I0114 is gone. Without a dataset it is blocked."""
         import contextlib
         import io
 
-        from masterquo.lab import si_families, structure_cli
-        self.assertTrue(callable(si_families.export_native_train))
+        from masterquo.lab import structure_cli, structure_task
+        self.assertTrue(callable(structure_task.export_native_train))
         buf = io.StringIO()
         with contextlib.redirect_stdout(buf):
             rc = structure_cli.main(["minirocket", "export-train", "--asset", "XAUUSD", "--output", str(ROOT / "nonexistent_out")])

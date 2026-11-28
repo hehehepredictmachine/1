@@ -245,11 +245,11 @@ def _lab_rows() -> list[dict]:
     from ..lab import structure_nets as SN
     out = []
     for f in P.FAMILIES:
-        out.append(_e(f"lab:{f}", name=f"Lab {f}", category="MODEL_TRAINED" if f not in ("DUMMY", "RULE") else "BASELINE",
+        out.append(_e(f"lab:{f}", name=f"Lab {f}", category="MODEL_TRAINED" if f not in P.BASELINE_FAMILIES else "BASELINE",
                       # 1.46: the lab adapter publishes raw_score as unit 'ratio' (0-1, lab.service round(p, 4)), not score_0_100
                       files=["backend/masterquo/lab/protocol.py", "backend/masterquo/lab/service.py"], unit="ratio", task_type="SCORE",
                       task="TRIPLE_BARRIER_1.5ATR_LONG (score nieskalibrowany)", timeframes=["M5"], owner_train="lab (training: lab)", owner_infer="lab.service",
-                      artifact="<data>/lab/models/<asset>/", validation="NOT_VALIDATED", quant_role="BASE_FORECAST" if f not in ("DUMMY", "RULE") else "TOOL",
+                      artifact="<data>/lab/models/<asset>/", validation="NOT_VALIDATED", quant_role="BASE_FORECAST" if f not in P.BASELINE_FAMILIES else "TOOL",
                       adapter=A_EXT, source_registry=["lab.protocol.FAMILIES"], notes="score innego zdarzenia niż TP setupu – cecha pod własną nazwą"))
     for x in getattr(P, "EXPERIMENTS", ()):
         # 1.46 arch (I0269): an experiment is saved like a family (artifact_family ALL of `training lab-offline`, or when it wins the

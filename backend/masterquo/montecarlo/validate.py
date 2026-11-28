@@ -26,6 +26,9 @@ import numpy as np
 
 from ..quant import numeric as N
 from . import engine as E
+from .calibration import apply_calibrator
+
+# 1.46 arch I0085: apply_calibrator lives in the leaf montecarlo/calibration.py (no engine <-> validate cycle); the old name stays here
 
 DEFAULT_EVENTS = [{"side": s, "tp": tp, "sl": 3.0} for s in ("BUY", "SELL") for tp in (2.5, 5.0)]
 # 1.46: the default events are USD distances sized for gold. Another instrument (BTC: spread of tens of USD > SL 3 USD -> every event
@@ -201,11 +204,6 @@ def fit_calibrator(p, y) -> dict:
     from sklearn.isotonic import IsotonicRegression
     ir = IsotonicRegression(y_min=0.0, y_max=1.0, out_of_bounds="clip").fit(np.asarray(p, float), np.asarray(y, float))
     return {"kind": "ISOTONIC", "x": [float(x) for x in ir.X_thresholds_], "y": [float(v) for v in ir.y_thresholds_]}
-
-
-def apply_calibrator(cal: dict, p: float) -> float:
-    c = cal.get("calibrator") or cal
-    return float(np.interp(p, c["x"], c["y"])) if c.get("x") else float(p)
 
 
 # ------------------------------------------------------------------ protocol

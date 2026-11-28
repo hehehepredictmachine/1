@@ -159,7 +159,13 @@ class QuantLedger:
         with self._lock:
             return [dict(x) for x in self.c.execute(q, (instrument, int(limit)) if instrument else (int(limit),)).fetchall()]
 
-    def assessments(self, limit: int = 50) -> list[dict]:
+    def assessments(self, limit: int = 50, instrument: str | None = None) -> list[dict]:
+        """instrument: only assessments whose ledger row is of that instrument (1.46 arch I0040; the payload has no instrument);
+        None = every assessment as before."""
         with self._lock:
-            return [json.loads(x["payload_json"]) for x in self.c.execute("SELECT payload_json FROM assessments ORDER BY created_at DESC LIMIT ?",
-                                                                           (int(limit),)).fetchall()]
+            if instrument:
+                cur = self.c.execute("SELECT a.payload_json FROM assessments a JOIN rows r ON r.row_id=a.row_id WHERE r.instrument=? "
+                                     "ORDER BY a.created_at DESC LIMIT ?", (instrument, int(limit)))
+            else:
+                cur = self.c.execute("SELECT payload_json FROM assessments ORDER BY created_at DESC LIMIT ?", (int(limit),))
+            return [json.loads(x["payload_json"]) for x in cur.fetchall()]

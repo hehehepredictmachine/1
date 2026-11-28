@@ -115,6 +115,8 @@ def build_dataset(inst: str, ds: Path, commission: float | None = None, db=None,
     legacy = {"price": 0, "atr": 0}
     for c in res["cycles"]:
         t = parse_iso(c["decision_time"])
+        # 1.46 arch I0163 / I0164 / I0784 (SCALP_INDICATOR_CONTEXT_V2): price and the ATR denominator of the SAR / IQ features as the
+        # live model gets them (scalp/service.indicator_context) - a cycle without the fields keeps the old values, counted explicitly
         price, atr = decision_inputs(c, bars, t, legacy)
         rows.append({"setup_id": c["setup_id"], "range_id": c.get("range_id"), "side": c["direction"], "decision_time": c["decision_time"],
                      "fill_time": c["fill_time"], "exit_time": c["exits"][-1]["time"], "price": price, "atr_m5": atr, "base": c.get("features") or {},
@@ -358,6 +360,7 @@ def train(inst: str, ds: Path, *, commission: float | None = None, db=None, out_
             "label": "y=1 gdy replay zamrożonej polityki rozliczył TP1 przed SL; net_R raportowane obok (to nie P(net_R>0))"}
     (rd / "plan.json").write_text(json.dumps(plan, indent=1), encoding="utf-8")
     rep = {"run_id": rid, "instrument": inst, "dataset_id": data["dataset_id"], "data_kind": data["data_kind"], "cycles": len(data["rows"]),
+           "feature_schema": F.FEATURE_SCHEMA,
            "plan": plan, "costs": data["costs"], "profile_id": data["profile_id"], "variants": {}, "role": "fixture_only" if synthetic else "shadow_candidate",
            "legacy_price_rows": data.get("legacy_price_rows", 0), "legacy_atr_rows": data.get("legacy_atr_rows", 0)}
     if len(data["rows"]) < MIN_CYCLES and not synthetic:
@@ -399,6 +402,9 @@ def _save_artifact(rd: Path, inst: str, r: dict, data: dict, rep: dict) -> None:
            "threshold": r["threshold"], "profile_id": data["profile_id"], "dataset_id": data["dataset_id"], "data_kind": data["data_kind"],
            "role": rep["role"], "pkl_sha256": hashlib.sha256(blob).hexdigest(), "holdout": r["holdout"], "mode": "SHADOW",
            "dependencies": env_versions(), "prep_version": PREP_VERSION}
+    if "BASE" in r["groups"]:                                     # 1.46 arch I0020: identity of the BASE block (SETUP_FEATURES)
+        from ..scalp.strategy import setup_features_tag
+        man.update(setup_features_tag())
     # parity: reload exactly what was written and reproduce the holdout predictions of the training code
     m = load_artifact(rd, name, man)
     X, _ = matrix(data, r["spec"])
@@ -446,8 +452,13 @@ class ContextModel:
         if instrument != self.man["instrument"]:
             return {"status": "ABSTAIN", "reason": f"INSTRUMENT_MISMATCH:{self.man['instrument']}"}
         if self.man.get("feature_schema") != F.FEATURE_SCHEMA:
-            # 1.46 arch (I0164/I0784): a V1 artefact learned other inputs (fill price, decision ATR) - no silent new semantics, retrain
+            # 1.46 arch I0163 / I0164 / I0784 / I0180: an artefact of another feature schema (V1: fill price, ATR of 40 M5 bars, IQ only
+            # with a verified clock) is never fed the new inputs - ABSTAIN before any computation (SHADOW observation; retrain + activate)
             return {"status": "ABSTAIN", "reason": f"FEATURE_SCHEMA_MISMATCH:{self.man.get('feature_schema')}!={F.FEATURE_SCHEMA}"}
+        from ..scalp.strategy import setup_features_check
+        sf_bad = setup_features_check(self.man)                       # 1.46 arch I0020 (no field = legacy-compatible)
+        if sf_bad:
+            return {"status": "ABSTAIN", "reason": sf_bad}
         f = F.build_indicator_context_features(snap, self.man["spec"])
         if list(f["features"]) != self.man["feature_order"]:
             return {"status": "ABSTAIN", "reason": "FEATURE_SCHEMA_MISMATCH"}
@@ -505,10 +516,10 @@ def activate(inst: str, run_id: str, variant: str) -> dict:
         if not e or f"model_{variant}.json" not in e["artifacts"]:
             raise ValueError("UNKNOWN_RUN_OR_VARIANT")
         man = json.loads((Path(e["run_dir"]) / f"model_{variant}.json").read_text(encoding="utf-8"))
+        if man.get("feature_schema") != F.FEATURE_SCHEMA:          # 1.46 arch I0163 / I0164 / I0784: checked before any registry write
+            raise ValueError(f"NOT_ACTIVATABLE_SCHEMA:{man.get('feature_schema')}!={F.FEATURE_SCHEMA} (ponowny indicator-context train)")
         if man["role"] == "fixture_only" or man["parity"]["status"] != "OK":
             raise ValueError("NOT_ACTIVATABLE_FIXTURE_OR_PARITY")
-        if man.get("feature_schema") != F.FEATURE_SCHEMA:            # 1.46 arch (I0164/I0784): V1 inputs differ from live - retrain first
-            raise ValueError(f"NOT_ACTIVATABLE_SCHEMA:{man.get('feature_schema')}!={F.FEATURE_SCHEMA}")
         load_artifact(Path(e["run_dir"]), variant, man)            # 1.46 arch (I0170): env mismatch / unreadable pickle -> refused, registry untouched
         reg.setdefault("history", []).append(reg.get("active"))
         reg["active"] = {"run_id": run_id, "variant": variant, "mode": "SHADOW"}

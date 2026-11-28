@@ -1035,9 +1035,12 @@ class TestScalpForecastNoPoint(unittest.TestCase):
 
             def bars(self, tf, limit, include_forming=False):
                 return [{"open_utc": "2026-03-03T10:00:00Z", "o": 1.0, "h": 1.0, "l": 1.0, "c": 1.0, "tv": 1, "spread": 10}]
+        from types import SimpleNamespace
         svc = ScalpService.__new__(ScalpService)
         svc.forecast, svc.bridge = Fc(), Bridge()
         svc.registry = lambda: {"active": "R1", "runs": {}}
+        # merge with lab_models (I0616): the worker request carries the feed contract (symbol from config, tick from symbol_info)
+        svc.cfg_store = SimpleNamespace(get=lambda: SimpleNamespace(mt5=SimpleNamespace(symbol="XAUUSD")))
         out = svc.forecasts()
         self.assertEqual(out["status"], "UNAVAILABLE")
         self.assertIn("point", out["reason"])

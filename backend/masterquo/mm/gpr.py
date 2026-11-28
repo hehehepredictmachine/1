@@ -324,3 +324,23 @@ def calibration(rows: list[dict]) -> dict:
             "rmse": {"gp": rmse(gp), "zero": rmse(zero), "hist_mean": rmse(hm), "ols": rmse(ols)}, "err_mean": float(e.mean()), "err_median": float(np.median(e)),
             "z_mean": float(z.mean()), "z_std": float(z.std()), "jitter_counts": jit, "ell_counts": ells,
             "inconclusive": n < 200}
+
+
+def logret_resolver(c, tidx: dict, bar_t=None):
+    """Ledger resolver of a matured GPR log-return forecast (1.46 arch I0036: was copied in mm/service.py and mm/jobs.py). c: closes,
+    tidx: {bar time: index}; bar_t (jobs): also report the matured bar time. -> None while the horizon bar is not in the series."""
+    import json
+
+    def resolve(row):
+        i = tidx.get(float(row["source_ts"]))
+        h = int(row["horizon"].replace("bars", ""))
+        if i is None or i + h >= len(c):
+            return None
+        p = json.loads(row["payload"])
+        real = math.log(c[i + h] / c[i])
+        z = (real - p["pred"]) / p["sd"]
+        out = {"realized_logret": real, "z": z, "in_1sd": abs(z) <= 1, "in_2sd": abs(z) <= 2}
+        if bar_t is not None:
+            out["matured_bar_ts"] = float(bar_t[i + h])
+        return out
+    return resolve

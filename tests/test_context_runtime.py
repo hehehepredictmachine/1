@@ -102,7 +102,7 @@ class NativeTests(unittest.TestCase):
         self.assertEqual(sum(1 for r in rows if r["event_mask"]) > 0, True)
         par = NV.parity(FIX)
         self.assertEqual(par["PYTHON_VS_GOLDEN"]["status"], "PASS")
-        self.assertEqual(par["NATIVE_COMPILED"], "NOT_EXECUTED_METAEDITOR_UNAVAILABLE")
+        self.assertEqual(par["NATIVE_COMPILED"], "NOT_COMPILED_NO_METAEDITOR")      # 1.46 arch I0522: one name with flow / MR2
 
 
 class MqlSourceTests(unittest.TestCase):

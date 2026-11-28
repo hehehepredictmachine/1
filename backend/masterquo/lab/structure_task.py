@@ -33,6 +33,7 @@ import numpy as np
 from ..analysis import mitp, structure_v2 as S
 from . import si_families as SF
 from . import structure_nets as SN
+from .structure_tab import TAB as STRUCTURE_TAB
 
 TASK_MOVE = "STRUCTURE_MOVE_M1_V1"
 TASK_SETUP = "SCALP_STRUCTURE_CONTEXT_V1"
@@ -58,11 +59,8 @@ HORIZONS = (3, 5, 15)
 WINDOW = 128
 WARMUP = 200
 SETUP_CLASSES = ("TP1_FIRST", "SL_FIRST", "TIMEOUT")
-TAB = ["ret1", "ret3", "ret5", "ret15", "body", "upper", "lower", "clv", "range_atr", "trend_int", "trend_maj", "trend_unknown", "dist_h", "dist_l",
-       "ev_bos_up", "ev_bos_dn", "ev_chg_up", "ev_chg_dn", "ev_sweep_h", "ev_sweep_l", "bars_since_event", "mitp_buy", "mitp_sell", "mitp_vote",
-       "mitp_held", "bb_pctb", "atr_ratio", "hour_sin", "hour_cos", "spread_atr", "spread_known", "m5_ret3", "m5_pos", "m15_ret3", "m15_pos",
-       "h1_ret3", "h1_pos", "ctx_known", "black_known"]
-SEQ = ["ret1", "body", "upper", "lower", "clv", "range_atr", "trend_int", "dist_h", "dist_l", "mitp_vote", "bb_pctb"]
+TAB = STRUCTURE_TAB                                  # 1.46 arch I0085: defined in the leaf lab/structure_tab.py (same list, old name kept)
+SEQ =["ret1", "body", "upper", "lower", "clv", "range_atr", "trend_int", "dist_h", "dist_l", "mitp_vote", "bb_pctb"]
 SEQ_IDX = [TAB.index(x) for x in SEQ]
 FAMILIES_ALL = ("LOGREG", "XGB") + SN.FAMILIES + SF.FAMILIES
 EVIDENCE = {"min_rows": 20000, "min_sessions": 60, "min_per_class": 500, "min_setups": 600}
@@ -505,6 +503,32 @@ def _task_arrays(data: dict, task: str):
         return data["setup_idx"], data["setup_y"].astype(np.int64)[:, None], data["setup_r"].astype(np.float64)[:, None]
     b = data["rows_idx"]
     return b, data["Y"][b].astype(np.int64), data["R"][b].astype(np.float64)
+
+
+def export_native_train(inst: str, dsdir: Path, profile: str, path: Path) -> dict:
+    """1.46: `structure-intelligence minirocket export-train` - PMW_MR2_TRAIN.bin for the native PMW_MR2_Fit script with exactly the rows
+    `train` gives MiniRocket for the final candidate: STRUCTURE_MOVE_M1_V1 dataset, the same split, inner blocks of dev (holdout not read)
+    and the same mr_max_fit_rows cap. A tool: nothing is trained, selected or activated here.
+    1.46 arch (I0085, merge): lives here, not in si_families - from there it imported structure_task lazily, the cycle I0085 removed
+    (structure_task imports si_families); the code is unchanged (si_families.mr_fit_rows / mr_windows, minirocket_v2.export_train)."""
+    from ..ml import scalp_task as stk
+    data = load_dataset(dsdir, TASK_MOVE)
+    man = data["manifest"]
+    prof_now = indicator_profile(inst)
+    if man["indicator_profile"]["hash"] != prof_now["hash"]:
+        return {"status": "STALE_DATASET", "reason": f"profil wskaźników zmieniony ({man['indicator_profile']['hash']} → {prof_now['hash']})",
+                "rebuild": f"python -m masterquo structure-intelligence dataset --asset {inst} --task {TASK_MOVE}"}
+    sp = split(data)
+    fb = stk.inner_blocks(sp["dev"], sp["rows"], sp["embargo_s"])
+    fit, note = SF.mr_fit_rows(fb["FIT"], PROFILES[profile])
+    if not len(fit):
+        return {"status": "INSUFFICIENT_EVIDENCE", "reason": "pusty blok FIT"}
+    bars, Y, R = _task_arrays(data, TASK_MOVE)
+    tick = float(data.get("tick") or man["tick"])
+    Path(path).parent.mkdir(parents=True, exist_ok=True)
+    rep = SF.MR.export_train(Path(path), SF.mr_windows(data, bars[fit], tick), Y[fit], R[fit])
+    return {"status": "OK", **rep, "dataset_id": man["dataset_id"], "data_kind": man["data_kind"], "task": TASK_MOVE, "profile": profile,
+            "rows_scope": "FIT (bloki wewnętrzne części dev; holdout nieczytany)", "budget_note": note, "activation": "NONE"}
 
 
 def _fit_family(fam: str, data: dict, task: str, blocks: dict, prof: dict, seed: int, log, deadline: float, cancel=None):

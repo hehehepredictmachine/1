@@ -217,7 +217,7 @@ class StructureIntelligenceService:
         import os
         from . import minirocket_v2 as MR
         files = os.environ.get("MQ_MT5_FILES_DIR")
-        exp = Path(os.environ.get("MQ_MINIROCKET_EXPORT_DIR") or (Path(__file__).resolve().parents[3] / "exports" / "minirocket"))
+        exp = MR.default_export_dir()                           # 1.46 arch I0486: the same folder as the CLI default --output
         man = None
         try:
             man = json.loads((exp / "manifest.json").read_text(encoding="utf-8")) if (exp / "manifest.json").exists() else None
@@ -322,9 +322,16 @@ class StructureIntelligenceService:
                       for N, f in fs.items()} for nm, fs in q["sides"].items()}
         return {"phase": q["phase"], "seq": q["seq"], "computed_at": q["computed_at"], "clock": q["clock"]["mode"], "spread": q["spread"].get("level"), "sides": sides}
 
-    def quote_forecasts(self, limit: int = 100) -> list[dict]:
+    def quote_forecasts(self, limit: int = 100, context: str | None = None, instrument: str | None = None) -> list[dict]:
+        """context = '<instrument>|<symbol>' (exact), instrument = every symbol of that instrument; neither = all rows (as before).
+        1.46 arch (I0030 / I0040): the API list showed other assets' forecasts after an asset change."""
+        where, args = "", ()
+        if context:
+            where, args = "WHERE f.context=? ", (context,)
+        elif instrument:
+            where, args = "WHERE substr(f.context, 1, ?)=? ", (len(instrument) + 1, f"{instrument}|")
         rows = self.db.query("SELECT f.forecast_id, f.side, f.scale, f.issued_at, f.target_at, f.payload, o.status, o.outcome, o.error FROM quote_forecasts f "
-                             "LEFT JOIN quote_outcomes o ON o.forecast_id=f.forecast_id ORDER BY f.issued_at DESC LIMIT ?", (limit,))
+                             "LEFT JOIN quote_outcomes o ON o.forecast_id=f.forecast_id " + where + "ORDER BY f.issued_at DESC LIMIT ?", (*args, limit))
         for r in rows:
             p = json.loads(r.pop("payload"))
             r.update(price=p["price"], se_model=p["se_model"], h_s=p["h_s"], band=p["band"])
@@ -370,10 +377,18 @@ class StructureIntelligenceService:
         rows = self.db.query("SELECT f.id, f.as_of, f.horizon, f.payload FROM si_forecasts f LEFT JOIN si_outcomes o ON o.forecast_id=f.id "
                              "WHERE f.instrument=? AND o.forecast_id IS NULL ORDER BY f.id DESC LIMIT 500", (instrument,))
         n = 0
+        first = _ts(m1[0]["open_utc"]) if m1 else None
         for r in rows:
             p = json.loads(r["payload"])
             start = iso(datetime.fromtimestamp(_ts(r["as_of"]) - 60, timezone.utc))
             k = idx.get(start)
+            if k is None and first is not None and _ts(start) < first:
+                # 1.46 arch I0036: the start bar left the M1 buffer - the row stayed without an outcome for ever (continue); it gets
+                # OUT_OF_BUFFER (no r_h / label; quality() counts MATURED only)
+                self.db.execute("INSERT OR IGNORE INTO si_outcomes(forecast_id, data_revision, matured_at, r_h, label, status) VALUES (?,?,?,?,?,?)",
+                                (r["id"], "OUT_OF_BUFFER", iso(utcnow()), None, None, "OUT_OF_BUFFER"))
+                n += 1
+                continue
             if k is None or k + r["horizon"] >= len(m1):
                 continue
             end = m1[k + r["horizon"]]

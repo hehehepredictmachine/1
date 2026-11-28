@@ -29,7 +29,7 @@ from pathlib import Path
 from ..kronos import calendar as CAL
 from ..kronos import quality as Q
 from ..timeutil import TF_SECONDS, iso, utcnow
-from .service import neutral_band, predict_request
+from .core import neutral_band, predict_request
 from .settings import MODEL_IDS, tsfm_dir
 
 SCHEMA = "PMW-TSFM-WF-1"

@@ -401,6 +401,8 @@ def save_bundle(d: Path, fp: dict, rep: dict, side: str, data: dict) -> str:
            "cfg": fp["cfg"], "n_trees": {"classifier": fp["n_trees_clf"], "regressor": fp["n_trees_reg"]}, "seed": 42, "trials": fp["trials"],
            "block_sizes": fp["sizes"], "costs": rep["costs"], "dataset_id": rep["dataset_id"], "data_kind": rep["data_kind"], "role": rep["role"],
            "files_sha256": files, "model_hash": mhash, "versions": {"xgboost": xgboost.__version__, "scikit-learn": sklearn.__version__}}
+    from ..scalp.strategy import setup_features_tag
+    man.update(setup_features_tag())                               # 1.46 arch I0020: identity of the SETUP_FEATURES part of NET_FEATURES
     (tmp / "manifest.json").write_text(json.dumps(man, indent=1, default=str), encoding="utf-8")
     if d.exists():
         shutil.rmtree(d)
@@ -413,6 +415,10 @@ class ScalpBundle:
         import xgboost as xgb
         self.dir = d
         self.man = json.loads((d / "manifest.json").read_text(encoding="utf-8"))
+        from ..scalp.strategy import setup_features_check
+        sf_bad = setup_features_check(self.man)                       # 1.46 arch I0020 (no field = legacy-compatible)
+        if sf_bad:
+            raise ValueError(sf_bad)
         for f, h in self.man["files_sha256"].items():
             if hashlib.sha256((d / f).read_bytes()).hexdigest() != h:
                 raise ValueError(f"ARTIFACT_CHECKSUM_MISMATCH:{f}")

@@ -121,7 +121,10 @@ def contract_predictions(svc, inst: str, *, decisions: bool = False) -> list[dic
                               data_kind="SYNTHETIC" if fc["data_kind"] == "SYNTHETIC" else "REAL", available_at=fc["data_available_at"],
                               result=_result(fc), extra={**base_extra, "snapshot_id": fc["snapshot_id"], "latency_ms": fc["compute_ms"],
                                                          "freshness": {"current": True, "last_bar_open_utc": fc["last_bar_open_utc"],
-                                                                       "valid_until": fc["valid_until"]}}))
+                                                                       "valid_until": fc["valid_until"]},
+                                                         # 1.46 arch I0864: record-level text only (never None / bool inside `result`)
+                                                         **({"band_incomplete_reason": fc["band_incomplete_reason"]}
+                                                            if fc.get("band_incomplete_reason") else {})}))
     return out
 
 
@@ -204,6 +207,11 @@ def coordinator_rows(svc, inst: str) -> list[dict]:
                 use, note = "SHADOW", f"ASSIST nieaktywny – dopuszczenie nieaktualne ({why})"
             elif not ok:
                 p = {**p, "state": "STALE", "result": None, "unavailable_reason": f"dopuszczenie REQUIRED nieaktualne ({why})"}
+            elif use == "REQUIRED" and p.get("state") == "READY" and p.get("band_incomplete_reason"):
+                # 1.46 arch I0864: a REQUIRED forecast whose neutral band lacks a required component (point / ATR unknown, counted as 0)
+                # does not confirm the side -> unavailable (MODEL_REQUIRED_UNAVAILABLE); ASSIST / OBSERVE rows are left as they are
+                p = {**p, "state": "STALE", "result": None,
+                     "unavailable_reason": f"pasmo neutralne niepełne ({p['band_incomplete_reason']}) – warunek REQUIRED nie potwierdza kierunku"}
         rx = p.get("use_restriction") if p.get("state") == "READY" else None
         if rx and rx.get("code") in UNAVAILABLE_ON_ACTIVE:
             # 1.46 (I0200, review S0): the CPU fallback forecast is unavailable on the ACTIVE path for EVERY role - exactly as the broken
@@ -247,7 +255,11 @@ def kronos_rows(kr, inst: str) -> list[dict]:
         assist = any(u.use == "ASSIST" for u in kr.settings.get().strategy_use.values())
     except Exception:  # noqa: BLE001
         assist = False
-    return [{**p, "family": f"kronos:{KP.model_name()}@{p.get('timeframe')}", "use": "ASSIST" if assist else "SHADOW", "no_required": True} for p in rows]
+    # 1.46 arch (I0195): canonical_id = the producer ('kronos:<model>', as in the Quant snapshot) - the coordinator drops the Quant
+    # snapshot's record of the same producer (one record per producer). `family` (the identifier at the coordinator boundary, _mid) stays
+    # 'kronos:<model>@<TF>', so a REQUIRED 'kronos:<model>' is still never satisfied by this no_required row.
+    return [{**p, "family": f"kronos:{KP.model_name()}@{p.get('timeframe')}", "canonical_id": f"kronos:{KP.model_name()}",
+             "use": "ASSIST" if assist else "SHADOW", "no_required": True} for p in rows]
 
 
 def context(svc, mid: str, inst: str, strategy: str, *, side: str | None = None) -> dict:
@@ -286,7 +298,8 @@ def context(svc, mid: str, inst: str, strategy: str, *, side: str | None = None)
             "forecast": None if not fc else {x: fc[x] for x in ("id", "direction", "direction_pl", "delta_price", "delta_pct", "last_close", "pred_close_h",
                                                               "point_kind", "horizon_bars", "last_bar_open_utc", "created_at", "neutral_band",
                                                               "snapshot_id", "data_source")},
-            "setup_side": side, "relation": rel, "knows_only": KNOWS_ONLY}
+            "setup_side": side, "relation": rel, "knows_only": KNOWS_ONLY,
+            "band_incomplete_reason": (fc or {}).get("band_incomplete_reason")}          # 1.46 arch I0864: only the REQUIRED branch reads it
 
 
 def apply_to_setup(su: dict, ctx: dict) -> dict:
@@ -318,6 +331,12 @@ def apply_to_setup(su: dict, ctx: dict) -> dict:
     elif ctx["relation"] != "ZGODNY":
         cl.append({"id": lid, "label": label, "status": "FAIL", "detail": f"prognoza {f['direction_pl']} nie potwierdza {su.get('side')}"})
         su.update(status="WAIT", status_reason=f"{ctx['name']} (warunek wymagany): prognoza {f['direction_pl']} nie potwierdza {su.get('side')}")
+    elif ctx.get("band_incomplete_reason"):
+        # 1.46 arch I0864: the neutral band lacks a required component (point / ATR unknown) - the agreeing direction is not a confirmation
+        cl.append({"id": lid, "label": label, "status": "WAIT", "detail": f"pasmo neutralne niepełne ({ctx['band_incomplete_reason']}) – kierunek "
+                                                                       f"{f['direction_pl']} nie jest potwierdzeniem"})
+        su.update(status="WAIT", status_reason=f"{ctx['name']} (warunek wymagany): pasmo neutralne niepełne ({ctx['band_incomplete_reason']}) "
+                                               f"– setup wstrzymany"[:300])
     else:
         cl.append({"id": lid, "label": label, "status": "PASS", "detail": f"prognoza {f['direction_pl']} zgodna z {su.get('side')}"})
     return su

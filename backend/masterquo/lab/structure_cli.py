@@ -62,7 +62,9 @@ def main(argv: list[str]) -> int:
     s.add_argument("action", choices=("export-native", "export-fixture", "export-train", "parity", "native-status"))
     s.add_argument("--asset", choices=INSTR, default="XAUUSD")
     s.add_argument("--model-id", help="candidate_id MQ_MINIROCKET_RIDGE_V2 (export-native)")
-    s.add_argument("--output", default="./exports/minirocket")
+    # 1.46 arch I0486: the folder the bot reads (si_service), not ./exports of the cwd
+    from .minirocket_v2 import default_export_dir
+    s.add_argument("--output", default=str(default_export_dir()))
     s.add_argument("--fixtures", default=str(Path(__file__).resolve().parents[3] / "tests" / "fixtures" / "minirocket"))
     s.add_argument("--reference-version", help="przypięta wersja referencji (np. sktime==1.2.0) – zapisywana w raporcie")
     s.add_argument("--reference-python", help="interpreter z przypiętym sktime (uruchomienie referencji na żywo)")
@@ -259,12 +261,11 @@ def main(argv: list[str]) -> int:
                 _print(MR.native_status(Path(a.native_status_file) if a.native_status_file else None))
                 return 0
             if a.action == "export-train":
-                from . import si_families as SFm
                 d = T.latest_dataset(a.asset, T.TASK_MOVE)
                 if d is None:
                     print(f"[BLAD] BLOCKED_NO_DATASET dla {T.TASK_MOVE}: python -m masterquo structure-intelligence dataset --asset {a.asset}")
                     return 2
-                rep = SFm.export_native_train(a.asset, d, a.profile, Path(a.output) / "PMW_MR2_TRAIN.bin")
+                rep = T.export_native_train(a.asset, d, a.profile, Path(a.output) / "PMW_MR2_TRAIN.bin")   # I0085: structure_task, no cycle
                 _print(rep)
                 if rep["status"] != "OK":
                     return 2

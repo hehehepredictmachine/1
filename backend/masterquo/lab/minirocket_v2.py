@@ -56,6 +56,13 @@ PARITY_SCOPE = {"ALGORITHM_VALIDATED": "PYTHON_VS_NAIVE_ORACLE", "FROZEN_STATE_P
                 "HEAD_PARITY": "MQL5_INFER_VS_PYTHON", "NATIVE_COMPILED": "MQL5_TERMINAL", "NATIVE_EXECUTED": "MQL5_TERMINAL"}
 
 
+def default_export_dir() -> Path:
+    """Native export folder: MQ_MINIROCKET_EXPORT_DIR, else <repo>/exports/minirocket - ONE definition for the CLI default (--output) and
+    the bot's native status (si_service). 1.46 arch I0486: the CLI default './exports/minirocket' was relative to the cwd (the .bat files
+    run from backend/), the bot read <repo>/exports/minirocket and saw NOT_EXPORTED (expected model sha unknown)."""
+    return Path(os.environ.get("MQ_MINIROCKET_EXPORT_DIR") or (Path(__file__).resolve().parents[3] / "exports" / "minirocket"))
+
+
 class MRError(ValueError):
     pass
 
@@ -558,7 +565,9 @@ class NativeResultImporter:
             r = parse_result(p.read_bytes() if p.stat().st_size <= MAX_RESULT_BYTES else b"")
         except MRError as exc:
             return {"status": "REJECTED", "reason": str(exc)}
-        if self.model_sha and r["model_sha256"] != self.model_sha:
+        if not self.model_sha:                       # 1.46 arch I0486: without the exported manifest any model's result was IMPORTED
+            return {"status": "REJECTED", "reason": "EXPECTED_MODEL_UNKNOWN (brak manifest.json eksportu – minirocket export-native)"}
+        if r["model_sha256"] != self.model_sha:
             return {"status": "REJECTED", "reason": "MODEL_MISMATCH"}
         if r["symbol"] != self.symbol or r["tf"] != self.tf:
             return {"status": "REJECTED", "reason": "CONTEXT_MISMATCH"}
@@ -716,14 +725,18 @@ def oracle_counts(x: np.ndarray, d: int, k: int, b: float, centre: bool) -> tupl
 
 
 def native_status(status_file: Path | None) -> dict:
-    """Native compile/execute evidence written by 27_MINIROCKET_NATIVE.bat (EX5 hash + build + log). Without it: NOT_COMPILED."""
+    """Native compile/execute evidence written by 27_MINIROCKET_NATIVE.bat (EX5 hash + build + log). Without it: NOT_COMPILED.
+    1.46 arch (I0479): the self-test runs in the terminal AFTER the status file is written - mr2_selftest.txt of this build (not older than
+    the status file) is read live (lab/native_selftest.py), as for ContextIndicators."""
+    from . import native_selftest as NS
     if status_file is None or not Path(status_file).exists():
-        return {"NATIVE_COMPILED": "NOT_COMPILED_NO_METAEDITOR", "NATIVE_EXECUTED": "NATIVE_NOT_EXECUTED",
+        return {"NATIVE_COMPILED": NS.NOT_COMPILED, "NATIVE_EXECUTED": NS.NOT_EXECUTED,
                 "reason": "brak dowodu kompilacji/uruchomienia w terminalu MT5 (środowisko budowy nie ma MetaEditor)"}
     st = json.loads(Path(status_file).read_text(encoding="utf-8"))
     ok_c = st.get("compile_errors") == 0 and bool(st.get("ex5_sha256")) and st.get("source_sha256") is not None
-    return {"NATIVE_COMPILED": "PASS" if ok_c else "FAIL", "NATIVE_EXECUTED": st.get("selftest_result", "NATIVE_NOT_EXECUTED"),
-            "build": st.get("terminal_build"), "ex5_sha256": st.get("ex5_sha256"), "source_sha256": st.get("source_sha256"), "log": st.get("log")}
+    res, build = NS.executed(st, Path(status_file), "mr2_selftest.txt")
+    return {"NATIVE_COMPILED": "PASS" if ok_c else "FAIL", "NATIVE_EXECUTED": res,
+            "build": st.get("terminal_build") or build, "ex5_sha256": st.get("ex5_sha256"), "source_sha256": st.get("source_sha256"), "log": st.get("log")}
 
 
 def parity(fixtures: Path, reference_python: str | None = None, native_scores: Path | None = None, model_dir: Path | None = None,

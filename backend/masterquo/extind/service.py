@@ -226,7 +226,10 @@ class ExtIndService:
     def as_of(self, adapter: str, instrument: str, t: datetime, approved_only: bool = True) -> dict | None:
         w = " FROM extind_snapshots WHERE adapter=? AND instrument=?"
         if approved_only:
-            w += " AND mapping_status='MAPPING_APPROVED' AND time_status='OK'"
+            # 1.46 arch I0180: a read without a verified server offset (TIME_BASIS_UNVERIFIED) is usable for its price LEVELs - they and
+            # available_at (the bot's UTC receive time) do not depend on the offset; its windows / events / trendline times are None
+            # (mapping.to_utc) and the caller must not treat them as a schedule (returned r['time_status']). No other status is admitted.
+            w += " AND mapping_status='MAPPING_APPROVED' AND time_status IN ('OK', 'TIME_BASIS_UNVERIFIED')"
         tu = parse_iso(iso(t))
         args = (adapter, instrument)
         r = self._newest_at(w, args, tu)

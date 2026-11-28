@@ -606,7 +606,11 @@ class MLService:
         return self.db.query("SELECT sample_id, plan FROM ml_scalp_samples WHERE instrument=? AND status='PENDING' ORDER BY signal_time LIMIT ?", (instrument, limit))
 
     def scalp_label(self, sample_id: str, status: str, out: dict | None) -> None:
-        if status == "SETTLED" and out and out.get("net_r") is not None:
+        if status == "SETTLED" and out and out.get("cost_status") == "COMMISSION_UNKNOWN":
+            # 1.46 arch I0045: an outcome without the commission is not a net label - COST_UNKNOWN (outside training, like _cost samples)
+            self.db.execute("UPDATE ml_scalp_samples SET status='COST_UNKNOWN', label_end=?, precision=? WHERE sample_id=?",
+                            (out.get("label_end"), out.get("precision"), sample_id))
+        elif status == "SETTLED" and out and out.get("net_r") is not None:
             self.db.execute("UPDATE ml_scalp_samples SET status='LABELED', net_r=?, y=?, label_end=?, label_available_at=?, precision=? WHERE sample_id=?",
                             (out["net_r"], 1 if out["net_r"] > 0 else 0, out["label_end"], iso(utcnow()), out.get("precision"), sample_id))
         else:                                                   # no fill / no data: never a loss
@@ -674,7 +678,8 @@ class MLService:
         base = {"contract": PRED_CONTRACT, "setup_id": (setup_row or {}).get("setup_id"), "setup_version": (setup_row or {}).get("version"),
                 "model_id": None, "model_family": None, "model_version": None, "feature_schema_version": fe.FEATURE_SCHEMA_VERSION,
                 "asof_utc": None, "raw_score": None, "calibrated_probability": None, "calibration_status": "NONE", "threshold": None,
-                "target_definition": "net_R > 0 wg planu setupu (MQ-LABEL-1.0.0)", "readiness": "NOT_READY", "uncertainty_reason": None,
+                # 1.46 arch (I0329): the label policy version from labels.py (was the literal MQ-LABEL-1.0.0 after the 1.1.0 cost labels)
+                "target_definition": f"net_R > 0 wg planu setupu ({lb.LABEL_POLICY_VERSION})", "readiness": "NOT_READY", "uncertainty_reason": None,
                 "data_quality": None, "explanation_ref": None, "ml_mode": c.mode, "feature_source": None}
         if setup_row is None:
             return dict(base, uncertainty_reason="NO_SETUP")

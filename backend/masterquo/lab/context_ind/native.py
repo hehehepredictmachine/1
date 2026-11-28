@@ -15,6 +15,7 @@ from pathlib import Path
 
 import numpy as np
 
+from .. import native_selftest as NS
 from . import fractal as FD
 from . import smc as SM
 from . import vamd as VM
@@ -117,20 +118,23 @@ def compare(export: dict, tol: float = 1e-7) -> dict:
 
 
 def native_status(status_file: Path | None) -> dict:
+    # 1.46 arch: one status name with FlowContext / MiniRocket V2 (I0522; was NOT_EXECUTED_METAEDITOR_UNAVAILABLE) and the live self-test
+    # file read only when it belongs to this build - not older than the status file (I0479; an old ctx_selftest.txt counted as PASS)
     if status_file is None or not Path(status_file).exists():
-        return {"NATIVE_COMPILED": "NOT_EXECUTED_METAEDITOR_UNAVAILABLE", "NATIVE_EXECUTED": "NATIVE_NOT_EXECUTED"}
+        return {"NATIVE_COMPILED": NS.NOT_COMPILED, "NATIVE_EXECUTED": NS.NOT_EXECUTED}
     st = json.loads(Path(status_file).read_text(encoding="utf-8"))
-    res = st.get("selftest_result", "NATIVE_NOT_EXECUTED")
+    sf = Path(status_file)
     compiled = "PASS" if st.get("compile_errors") == 0 and st.get("ex5_sha256") else "FAIL"
-    live = Path(status_file).parent / "ctx_selftest.txt"                  # self-test runs in the terminal AFTER compilation
+    res, _ = NS.executed(st, sf, "ctx_selftest.txt")                     # self-test runs in the terminal AFTER compilation
+    live = sf.parent / "ctx_selftest.txt"
     stale = None
     if live.exists():
-        # 1.46: as tools/mr2_native_status.py - a self-test file older than this build (newest EX5 listed in the status, else the status
-        # write time) belongs to a previous build and is not evidence; it used to give PASS even with compile_errors > 0
-        stale = live.stat().st_mtime < _build_time(Path(status_file), st)
-        if not stale:
-            txt = live.read_text(errors="replace")
-            res = "PASS" if "RESULT=PASS" in txt else ("FAIL" if "RESULT=FAIL" in txt else res)
+        # 1.46 (I0524): as tools/mr2_native_status.py - a self-test file older than this build (newest EX5 listed in the status, else the
+        # status write time) belongs to a previous build and is not evidence; it used to give PASS even with compile_errors > 0.
+        # Merged with I0479 (NS.executed: not older than the status file) - both conditions must hold for the live file to count.
+        stale = live.stat().st_mtime < max(_build_time(sf, st), sf.stat().st_mtime)
+        if stale:
+            res = st.get("selftest_result", NS.NOT_EXECUTED)
     if compiled == "FAIL":
         res = "NATIVE_NOT_EXECUTED_COMPILE_FAILED"                         # no EX5 of this build -> nothing of it was executed
     return {"NATIVE_COMPILED": compiled, "NATIVE_EXECUTED": res, "selftest_stale": stale, "metaeditor": st.get("log"),

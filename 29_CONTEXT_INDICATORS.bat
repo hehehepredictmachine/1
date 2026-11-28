@@ -59,7 +59,7 @@ set "ME="
 for %%P in ("%ProgramFiles%\MetaTrader 5\metaeditor64.exe" "%ProgramFiles%\MetaTrader 5 Terminal\metaeditor64.exe") do if exist "%%~fP" set "ME=%%~fP"
 if "%ME%"=="" for /d %%D in ("%ProgramFiles%\*") do if exist "%%~fD\metaeditor64.exe" set "ME=%%~fD\metaeditor64.exe"
 if "%ME%"=="" set /p "ME=Pelna sciezka metaeditor64.exe: "
-if not exist "%ME%" (echo [BLAD] NOT_EXECUTED_METAEDITOR_UNAVAILABLE - zrodla w mql5\ContextIndicators, skopiuj recznie i skompiluj w MetaEditorze & exit /b 3)
+if not exist "%ME%" (echo [BLAD] NOT_COMPILED_NO_METAEDITOR - zrodla w mql5\ContextIndicators, skopiuj recznie i skompiluj w MetaEditorze & exit /b 3)
 for /f "usebackq delims=" %%V in (`powershell -NoProfile -Command "(Get-Item '%ME%').VersionInfo.FileVersion"`) do set "MEVER=%%V"
 echo MetaEditor: %ME%  wersja: %MEVER%
 set "BK=%DATA%\MQL5\PMW_backup_%RANDOM%%RANDOM%"

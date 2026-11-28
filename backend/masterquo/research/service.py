@@ -47,7 +47,10 @@ from . import etc as ETC
 from . import g7 as G7
 from . import graph_ca as GR
 from . import optim as OP
+from .atomic_io import _atomic
 from .sources import SOURCES
+
+# 1.46 arch I0085: _atomic lives in the leaf research/atomic_io.py (no components <-> service cycle); the old name stays importable here
 
 log = logging.getLogger("masterquo.research")
 VERSION = "PMW-RESEARCH-1"
@@ -79,18 +82,6 @@ def _merge(a: dict, b: dict) -> dict:
     for k, v in (b or {}).items():
         out[k] = _merge(out[k], v) if isinstance(v, dict) and isinstance(out.get(k), dict) else v
     return out
-
-
-def _atomic(p: Path, obj) -> None:
-    # 1.46: the temp name is unique per writer thread - two threads writing the same file shared "<file>.tmp" (one os.replace failed
-    # with FileNotFoundError, the other could publish a half-written file)
-    tmp = p.with_name(f"{p.name}.{os.getpid()}.{threading.get_ident()}.tmp")
-    try:
-        tmp.write_text(json.dumps(obj, ensure_ascii=False, default=str), encoding="utf-8")
-        os.replace(tmp, p)
-    except BaseException:
-        tmp.unlink(missing_ok=True)
-        raise
 
 
 def _is_num(v, lo: float, hi: float, *, integer: bool = False) -> bool:

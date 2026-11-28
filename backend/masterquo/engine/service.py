@@ -713,8 +713,16 @@ class EngineService:
                     if snap and snap.get("confirmed_at"):     # 1.46 arch (I0729): available_at = first read of identical content, confirmed_at = last
                         sources[a_]["confirmed_at"] = snap["confirmed_at"]
                     if snap:
-                        sources[a_].update(snapshot_id=snap["snapshot_id"], available_at=snap["available_at"], levels=snap["levels"][:20],
-                                           windows=snap["windows"][:10])
+                        # 1.46 arch I0180: a read without a verified server offset (TIME_BASIS_UNVERIFIED) is passed for its price levels
+                        # only - windows and trendlines without a UTC time are dropped (not a schedule: no IND-K04/K05) and the read is marked
+                        tstat = snap.get("time_status", "OK")
+                        lv = [x for x in snap["levels"] if x.get("kind") != "TRENDLINE" or all(p.get("t_utc") is not None for p in x.get("points") or [])]
+                        wins = [w for w in snap["windows"] if w.get("scheduled_start_utc") is not None and w.get("scheduled_end_utc") is not None]
+                        sources[a_].update(snapshot_id=snap["snapshot_id"], available_at=snap["available_at"], levels=lv[:20], windows=wins[:10],
+                                           time_status=tstat)
+                        if tstat != "OK":
+                            sources[a_]["time_note"] = ("odczyt przy niezweryfikowanym zegarze serwera MT5 – tylko poziomy cenowe; "
+                                                        "okna i zdarzenia czasowe nieznane")
             ctx = {"knowledge_version": knowledge.KNOWLEDGE_VERSION, "as_of": full.get("as_of"), "instrument": inst, "sar": sar, "sources": sources,
                    "model": {"status": "SEE_SETUP", "note": "ocena modelu reakcji jest liczona dla konkretnego setupu scalp (indicator_context)"}}
             ctx["applied_rules"] = knowledge.applied_rules(ctx)

@@ -3,7 +3,7 @@
 Stan: kod zaimplementowany i przetestowany na danych TEST_ONLY.
 - Brak treningu na prawdziwych danych.
 - Brak oceny przewagi (`NO_VALIDATED_EDGE`).
-- Brak kompilacji native (`NOT_EXECUTED_METAEDITOR_UNAVAILABLE`).
+- Brak kompilacji native (`NOT_COMPILED_NO_METAEDITOR`; do 1.46 arch status ContextIndicators nazywał się `NOT_EXECUTED_METAEDITOR_UNAVAILABLE`).
 
 Moduły działają w trybie OBSERVE/SHADOW:
 - nie składają zleceń,

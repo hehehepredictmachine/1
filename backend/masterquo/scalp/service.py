@@ -9,6 +9,8 @@ A failure here sets ERROR_RECOVERY and never touches existing positions or their
 """
 from __future__ import annotations
 
+import copy
+import hashlib
 import json
 import os
 import threading
@@ -411,10 +413,15 @@ class ScalpService:
         if res.get("open_at_end") or not res["exits"]:
             return "PENDING", None
         net = replay.pnl(sgn, fill, 1.0, res["exits"], costs)
-        return "SETTLED", {"exits": [{"vol": v, "price": px, "time": st.iso_ts(t), "reason": rs} for (v, px, t, rs) in res["exits"]],
-                           "ambiguous": res["ambiguous"], "precision": "OHLC_APPROX", "costs": {k: round(v, 5) for k, v in costs.items()},
-                           "net_r": net / risk if risk else None, "label_end": st.iso_ts(res["exits"][-1][2]),
-                           "note": "wynik po prowizji i poślizgu (te same zasady co replay)"}
+        out = {"exits": [{"vol": v, "price": px, "time": st.iso_ts(t), "reason": rs} for (v, px, t, rs) in res["exits"]],
+               "ambiguous": res["ambiguous"], "precision": "OHLC_APPROX", "costs": {k: round(v, 5) for k, v in costs.items()},
+               "net_r": net / risk if risk else None, "label_end": st.iso_ts(res["exits"][-1][2]),
+               "note": "wynik po prowizji i poślizgu (te same zasady co replay)"}
+        if self.cfg_store.get().scalp.commission_per_lot_side is None:
+            # 1.46 arch I0045: the gate blocks at an unknown commission (Zero != 0 costs), but the label was computed with commission 0 and
+            # stored as an ordinary net result - marked here; ML scalp / NSS store it as COST_UNKNOWN (never trained on)
+            out.update(cost_status="COMMISSION_UNKNOWN", note="wynik BEZ prowizji (prowizja nieznana – net_R niepełny, nie jest etykietą treningową)")
+        return "SETTLED", out
 
     def settle(self, m1: list[dict], point: float) -> None:
         rows = self.db.query("SELECT * FROM scalp_shadow WHERE outcome_status='PENDING' AND instrument=? LIMIT 50", (self.inst,))
@@ -533,12 +540,22 @@ class ScalpService:
         if why:
             return {"status": "UNAVAILABLE", "reason": why["reason"], "reason_code": why["code"], "pass": False}
         try:
-            return self.forecast._ask({"cmd": "setup_quality", "features": plan.get("features") or {}}, 10)
+            return self.forecast._ask({"cmd": "setup_quality", "features": plan.get("features") or {}, **self._feed_contract()}, 10)
         except Exception as exc:
             return {"status": "UNAVAILABLE", "reason": f"{type(exc).__name__}: {exc}"[:200], "pass": False}
 
-    def recent(self, limit: int = 50) -> list[dict]:
-        rows = self.db.query("SELECT * FROM scalp_shadow ORDER BY id DESC LIMIT ?", (limit,))
+    def _feed_contract(self) -> dict:
+        """Symbol and tick of the feed (as ForecastService.tick sends them) - 1.46 arch I0616 / I0626: the worker compares them with the
+        model's training contract (CONTRACT_MISMATCH); before, it hashed the entry's own symbol / tick, so a change never mismatched."""
+        info = self.bridge.symbol_info or {}
+        return {"symbol": self.cfg_store.get().mt5.symbol, "tick_size": float(info.get("trade_tick_size") or 0) or 0.01}
+
+    def recent(self, limit: int = 50, instrument: str | None = None) -> list[dict]:
+        # 1.46 arch (I0040): optional instrument filter for the API list; None = every instrument (status / dashboard callers unchanged)
+        if instrument:
+            rows = self.db.query("SELECT * FROM scalp_shadow WHERE instrument=? ORDER BY id DESC LIMIT ?", (instrument, limit))
+        else:
+            rows = self.db.query("SELECT * FROM scalp_shadow ORDER BY id DESC LIMIT ?", (limit,))
         for r in rows:
             for k in ("reasons", "plan", "gates", "hedge", "outcome"):
                 if r.get(k):
@@ -604,11 +621,22 @@ class ScalpService:
             if pt <= 0:
                 return {"status": "UNAVAILABLE", "reason": "brak specyfikacji symbolu (point) z MT5 – prognoza bez zgadywania skali spreadu"}
             m1 = self.bridge.bars("M1", 400, include_forming=False)
+            req = {"cmd": "scalp_forecast", "m1": [dict({k: b[k] for k in ("open_utc", "o", "h", "l", "c", "tv")},
+                                                        spread_price=b["spread"] * pt if b.get("spread") is not None else None) for b in m1],
+                   **self._feed_contract()}
+            # 1.46 arch I0621: ScalpService.tick and Quant scalp_a asked the worker twice per closed M1 with the same request - one answer
+            # per (active run, registry file version, exact request: bars / revision / symbol / tick); a worker failure is never cached.
             # 1.46 (I0754): as_of of the request - the worker answers STALE_DATA when the newest closed M1 is older than the feed allows
-            # (a frozen feed after a disconnect was published as the current task-A forecast)
-            ans = self.forecast._ask({"cmd": "scalp_forecast", "as_of": iso(utcnow()),
-                                      "m1": [dict({k: b[k] for k in ("open_utc", "o", "h", "l", "c", "tv")},
-                                                  spread_price=b["spread"] * pt if b.get("spread") is not None else None) for b in m1]}, 20)
+            # (a frozen feed after a disconnect was published as the current task-A forecast). as_of is not in the cache key: a cached answer
+            # is reused only while the newest M1 closed at most FORECAST_CACHE_FRESH_S ago (below the worker's STALE limit, before the next M1 could
+            # have closed); later the worker is asked again with the current as_of, so a frozen feed still turns into STALE_DATA.
+            now = utcnow()
+            key = (reg.get("active"), self._registry_sig(), hashlib.sha256(json.dumps(req, sort_keys=True, default=str).encode()).hexdigest())
+            hit = getattr(self, "_fc_cache", None)
+            if hit is not None and hit[0] == key and self._fresh_for_cache(m1, now.timestamp()):
+                return copy.deepcopy(hit[1])
+            ans = self.forecast._ask({**req, "as_of": iso(now)}, 20)
+            self._fc_cache = (key, copy.deepcopy(ans))
             return ans
         except Exception as exc:
             return {"status": "UNAVAILABLE", "reason": f"{type(exc).__name__}: {exc}"[:200]}
@@ -633,6 +661,24 @@ class ScalpService:
             return json.loads(p.read_text(encoding="utf-8"))
         except (OSError, ValueError):
             return {"active": None, "runs": {}}
+
+    FORECAST_CACHE_FRESH_S = 60.0         # I0621 + I0754: newest closed M1 at most this old -> the cached task-A answer is still current
+
+    @classmethod
+    def _fresh_for_cache(cls, m1: list, now_ts: float) -> bool:
+        """True while the newest closed M1 (open + 60 s = its close) closed at most FORECAST_CACHE_FRESH_S before now_ts - the next M1
+        cannot have closed yet and the worker's STALE_DATA limit (90 s) is not reached, so its answer for the same request is unchanged."""
+        try:
+            return bool(m1) and now_ts - (st.ts(m1[-1]["open_utc"]) + 60) <= cls.FORECAST_CACHE_FRESH_S
+        except (KeyError, TypeError, ValueError):
+            return False
+
+    def _registry_sig(self):
+        """mtime_ns of registry.json (activation / rollback / retraining changes it) - part of the forecast cache key; None if unknown."""
+        try:
+            return (self._root() / "registry.json").stat().st_mtime_ns
+        except Exception:  # noqa: BLE001
+            return None
 
     def training_status(self) -> dict:
         d = self._root()

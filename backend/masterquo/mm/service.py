@@ -12,7 +12,6 @@ the gpr_logret artifact (validation reference only). Nothing here can place, mod
 """
 from __future__ import annotations
 
-import json
 import math
 import threading
 import time
@@ -216,18 +215,8 @@ class MMService:
     @staticmethod
     def _resolver(b5: Bars, c: np.ndarray):
         """Outcome of a GP ledger row from the closed bars of the current bridge window (None while bar t+h is not in it)."""
-        idx = {float(t): i for i, t in enumerate(b5.t)}
-
-        def resolve(row):
-            i = idx.get(float(row["source_ts"]))
-            h = int(row["horizon"].replace("bars", ""))
-            if i is None or i + h >= len(c):
-                return None
-            pl = json.loads(row["payload"])
-            real = math.log(c[i + h] / c[i])
-            z = (real - pl["pred"]) / pl["sd"]
-            return {"realized_logret": real, "z": z, "in_1sd": abs(z) <= 1, "in_2sd": abs(z) <= 2}
-        return resolve
+        from . import gpr as G
+        return G.logret_resolver(c, {float(t): i for i, t in enumerate(b5.t)})     # 1.46 arch I0036: one resolver with mm/jobs.py
 
     def _gpr_walk_forward(self, inst: str, b5: Bars, c: np.ndarray, quality: str) -> dict:
         """1.46 arch (I0357): the procedure the gpr job validated (mm/gpr.walk_forward) as a separate SHADOW track - ONE model per instrument,

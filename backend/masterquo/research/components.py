@@ -81,7 +81,8 @@ class Components:
         return v
 
     def _save_etc(self, v: list[dict]) -> None:
-        from .service import _atomic
+        # 1.46 arch I0085: leaf module (was a lazy import from service = the components <-> service cycle)
+        from .atomic_io import _atomic
         _atomic(self._etc_file(), v[-100:])
 
     def _add_etc_version(self, entry: dict, replace: str | None = None) -> None:
@@ -144,7 +145,7 @@ class Components:
         if component_id == "TH_SDFORMERFLOW":
             if kind == "DATASET":
                 h1 = c.bars_fn("H1", 6000) if c else []
-                from .service import _atomic
+                from .atomic_io import _atomic
                 f = self.svc._sdf_dir() / "dataset_h1.json"
                 _atomic(f, h1)
                 dh = hashlib.sha256(f.read_bytes()).hexdigest()[:20]

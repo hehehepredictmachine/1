@@ -140,6 +140,11 @@ def evaluate_models(preds: list[dict], side: str, *, required: set[str], assist_
                 # clean() turns the bool into 'TAK' / 'NIE'
                 influence, why = "BLOCK", "aktywne okno wydarzenia (blackout)"
                 reasons.append(f"MODEL_REQUIRED_BLACKOUT:{mid}")
+            elif rdir is not None and p.get("band_incomplete_reason"):
+                # 1.46 arch I0864: a direction from a neutral band with an unknown required component (TSFM point / ATR counted as 0) never
+                # confirms a REQUIRED condition; records without the field (older rows, replay, golden) keep today's result
+                influence, why = "BLOCK", f"pasmo neutralne niepełne ({p['band_incomplete_reason']}) – nie potwierdza strony"
+                reasons.append(f"MODEL_REQUIRED_NOT_CONFIRMING:{mid}")
             elif p.get("quant_hold"):
                 # w2 (I0771) + 1.46 arch (QFENCE, review): a READY record carrying a Quant hold - an assessment that would hold (E[net R] <= 0
                 # / P below break-even; REQUIRED passed it while ASSIST held the same entry) or the QFENCE fail-closed entry of a MetaModel
@@ -211,7 +216,16 @@ class DecisionCoordinator:
             except Exception:  # noqa: BLE001 - REQUIRED then reports MISSING; ASSIST simply has no effect
                 base = []
             own = {_mid(p) for p in extra} | {str(p.get("family")) for p in extra}
-            return [p for p in base if _mid(p) not in own and p.get("canonical_id") not in own] + extra   # one record per producer
+            # 1.46 arch (I0195): a provider row may name its producer explicitly (canonical_id; today only tsfm.kronos_rows, whose family is
+            # 'kronos:<model>@<TF>'); the Quant snapshot's record of that producer is dropped too - only base records, never an ASSIST record
+            # or one carrying a Quant hold (those could hold an entry), never an extra row
+            own_canon = {str(p["canonical_id"]) for p in extra if p.get("canonical_id")}
+
+            def dup(p: dict) -> bool:
+                if _mid(p) in own or p.get("canonical_id") in own:
+                    return True
+                return (p.get("canonical_id") in own_canon or _mid(p) in own_canon) and p.get("use") != "ASSIST" and not p.get("quant_hold")
+            return [p for p in base if not dup(p)] + extra                                  # one record per producer
         if self.families is None:
             return extra
         try:

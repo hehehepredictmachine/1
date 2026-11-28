@@ -43,7 +43,8 @@ def _file_info(p: Path) -> dict:
 def check_dataset(ds: Path, kinds: list[str] | None = None) -> dict:
     """Readiness of every (or the given) training task for this export folder. `kinds` may name readiness keys or task ids (scalp_A ->
     'scalp', alias on input only - the rows keep the readiness key)."""
-    from ..forecast.export import dataset_state
+    # 1.46 arch I0085: leaf module (was forecast.export = the export <-> requirements cycle)
+    from ..forecast.dataset_state import dataset_state
     if kinds:
         kinds = [k if k in REQUIREMENTS else (_T.requirements_kind(k) or k) for k in kinds]
     ds = Path(ds)

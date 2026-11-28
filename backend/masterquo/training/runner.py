@@ -484,7 +484,9 @@ def t_structure_intelligence(run: Run, inst: str) -> None:
 
 
 def t_flow_context(run: Run, inst: str) -> None:
-    """PMW-UPD-11: dev-only profile calibration, Markov fits, reaction dataset + frozen protocol; holdout not opened; never selected."""
+    """PMW-UPD-11: dev-only profile calibration, Markov fits, reaction dataset + frozen protocol; holdout not opened; the reaction model is
+    never selected. Markov (D23): a RESEARCH fit (REAL_USER_DATA) becomes markov/latest.txt and is read by the live SI cell; a TEST_ONLY fit
+    (synthetic / test data) is saved but never loaded there and never replaces a RESEARCH model."""
     tid, plan = f"{inst}:flow_context", run.state["plan"]
     ds = _ready(run, inst, tid)
     if ds is None:
@@ -682,7 +684,10 @@ def _scalp_b_saved(tb: dict) -> bool:
 
 
 def t_activate(run: Run, inst: str) -> None:
-    """Atomic activation of ADMITTED models only; rejected / unvalidated ones stay for inspection and never replace the active one."""
+    """Atomic activation after a run. Forecasts / scalp: only ADMITTED (validated) runs; ML: the registry's promotion rules. Lab (policy,
+    1.46 arch I0072 docstring): a validated model (role shadow) is activated; an unvalidated research model is activated only as an
+    OBSERVATION when the family's active model is not a validated one, and never replaces a validated one. Synthetic data activates
+    nothing (plan['activate'] False); a fixture_only lab model is never run on REAL data (lab.service._active_models)."""
     tid, plan = f"{inst}:activate", run.state["plan"]
     run.set(tid, execution="W_TOKU", started_at=now())
     done, kept = [], []

@@ -209,6 +209,8 @@ class TestScalpWorkerReason(unittest.TestCase):
         fs._ask = lambda req, timeout: {"status": "SHADOW", "cmd": req["cmd"]}
         sc = self.scalp(fs)
         sc.bridge = types.SimpleNamespace(bars=lambda tf, n, include_forming=False: [], symbol_info={"point": 0.01})
+        # merge with lab_models (I0616/I0626): the request carries the feed contract (configured symbol + tick) - a config is needed
+        sc.cfg_store = types.SimpleNamespace(get=lambda: types.SimpleNamespace(mt5=types.SimpleNamespace(symbol="XAUUSD")))
         self.assertEqual(sc.forecasts(), {"status": "SHADOW", "cmd": "scalp_forecast"})
         self.assertEqual(sc.setup_quality({"features": {}})["cmd"], "setup_quality")
 

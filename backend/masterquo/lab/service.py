@@ -196,10 +196,11 @@ class LabService:
     def _active_models(self, asset: str) -> list[tuple]:
         """Active artefact of EVERY model family of this asset: the pinned one (ACTIVE.json - activation / rollback per family),
         otherwise the latest. All of them run; one is shown as primary. 1.46: the rule lives in protocol.effective_models (the SH matrix
-        row 'lab' reports the same set)."""
+        row 'lab' reports the same set); 1.46 arch I0072: on the bot's REAL data a model trained on synthetic data (fixture_only) never runs
+        (it reached Quant as a REAL record) - unpinned family: the newest non-fixture model is used; a pinned one is skipped (no silent switch)."""
         from .protocol import effective_models
-        out, errors = [], []
-        for m in effective_models(self.trainer.root, asset, self.trainer.models(asset)):
+        out, errors, skipped = [], [], []
+        for m in effective_models(self.trainer.root, asset, self.trainer.models(asset), real_data=self._real_data(), skipped=skipped):
             path = str(self.trainer.root / "models" / asset / m["path"])
             cached = self._models.get(path)
             if cached is None:
@@ -210,8 +211,16 @@ class LabService:
                     continue
                 cached = self._models[path] = (path, fitted, man)
             out.append(cached)
-        self._artifact_errors = errors
+        self._artifact_errors = [f"{mid}: model techniczny na danych syntetycznych (fixture_only) – pominięty na danych REAL"
+                                 for mid in skipped] + errors
         return out
+
+    def _real_data(self) -> bool:
+        """The lab loop's data mode (tick: data_mode 'fixture' when the bridge is synthetic or synthetic_demo); unknown -> REAL (stricter)."""
+        try:
+            return not (getattr(self.bridge, "synthetic", False) or getattr(self.cfg_store.get(), "synthetic_demo", False))
+        except Exception:  # noqa: BLE001
+            return True
 
     @staticmethod
     def _primary(results: list[dict]) -> dict | None:

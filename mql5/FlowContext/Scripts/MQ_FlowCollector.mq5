@@ -19,6 +19,14 @@ input int    InpSDPeriod = 20;
 input int    InpSDMethod = 1;
 input double InpSDFactor = 1.5;
 
+// MQ_SRChannels configuration passed to iCustom AND written to the header ("sr") so the Python parity compares the S/R columns with the
+// same settings (1.46 arch I0517; the indicator defaults: depth 10, retention 290, loopback 300, width 5%, top 10, WICK pivots)
+#define SR_DEPTH        10
+#define SR_RETENTION    290
+#define SR_LOOPBACK     300
+#define SR_WIDTH_PCT    5.0
+#define SR_MAX_SELECTED 10
+
 string Num(const double v) { return (v == EMPTY_VALUE || !MathIsValidNumber(v)) ? "" : DoubleToString(v, 10); }
 
 bool CopyAll(const int h, const int buf, const int n, double &out[])
@@ -31,7 +39,7 @@ void OnStart()
   {
    int hHF = iCustom(_Symbol, _Period, "PMW\\MQ_HeikinFlow", InpMA1, InpP1, InpMA2, InpP2, 1.0);
    int hSD = iCustom(_Symbol, _Period, "PMW\\MQ_StopDistance", InpSDPeriod, InpSDMethod, InpSDFactor);
-   int hSR = iCustom(_Symbol, _Period, "PMW\\MQ_SRChannels");
+   int hSR = iCustom(_Symbol, _Period, "PMW\\MQ_SRChannels", SR_DEPTH, SR_RETENTION, SR_LOOPBACK, SR_WIDTH_PCT, SR_MAX_SELECTED);
    if(hHF == INVALID_HANDLE || hSD == INVALID_HANDLE || hSR == INVALID_HANDLE) { Print("MQ_FlowCollector HANDLE_FAILED ", GetLastError()); return; }
    for(int w = 0; w < 50 && (BarsCalculated(hHF) <= 0 || BarsCalculated(hSD) <= 0 || BarsCalculated(hSR) <= 0); w++) Sleep(200);
    int total = Bars(_Symbol, _Period);
@@ -49,13 +57,15 @@ void OnStart()
                 && CopyAll(hSR, 0, n, s0) && CopyAll(hSR, 1, n, s1) && CopyAll(hSR, 2, n, s2) && CopyAll(hSR, 3, n, s3) && CopyAll(hSR, 4, n, s4) && CopyAll(hSR, 5, n, s5);
       ArraySetAsSeries(t1, false);
       if(!ok || CopyTime(_Symbol, _Period, 1, n, t1) != n || t1[0] != t0[0] || t1[n - 1] != t0[n - 1]) { Sleep(500); continue; }   // bar changed -> retry
+      string srj = StringFormat(",\"sr\":{\"depth\":%d,\"retention\":%d,\"loopback\":%d,\"width_pct\":%.6f,\"max_selected\":%d,\"source\":\"WICK\"}",
+                                SR_DEPTH, SR_RETENTION, SR_LOOPBACK, SR_WIDTH_PCT, SR_MAX_SELECTED);
       string body = StringFormat("{\"schema\":\"PMW-FLOW-EXPORT-1\",\"seq\":%I64d,\"symbol\":\"%s\",\"tf\":\"%s\",\"point\":%.10f,\"tick\":%.10f,"
                                  "\"clock_basis\":\"BROKER_WALL_TIME\",\"written_at_utc\":%I64d,\"seed_origin\":%s,\"build\":%d,"
-                                 "\"heikin\":{\"ma1\":\"%s\",\"p1\":%d,\"ma2\":\"%s\",\"p2\":%d},\"stopdistance\":{\"period\":%d,\"method\":\"%s\",\"factor\":%.6f}}\n",
+                                 "\"heikin\":{\"ma1\":\"%s\",\"p1\":%d,\"ma2\":\"%s\",\"p2\":%d},\"stopdistance\":{\"period\":%d,\"method\":\"%s\",\"factor\":%.6f}%s}\n",
                                  (long)TimeGMT(), _Symbol, StringSubstr(EnumToString(_Period), 7), _Point, SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_SIZE),
                                  (long)TimeGMT(), fromOrigin ? IntegerToString((long)t0[0]) : "null", (int)TerminalInfoInteger(TERMINAL_BUILD),
                                  InpMA1 == 0 ? "EMA" : InpMA1 == 1 ? "SMA" : InpMA1 == 2 ? "SMMA" : "LWMA", InpP1,
-                                 InpMA2 == 0 ? "EMA" : InpMA2 == 1 ? "SMA" : InpMA2 == 2 ? "SMMA" : "LWMA", InpP2, InpSDPeriod, InpSDMethod == 1 ? "SMA" : "EMA", InpSDFactor);
+                                 InpMA2 == 0 ? "EMA" : InpMA2 == 1 ? "SMA" : InpMA2 == 2 ? "SMMA" : "LWMA", InpP2, InpSDPeriod, InpSDMethod == 1 ? "SMA" : "EMA", InpSDFactor, srj);
       for(int i = 0; i < n; i++)
          body += StringFormat("%I64d,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s\n", (long)t0[i], Num(r[i].open), Num(r[i].high), Num(r[i].low), Num(r[i].close),
                               Num(ho[i]), Num(hh[i]), Num(hl[i]), Num(hc[i]), Num(sr[i]), Num(sa[i]), Num(sg[i]), Num(s0[i]), Num(s1[i]), Num(s2[i]), Num(s3[i]), Num(s4[i]), Num(s5[i]));

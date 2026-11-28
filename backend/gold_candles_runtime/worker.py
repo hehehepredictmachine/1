@@ -118,6 +118,25 @@ def analyze_request(req: dict) -> dict:
 
 
 _scalp_cache: dict = {"run_id": None, "model": None}
+_sha_cache: dict = {}                    # 1.46 arch I0621: artifact sha256 per (file, mtime_ns, size) - recomputed after a change or 'reload'
+
+
+def _scalp_contract(req: dict, entry: dict) -> tuple[str | None, str | None]:
+    """(contract hash of the FEED, refusal reason). 1.46 arch I0616 / I0626: the contract was computed from the entry's own symbol / tick,
+    so a different broker symbol or tick size never gave CONTRACT_MISMATCH (the candle forecast checks the feed: _active_model)."""
+    from . import scalp_features as SF
+    sym, tick = req.get("symbol"), req.get("tick_size")
+    try:
+        tick = float(tick) if tick is not None else None
+    except (TypeError, ValueError):
+        tick = None
+    if not sym or tick is None:
+        return None, "REQUEST_WITHOUT_CONTRACT"
+    if entry.get("symbol") != sym or abs(float(entry.get("tick_size") or 0) - tick) > 1e-12:
+        return None, f"CONTRACT_MISMATCH: model {entry.get('symbol')} tick {entry.get('tick_size')}, feed {sym} tick {tick}"
+    return SF.contract_hash(sym, tick), None
+
+
 SCALP_MAX_DELAY_S = 90.0          # as_of - close of the newest M1 beyond this = the feed is frozen (STALE_DATA)
 
 
@@ -148,7 +167,10 @@ def scalp_forecast(req: dict) -> dict:
     if not rid:
         return {"status": "UNAVAILABLE", "reason": "NO_MODEL", "execution_permission": False}
     entry = reg["runs"][rid]
-    ok, why = activatable(entry, SF.contract_hash(entry["symbol"], entry["tick_size"]))
+    contract, why = _scalp_contract(req, entry)
+    if why:
+        return {"status": "UNAVAILABLE", "reason": why, "execution_permission": False}
+    ok, why = activatable(entry, contract, sha_cache=_sha_cache)
     if not ok:
         return {"status": "UNAVAILABLE", "reason": why, "execution_permission": False}
     if _scalp_cache["run_id"] != rid:
@@ -185,16 +207,25 @@ def scalp_forecast(req: dict) -> dict:
 def setup_quality(req: dict) -> dict:
     """Task-B filter: P(TP1 before SL) of one setup from its decision-time features. SHADOW - never an order permission."""
     import numpy as np
-    from . import scalp_features as SF
     from .scalp_infer import SetupModel, activatable, read_registry
     reg = read_registry()
     rid = reg.get("active")
     entry = (reg.get("runs") or {}).get(rid or "")
     if not entry or not entry.get("setup_model"):
         return {"status": "UNAVAILABLE", "reason": "NO_SETUP_MODEL", "pass": False, "execution_permission": False}
-    ok, why = activatable(entry, SF.contract_hash(entry["symbol"], entry["tick_size"]))
+    contract, why = _scalp_contract(req, entry)
+    if why:
+        return {"status": "UNAVAILABLE", "reason": why, "pass": False, "execution_permission": False}
+    ok, why = activatable(entry, contract, sha_cache=_sha_cache)
     if not ok:
         return {"status": "UNAVAILABLE", "reason": why, "pass": False, "execution_permission": False}
+    if entry["setup_model"].get("setup_features_fp") is not None:
+        # 1.46 arch I0020: model B records the SETUP_FEATURES identity (the task-A contract above does not cover it); a run without the
+        # field is legacy-compatible
+        from masterquo.scalp.strategy import setup_features_check
+        bad = setup_features_check(entry["setup_model"])
+        if bad:
+            return {"status": "UNAVAILABLE", "reason": bad, "pass": False, "execution_permission": False}
     if _scalp_cache.get("setup_run") != rid:
         _scalp_cache.update(setup_run=rid, setup=SetupModel(entry))
     sm = entry["setup_model"]
@@ -224,6 +255,7 @@ def main() -> int:
                 ans = {"ok": True, "runtime": RUNTIME_VERSION, "versions": versions(), "instrument": instrument()}
             elif cmd == "reload":
                 _cache.update(key=None, model=None, entry=None)
+                _sha_cache.clear()
                 ans = {"ok": True}
             elif cmd == "analyze":
                 ans = analyze_request(req)

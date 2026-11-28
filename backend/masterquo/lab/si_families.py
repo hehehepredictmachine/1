@@ -70,31 +70,6 @@ def fit_minirocket(data: dict, bars: np.ndarray, Y: np.ndarray, R: np.ndarray, b
                                "transform": mr.state(), "budget_note": note}
 
 
-def export_native_train(inst: str, dsdir: Path, profile: str, path: Path) -> dict:
-    """1.46: `structure-intelligence minirocket export-train` - PMW_MR2_TRAIN.bin for the native PMW_MR2_Fit script with exactly the rows
-    `train` gives MiniRocket for the final candidate: STRUCTURE_MOVE_M1_V1 dataset, the same split, inner blocks of dev (holdout not read)
-    and the same mr_max_fit_rows cap. A tool: nothing is trained, selected or activated here."""
-    from ..ml import scalp_task as stk
-    from . import structure_task as T
-    data = T.load_dataset(dsdir, T.TASK_MOVE)
-    man = data["manifest"]
-    prof_now = T.indicator_profile(inst)
-    if man["indicator_profile"]["hash"] != prof_now["hash"]:
-        return {"status": "STALE_DATASET", "reason": f"profil wskaźników zmieniony ({man['indicator_profile']['hash']} → {prof_now['hash']})",
-                "rebuild": f"python -m masterquo structure-intelligence dataset --asset {inst} --task {T.TASK_MOVE}"}
-    sp = T.split(data)
-    fb = stk.inner_blocks(sp["dev"], sp["rows"], sp["embargo_s"])
-    fit, note = mr_fit_rows(fb["FIT"], T.PROFILES[profile])
-    if not len(fit):
-        return {"status": "INSUFFICIENT_EVIDENCE", "reason": "pusty blok FIT"}
-    bars, Y, R = T._task_arrays(data, T.TASK_MOVE)
-    tick = float(data.get("tick") or man["tick"])
-    Path(path).parent.mkdir(parents=True, exist_ok=True)
-    rep = MR.export_train(Path(path), mr_windows(data, bars[fit], tick), Y[fit], R[fit])
-    return {"status": "OK", **rep, "dataset_id": man["dataset_id"], "data_kind": man["data_kind"], "task": T.TASK_MOVE, "profile": profile,
-            "rows_scope": "FIT (bloki wewnętrzne części dev; holdout nieczytany)", "budget_note": note, "activation": "NONE"}
-
-
 def predict_minirocket(model, data: dict, bars: np.ndarray, tick: float):
     _, mr, head = model
     P, Q = [], []
@@ -133,7 +108,8 @@ def load_minirocket(d: Path, meta: dict):
 
 # ===================================================================== SpikingBrain - bar profile
 def bar_channels(data: dict) -> np.ndarray:
-    from .structure_task import TAB
+    # 1.46 arch I0085: TAB from the leaf module (no structure_task <-> si_families cycle)
+    from .structure_tab import TAB
     F, c = data["fe"]["F"], data["fe"]["c"]
     n = len(c)
     X = np.full((n, 4), np.nan)

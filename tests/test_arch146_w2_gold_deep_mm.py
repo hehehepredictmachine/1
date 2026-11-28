@@ -132,7 +132,8 @@ class TestScalpForecastStaleI0754(unittest.TestCase):
         self.addCleanup(W._scalp_cache.update, run_id=None, model=None)
         with mock.patch.object(SI, "read_registry", return_value={"active": "R1", "runs": {"R1": self.ENTRY}}), \
                 mock.patch.object(SI, "activatable", return_value=(True, None)), mock.patch.object(SI, "ScalpModel", _StubScalp):
-            return W.scalp_forecast(req)
+            # merge with lab_models (I0616/I0626): the worker refuses a request without the feed contract - the bot sends it
+            return W.scalp_forecast({"symbol": "XAUUSD-", "tick_size": 0.01, **req})
 
     def test_frozen_feed_is_stale(self):
         now = time.time()
@@ -159,8 +160,11 @@ class TestScalpForecastStaleI0754(unittest.TestCase):
         def ask(req, timeout):
             seen.update(req)
             return {"status": "SHADOW"}
+        # merge with lab_models (I0616 feed contract, I0621 one answer per closed M1): the fake also carries those two helpers
         fake = SimpleNamespace(registry=lambda: {"active": "R1"}, _worker_down=lambda: None, forecast=SimpleNamespace(proc=object(), _ask=ask),
-                               bridge=SimpleNamespace(bars=lambda tf, n, include_forming=False: _m1(3, time.time() - 120), symbol_info={"point": 0.01}))
+                               bridge=SimpleNamespace(bars=lambda tf, n, include_forming=False: _m1(3, time.time() - 120), symbol_info={"point": 0.01}),
+                               _feed_contract=lambda: {"symbol": "XAUUSD", "tick_size": 0.01}, _registry_sig=lambda: None,
+                               _fresh_for_cache=lambda m1, now_ts: False)
         ScalpService.forecasts(fake)
         self.assertIn("as_of", seen)
         self.assertLess(abs(datetime.fromisoformat(seen["as_of"]).timestamp() - time.time()), 5)
@@ -227,7 +231,7 @@ class TestScalpSklearnVersionGuardI0619(_Data):
         entry = dict(TestScalpForecastStaleI0754.ENTRY)
         with mock.patch.object(SI, "read_registry", return_value={"active": "R1", "runs": {"R1": entry}}), \
                 mock.patch.object(SI, "activatable", return_value=(True, None)), mock.patch.object(SI, "ScalpModel", Stub):
-            ans = W.scalp_forecast({"m1": _m1(150, time.time() - 120)})
+            ans = W.scalp_forecast({"m1": _m1(150, time.time() - 120), "symbol": "XAUUSD-", "tick_size": 0.01})   # I0616 feed contract
         self.assertEqual(ans["status"], "SHADOW")
         self.assertEqual(ans["env_warning"], Stub.version_warning)
 

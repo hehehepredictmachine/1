@@ -16,7 +16,9 @@ from pathlib import Path
 
 import numpy as np
 
+from .. import native_selftest as NS
 from . import heikin as HF
+from . import sr_channels as SR
 from . import stop_distance as SD
 
 SCHEMA = "PMW-FLOW-EXPORT-1"
@@ -104,8 +106,37 @@ class FlowImporter:
         return self.last
 
 
-def compare(export: dict, tol_price: float = 1e-6, tol_points: float = 1e-6) -> dict:
-    """Recompute Heikin/StopDistance in Python on the SAME raw OHLC from the export (same seed origin) and compare per bar."""
+SR_KEYS = ("depth", "retention", "loopback", "width_pct", "max_selected", "source")
+SR_LAST_ROWS = 2000              # MQ_SRChannels computes the last 2000 closed bars on its first calculation (older rows stay EMPTY)
+
+
+def _compare_sr(h: dict, rows: list[dict], bars: list[dict], tol_price: float, last: int) -> tuple[dict, list[dict]]:
+    """1.46 arch I0517: the S/R columns (nearest support / resistance / inside band of MQ_SRChannels, relative to each closed bar's own
+    close) against sr_channels.channels_at + nearest on the same OHLC. Only with the indicator configuration in the header ('sr', written
+    by MQ_FlowCollector) - without it NOT_COMPARED, never a guessed configuration."""
+    cfg = h.get("sr")
+    if not isinstance(cfg, dict):
+        return {"status": "NOT_COMPARED (brak konfiguracji 'sr' w nagłówku eksportu – stary kolektor)"}, []
+    cfg = {k: cfg[k] for k in SR_KEYS if k in cfg}
+    c = SR.validate(cfg)
+    piv = SR.pivots(bars, int(c["depth"]), c["source"])          # all pivots once; channels_at keeps those confirmed at <= t
+    start = max(0, len(rows) - last)
+    bad = []
+    for i in range(start, len(rows)):
+        r = rows[i]
+        nr = SR.nearest(SR.channels_at(bars, i, cfg, piv=piv), bars[i]["c"])
+        for kind, pre in (("support", "sup"), ("resistance", "res"), ("inside", "in")):
+            band = nr[kind]
+            for k, v in ((f"{pre}_lo", band["lo"] if band else None), (f"{pre}_hi", band["hi"] if band else None)):
+                if (v is None) != (r[k] is None) or (v is not None and abs(r[k] - v) > tol_price * max(1.0, abs(v))):
+                    bad.append({"bar": r["bar_time"], "field": k, "native": r[k], "python": v})
+    return {"status": "MATCH" if not bad else "MISMATCH", "rows_compared": len(rows) - start, "first_row": start, "mismatches": len(bad),
+            "config": cfg}, bad
+
+
+def compare(export: dict, tol_price: float = 1e-6, tol_points: float = 1e-6, sr_last: int = SR_LAST_ROWS) -> dict:
+    """Recompute Heikin/StopDistance (every row) and the S/R bands (last `sr_last` rows, when the header declares 'sr') in Python on the
+    SAME raw OHLC from the export (same seed origin) and compare per bar."""
     h = export["header"]
     rows = export["rows"]
     bars = [{"open_utc": r["bar_time"], "o": r["o"], "h": r["h"], "l": r["l"], "c": r["c"]} for r in rows]
@@ -123,21 +154,29 @@ def compare(export: dict, tol_price: float = 1e-6, tol_points: float = 1e-6) -> 
         for k, v in (("sd_range", sd[i]["range_points"]), ("sd_avg", sd[i]["average_points"]), ("sd_sugg", sd[i]["suggested_points"])):
             if (v is None) != (r[k] is None) or (v is not None and abs(r[k] - v) > tol_points * max(1.0, abs(v))):
                 bad.append({"bar": r["bar_time"], "field": k, "native": r[k], "python": v})
-    return {"status": "OWN_IMPLEMENTATIONS_MATCH" if not bad else "MISMATCH", "rows": len(rows), "mismatches": len(bad), "first": bad[:5],
-            "tolerance": {"price_rel": tol_price, "points_rel": tol_points}}
+    sr, sr_bad = _compare_sr(h, rows, bars, tol_price, sr_last)
+    return {"status": "OWN_IMPLEMENTATIONS_MATCH" if not bad and not sr_bad else "MISMATCH", "rows": len(rows), "mismatches": len(bad) + len(sr_bad),
+            "first": (bad + sr_bad)[:5], "tolerance": {"price_rel": tol_price, "points_rel": tol_points},
+            "sr_status": sr["status"], "sr_mismatches": len(sr_bad), "sr": sr}
 
 
 def native_status(status_file: Path | None) -> dict:
+    """1.46 arch (I0519): 28_FLOW_CONTEXT.bat writes the status before the self-test runs in the terminal - flow_selftest.txt of this build
+    (not older than the status file) is read live (lab/native_selftest.py)."""
     if status_file is None or not Path(status_file).exists():
-        return {"NATIVE_COMPILED": "NOT_COMPILED_NO_METAEDITOR", "NATIVE_EXECUTED": "NATIVE_NOT_EXECUTED"}
+        return {"NATIVE_COMPILED": NS.NOT_COMPILED, "NATIVE_EXECUTED": NS.NOT_EXECUTED}
     st = json.loads(Path(status_file).read_text(encoding="utf-8"))
+    res, _ = NS.executed(st, Path(status_file), "flow_selftest.txt")
     return {"NATIVE_COMPILED": "PASS" if st.get("compile_errors") == 0 and st.get("ex5_sha256") else "FAIL",
-            "NATIVE_EXECUTED": st.get("selftest_result", "NATIVE_NOT_EXECUTED"), "ex5_sha256": st.get("ex5_sha256")}
+            "NATIVE_EXECUTED": res, "ex5_sha256": st.get("ex5_sha256")}
 
 
-def parity(fixtures: Path, status_file: Path | None = None) -> dict:
+def parity(fixtures: Path, status_file: Path | None = None, export: Path | None = None) -> dict:
+    """export: the collector's file (MQL5/Files/PMW/PMW_FLOW_EXPORT.txt) when given and present, else <fixtures>/native_export.txt
+    (1.46 arch I0518: only the fixture name was read - the collector's export had to be copied / renamed by hand)."""
     out = {"ORIGINAL_SOURCE_PARITY": "UNVERIFIED (QCL/SR/StopDistance MQ5 nieodczytane)", **native_status(status_file)}
-    f = Path(fixtures) / "native_export.txt"
+    f = Path(export) if export is not None and Path(export).exists() else Path(fixtures) / "native_export.txt"
+    out["export_file"] = str(f)
     if f.exists():
         try:
             out["OWN_IMPLEMENTATIONS"] = compare(parse_export(f.read_bytes()))

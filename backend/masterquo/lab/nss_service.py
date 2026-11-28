@@ -221,7 +221,10 @@ class NeuralScalpService:
                              (self.inst, limit))
 
     def label(self, inference_id: str, status: str, out: dict | None) -> None:
-        if status == "SETTLED" and out and out.get("net_r") is not None:
+        if status == "SETTLED" and out and out.get("cost_status") == "COMMISSION_UNKNOWN":
+            # 1.46 arch I0045: net_R without the commission is incomplete - not a LABELED sample
+            self.db.execute("UPDATE nss_inferences SET label_status='COST_UNKNOWN' WHERE inference_id=?", (inference_id,))
+        elif status == "SETTLED" and out and out.get("net_r") is not None:
             first = out["exits"][0]["reason"] if out.get("exits") else None
             ev = {"TP1": "TP1_FIRST", "SL": "SL_FIRST", "TIME": "TIMEOUT"}.get(first, "EARLY_EXIT")
             self.db.execute("UPDATE nss_inferences SET label_status='LABELED', label_event=?, label_net_r=?, label_end=?, label_available_at=? WHERE inference_id=?",

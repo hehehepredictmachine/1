@@ -757,8 +757,13 @@ def create_app(rt, port: int) -> FastAPI:
         return rt.si.quotes_public()
 
     @app.get("/api/v1/structure-intelligence/quote-forecasts")
-    def si_quote_fc(limit: int = Query(100, ge=1, le=1000)):
-        return {"items": rt.si.quote_forecasts(limit)}
+    def si_quote_fc(limit: int = Query(100, ge=1, le=1000), asset: str | None = None):
+        # 1.46 arch (I0030 / I0040): only the requested asset (default: the active one and its current symbol = the QuoteEngine context)
+        cfg = rt.cfg.get()
+        a = _asset(asset)
+        if a == cfg.assets.active:
+            return {"items": rt.si.quote_forecasts(limit, context=f"{a}|{cfg.mt5.symbol}")}
+        return {"items": rt.si.quote_forecasts(limit, instrument=a)}
 
     @app.get("/api/v1/structure-intelligence/quote-quality")
     def si_quote_q():
@@ -1384,12 +1389,13 @@ def create_app(rt, port: int) -> FastAPI:
                 "open_plans": [rt.sh.plan_view(p, rt.sh.quote(time.time())) for p in rt.sh.store.open_plans()]}
 
     @app.get("/api/v1/scalp/shadow")
-    def scalp_shadow(limit: int = Query(100, ge=1, le=1000)):
-        return {"items": rt.scalp.recent(limit), "summary": rt.scalp.summary()}
+    def scalp_shadow(limit: int = Query(100, ge=1, le=1000), asset: str | None = None):
+        # 1.46 arch (I0040): rows of the requested asset only (default: the active one), like the summary next to them
+        return {"items": rt.scalp.recent(limit, instrument=_asset(asset)), "summary": rt.scalp.summary()}
 
     @app.get("/api/v1/forecast/shadow")
-    def forecast_shadow(limit: int = Query(100, ge=1, le=1000)):
-        return {"items": rt.forecast.recent(limit)}
+    def forecast_shadow(limit: int = Query(100, ge=1, le=1000), asset: str | None = None):
+        return {"items": rt.forecast.recent(limit, instrument=_asset(asset))}
 
     @app.post("/api/v1/forecast/reload")
     def forecast_reload():
@@ -2744,10 +2750,10 @@ def create_app(rt, port: int) -> FastAPI:
         return _quant().predictions()
 
     @app.get("/api/v1/quant/assessment")
-    def quant_assessments(limit: int = Query(30, ge=1, le=200)):
+    def quant_assessments(limit: int = Query(30, ge=1, le=200), asset: str | None = None):
         q = _quant()
         from ..quant.service import with_label_policy
-        return {"items": with_label_policy(q.ledger.assessments(limit)), "mode": q.mode(),
+        return {"items": with_label_policy(q.ledger.assessments(limit, instrument=_asset(asset))), "mode": q.mode(),   # 1.46 arch (I0040): one asset
                 "note": "brak skalibrowanego wyniku = brak wytrenowanego modelu dla tego zdarzenia (nie 0 %, nie 50 %)"}
 
     @app.post("/api/v1/quant/assessment")
@@ -2815,7 +2821,7 @@ def create_app(rt, port: int) -> FastAPI:
         from .. import paths as _P
         from ..tsfm.settings import default_weights_root as _dwr
         argv = [_sys.executable, str(_P.ROOT_DIR / "tools" / "tsfm_setup.py"), "--model", "tabicl", "--root", str(_P.ROOT_DIR), "--weights-root", str(_dwr())]
-        return rt.tsfm.start_job_process("install_tabicl", argv)
+        return rt.tsfm.start_job_process("install_tabicl", argv)          # 1.46 arch I0089 / I0212: public facade, not _run_job_proc
 
     # ---- 1.41 research modules (SDformerFlow, cellular feature graph, COA, BChimp, G7 SMC radar, exponential trend channel)
     def _research():
