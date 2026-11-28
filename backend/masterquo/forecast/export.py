@@ -351,10 +351,66 @@ def export_candles(months: int = 12, out_dir: str | None = None, dst_model: str 
     size choice, at most 31 days). Progress, result and failures are in EXPORT_STATUS.json; source_metadata.json is written last, so
     an interrupted export is never read as complete. A repeated export into the same folder continues the same frozen range."""
     try:
-        return _export(months, out_dir, dst_model, timeframes, kind, instrument, symbol, date_from, date_to, tick_days)
+        with _export_lock(instrument):
+            return _export(months, out_dir, dst_model, timeframes, kind, instrument, symbol, date_from, date_to, tick_days)
     except ExportError as exc:
         print(f"[BLAD] {exc}")
         return exc.code
+
+
+EXPORT_LOCK_WAIT_S = 600.0        # wait for another MT5 history export before refusing (exit code 9)
+EXPORT_LOCK_HEARTBEAT_S = 30.0    # studio.lock.Lock treats a heartbeat older than 120 s as a stale (dead) owner
+
+
+class _export_lock:
+    """1.46 (I0063): the SAME cross-process lock as marketdata/export.run and the Studio queue (data/locks/pmw_export.lock) - export_candles
+    (training runner, panel export job, 11_/16_ .bat) took none, so two MT5 history exports could run at once. Waits up to
+    EXPORT_LOCK_WAIT_S for another export, then refuses with code 9 (BUSY); a heartbeat thread keeps the lock fresh during a long export.
+    Inside a Studio job (MQ_STUDIO_DATA_DIR) the Studio queue already holds it (as in marketdata/export.run)."""
+
+    def __init__(self, instrument: str | None):
+        self.job = f"export_candles:{instrument or 'XAUUSD'}"
+        self.lk, self.stop = None, None
+
+    def __enter__(self):
+        if os.environ.get("MQ_STUDIO_DATA_DIR"):
+            return self
+        import threading
+
+        from ..paths import data_dir
+        from ..studio.lock import Lock
+        self.lk = Lock(data_dir() / "locks" / "pmw_export.lock", app="PepeMarketWizard-export")
+        end, said = time.monotonic() + EXPORT_LOCK_WAIT_S, False
+        while True:
+            ok, owner = self.lk.acquire(self.job)
+            if ok:
+                break
+            from ..marketdata.export import _owner_name
+            who = f"{_owner_name((owner or {}).get('app'))}: {(owner or {}).get('job')}"
+            if time.monotonic() >= end:
+                self.lk = None
+                raise ExportError(9, f"BUSY: trwa inny eksport historii z MT5 ({who}) – spróbuj ponownie po jego zakończeniu.")
+            if not said:
+                print(f"[..] Czekam na zakończenie innego eksportu ({who}), najwyżej {EXPORT_LOCK_WAIT_S / 60:.0f} min…", flush=True)
+                said = True
+            time.sleep(min(5.0, max(0.0, end - time.monotonic())))
+        self.stop = threading.Event()
+
+        def beat():
+            while not self.stop.wait(EXPORT_LOCK_HEARTBEAT_S):
+                try:
+                    self.lk.heartbeat()
+                except OSError:
+                    pass
+        threading.Thread(target=beat, name="export-lock-heartbeat", daemon=True).start()
+        return self
+
+    def __exit__(self, *exc):
+        if self.stop is not None:
+            self.stop.set()
+        if self.lk is not None:
+            self.lk.release()
+        return False
 
 
 def _fail_status(st: _Status | None, code: int, msg: str) -> ExportError:

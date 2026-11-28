@@ -76,7 +76,7 @@
   "wf32_services": "L5 kompozycja",
   "zones": "L2 analizy"
  },
- "count": 56,
+ "count": 57,
  "edges": {
   "masterquo.analytics.liquidity_cli -> masterquo.extind.cli": {
    "from": "L2 analizy",
@@ -200,9 +200,19 @@
     205,
     214,
     312,
-    372,
-    372,
-    372
+    428,
+    428,
+    428
+   ]
+  },
+  "masterquo.forecast.export -> masterquo.studio.lock": {
+   "from": "L4 SHADOW/badania",
+   "to": "L5 kompozycja",
+   "kinds": [
+    "FUNCTION"
+   ],
+   "lines": [
+    381
    ]
   },
   "masterquo.forecast.export -> masterquo.training.core": {
@@ -222,7 +232,7 @@
     "FUNCTION"
    ],
    "lines": [
-    651
+    707
    ]
   },
   "masterquo.indicators.avwap -> masterquo.lab.context_ind.smc": {
