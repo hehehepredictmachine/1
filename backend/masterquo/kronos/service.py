@@ -27,6 +27,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from .. import paths
+from ..data import quality as DQ
 from ..timeutil import TF_SECONDS, iso, parse_iso, utcnow
 from . import calendar as CAL
 from . import quality as Q
@@ -543,7 +544,7 @@ class KronosService:
         bad_geom = 0
         for i, raw in enumerate(y_raw):
             o, h, low, c = p["open"][i], p["high"][i], p["low"][i], p["close"][i]
-            if h < max(o, c) or low > min(o, c) or h < low:
+            if DQ.ohlc_crossed(o, h, low, c):              # Etap 4: the shared check of data/quality.py (a NaN step crosses nothing)
                 bad_geom += 1
             steps.append({"t_utc": iso(datetime.fromtimestamp(raw - off, tz=timezone.utc)), "o": o, "h": h, "l": low, "c": c,
                           "v": (p.get("volume") or [None] * len(y_raw))[i]})

@@ -10,10 +10,12 @@
 * volume source: REAL_VOLUME when the broker reports real volume on >= 90 % of bars, else TICK_VOLUME (number of price changes - NOT
   traded volume), or NONE (setting / no data). `amount` is never real turnover here: when a volume is passed, the upstream predictor
   derives amount = volume x mean(OHLC) - a SYNTHETIC PROXY, labelled so.
+Etap 4 (PMW-DQ-CORE-1): the number / positivity / geometry / staleness checks are the shared ones of data/quality.py; the Kronos / TSFM
+policy (bool counted as a number, relative slack 1e-9 x max(|h|, 1), thresholds, levels and messages) is unchanged.
 """
 from __future__ import annotations
 
-import math
+from ..data import quality as DQ
 
 VOLUME_PL = {"REAL_VOLUME": "wolumen rzeczywisty z MT5 (real_volume)", "TICK_VOLUME": "tick_volume MT5 – liczba zmian ceny, NIE wolumen obrotu",
              "NONE": "bez wolumenu (oryginalna obsługa Kronos: volume = amount = 0)"}
@@ -22,7 +24,7 @@ AMOUNT_PL = {"SYNTHETIC_PROXY": "amount = wolumen × średnia OHLC – syntetycz
 
 
 def _finite_pos(*xs) -> bool:
-    return all(isinstance(x, (int, float)) and math.isfinite(x) and x > 0 for x in xs)
+    return DQ.finite_values(*xs, mode="number") and DQ.prices_positive(*xs)
 
 
 def check(bars: list[dict], tf_sec: int, *, now_utc: float, lookback: int, min_context: int, calendar=None, volume_setting: str = "AUTO",
@@ -57,7 +59,7 @@ def check(bars: list[dict], tf_sec: int, *, now_utc: float, lookback: int, min_c
             invalid.append(b.get("open_utc"))
             continue
         eps = 1e-9 * max(abs(h), 1.0)
-        if h + eps < max(o, c) or l - eps > min(o, c) or h + eps < l:
+        if DQ.ohlc_crossed(o, h, l, c, slack=eps):
             invalid.append(b.get("open_utc"))
     if invalid:
         worse("BLOCK", f"{len(invalid)} świec z niepoprawnym OHLC / brakującą wartością (pierwsza {invalid[0]})")
@@ -79,7 +81,7 @@ def check(bars: list[dict], tf_sec: int, *, now_utc: float, lookback: int, min_c
         if lo:
             close_t = parse_iso(lo).timestamp() + tf_sec
             age = now_utc - close_t
-            if age > max_staleness_bars * tf_sec + 60:
+            if DQ.is_stale(close_t, now_utc, max_staleness_bars * tf_sec + 60):
                 worse("STALE", f"ostatnia zamknięta świeca zamknęła się {int(age // 60)} min temu – rynek zamknięty, brak notowań albo MT5 rozłączony")
         else:
             worse("BLOCK", "brak czasu UTC świec (nieznany offset czasu serwera MT5)")

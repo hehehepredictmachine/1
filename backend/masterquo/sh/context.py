@@ -42,16 +42,17 @@ def data_quality(bars: dict, quote: dict | None, now: float, cfg: dict) -> dict:
             issues.append(f"{tf}: brak świec")
             continue
         ts = [_ts(b["open_utc"]) for b in bs[-60:]]                  # ordering/duplicates of the recent window (the analysed part)
-        # 1.46 (I0047): the checks are the shared ones of data/quality.py; the SH policy (windows 60 / 50, loose geometry h >= l) is unchanged
+        # 1.46 (I0047): the checks are the shared ones of data/quality.py; the SH policy (windows 60 / 50, loose geometry h >= l) is unchanged;
+        # Etap 4: the closed-bar freshness too (forming beyond now + 1 s, stale beyond max_bar_age_s - same thresholds and messages)
         if DQ.order_violations(ts):
             issues.append(f"{tf}: świece nieuporządkowane lub zdublowane")
         if any(not DQ.geometry_ok(b, strict=False) for b in bs[-50:]):
             issues.append(f"{tf}: NaN/inf lub błędna geometria")
         close_t = ts[-1] + TF_S.get(tf, 60)
         ages[tf] = round(now - close_t, 1)
-        if close_t > now + 1:
+        if DQ.is_forming(close_t, now, 1):
             issues.append(f"{tf}: ostatnia świeca nie jest zamknięta (forming) – odrzucona")
-        elif now - close_t > cfg["max_bar_age_s"].get(tf, 3 * TF_S.get(tf, 60)):
+        elif DQ.is_stale(close_t, now, cfg["max_bar_age_s"].get(tf, 3 * TF_S.get(tf, 60))):
             issues.append(f"{tf}: dane nieaktualne ({now - close_t:.0f} s od zamknięcia)")
     q_age = None
     spread = None

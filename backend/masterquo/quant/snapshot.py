@@ -16,10 +16,10 @@ from the bridge (the SYNTHETIC simulator can never be labelled REAL).
 from __future__ import annotations
 
 import hashlib
-import math
 import time
 from datetime import datetime, timezone
 
+from ..data import quality as DQ
 from ..timeutil import TF_SECONDS
 
 VERSION = "PMW-QUANT-SNAP-1"
@@ -58,25 +58,17 @@ def normalise(rows: list[dict], tf: str) -> list[dict]:
 WEEKEND_MAX_S = 4 * 86400                 # a break longer than this is never only a weekend
 
 
-def _weekday_seconds(t0: float, t1: float) -> float:
-    """Seconds of [t0, t1) that fall on Monday-Friday (UTC)."""
-    out, t = 0.0, t0
-    while t < t1:
-        day = math.floor(t / 86400.0)
-        seg_end = min((day + 1) * 86400.0, t1)
-        if (day + 3) % 7 < 5:                                # 1970-01-01 (day 0) was a Thursday (weekday 3)
-            out += seg_end - t
-        t = seg_end
-    return out
+# Etap 4 (PMW-DQ-CORE-1): the checks are the shared ones of data/quality.py; the Quant POLICY below is unchanged (duplicates = repeated time
+# next to its copy, unordered = step back, gap = > 1.5 TF unless it is the weekend closure, OHLC with an absolute tolerance 1e-9, None /
+# bool not a price, BLOCK / DEGRADED rules and issue texts). _weekday_seconds / _session_break: moved to the core, compatibility aliases.
+_weekday_seconds = DQ.weekday_seconds
 
 
 def _session_break(a_close: float, b_open: float, sec: int) -> bool:
     """1.46: a gap that is the weekend market closure - less than one bar of the missing span falls on a weekday (UTC). D1 / H4 of a market
-    closed at the weekend had one 'gap' per week, so 500 clean D1 bars were always DEGRADED (> 50 gaps) with no issue named."""
-    span = b_open - a_close
-    if span <= 0 or span > WEEKEND_MAX_S:
-        return False
-    return _weekday_seconds(a_close, b_open) < sec
+    closed at the weekend had one 'gap' per week, so 500 clean D1 bars were always DEGRADED (> 50 gaps) with no issue named.
+    Moved to data/quality.weekend_closure (Etap 4), compatibility alias with this snapshot's WEEKEND_MAX_S."""
+    return DQ.weekend_closure(a_close, b_open, sec, max_span_s=WEEKEND_MAX_S)
 
 
 def qc(bars: list[dict], tf: str, *, max_gap_report: int = 20) -> dict:
@@ -87,23 +79,22 @@ def qc(bars: list[dict], tf: str, *, max_gap_report: int = 20) -> dict:
         return {"tf": tf, "n": 0, "status": "MISSING", "issues": ["NO_BARS"], "gaps": [], "gap_count": 0, "session_breaks": 0, "revised_bars": 0,
                 "bars_without_spread": 0, "source": None, "volume_kind": "TICK_VOLUME (aktywność feedu, nie wolumen obrotu)", "last_close_t": None,
                 "last_available_at": None}
-    dup = sum(1 for a, b in zip(bars, bars[1:]) if b["t"] == a["t"])
-    unordered = sum(1 for a, b in zip(bars, bars[1:]) if b["t"] < a["t"])
+    times = [b["t"] for b in bars]
+    dup = DQ.repeat_count(times)
+    unordered = DQ.step_back_count(times)
     breaks = 0
-    for a, b in zip(bars, bars[1:]):
-        d = b["t"] - a["t"]
-        if d > sec * 1.5:
-            if _session_break(a["t"] + sec, b["t"], sec):
-                breaks += 1                                  # weekend closure: reported separately, not a missing bar
-                continue
-            gaps.append({"after": a["t"], "missing_bars": int(round(d / sec)) - 1})
+    for a, b in DQ.gap_pairs(times, sec * 1.5):
+        if _session_break(a + sec, b, sec):
+            breaks += 1                                      # weekend closure: reported separately, not a missing bar
+            continue
+        gaps.append({"after": a, "missing_bars": int(round((b - a) / sec)) - 1})
     for b in bars:
         vals = [b[k] for k in ("o", "h", "l", "c")]
-        if any(v is None or isinstance(v, bool) or not math.isfinite(float(v)) for v in vals):
+        if not DQ.finite_values(*vals, mode="lenient"):
             bad += 1
             continue
         o, h, l_, c = (float(v) for v in vals)
-        if not (h >= max(o, c) - 1e-9 and l_ <= min(o, c) + 1e-9 and h >= l_):
+        if not DQ.ohlc_ordered(o, h, l_, c, tol=1e-9):
             bad += 1
     incomplete = sum(1 for b in bars if b["source"] == "RESAMPLED" and b["complete"] is False)
     revised = sum(1 for b in bars if (b.get("revision") or 0) > 0)
@@ -158,7 +149,7 @@ def build(bridge, *, instrument: str, tfs=DEFAULT_TFS, limit: int = 600, now: fl
     qstate = "MISSING"
     if quote:
         age = quote.get("age_seconds")
-        qstate = "OK" if age is not None and age <= quote_max_age_s else "STALE"
+        qstate = "OK" if DQ.age_within(age, quote_max_age_s) else "STALE"
     info = getattr(bridge, "symbol_info", None) or {}
     cfg = getattr(bridge, "cfg", None)
     symbol = getattr(cfg, "symbol", None)

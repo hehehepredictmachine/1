@@ -22,6 +22,7 @@ import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+from ..data import quality as DQ
 from ..timeutil import iso
 from . import dataset_state as _dataset_state_mod
 from .dataset_state import META_FILE, STATUS_FILE, read_status
@@ -56,8 +57,7 @@ def _gaps(times: list[int], step: int) -> dict:
     """Classify gaps between consecutive bars (UTC): weekend, short daily break (<= 2 h), other (listed). 1.46 (I0051): the shared
     classifier data/quality.classify_gap_series with the parameters of this report (unchanged): any distance != step is a gap, weekend =
     >= 40 h covering a Saturday (daily probe), daily break = <= 2 h (no recurrence required)."""
-    from ..data.quality import classify_gap_series
-    r = classify_gap_series(times, step, weekend_min_s=40 * 3600, weekend_probe_s=86400, break_max_s=2 * 3600, gap_if_not_step=True)
+    r = DQ.classify_gap_series(times, step, weekend_min_s=40 * 3600, weekend_probe_s=86400, break_max_s=2 * 3600, gap_if_not_step=True)
     out = {"weekend": 0, "daily_break_le_2h": 0, "other": 0, "other_list": []}
     for a, b, kind, miss in r["gaps"]:
         if kind == "WEEKEND":
@@ -70,6 +70,12 @@ def _gaps(times: list[int], step: int) -> dict:
                 out["other_list"].append({"after_utc": iso(datetime.fromtimestamp(a, timezone.utc)), "next_utc": iso(datetime.fromtimestamp(b, timezone.utc)),
                                           "missing_bars": miss})
     return out
+
+
+def _geometry_ok(o, h, lo, c) -> bool:
+    """OHLC geometry of an exported bar. Etap 4 (PMW-DQ-CORE-1): the shared checks of data/quality.py with this export's policy (unchanged):
+    a positive open and every bound of the bar holds."""
+    return DQ.prices_positive(o) and DQ.ohlc_ordered(o, h, lo, c)
 
 
 class NoOrders:
@@ -601,7 +607,7 @@ def _bars_and_reports(mt5, sym, inst, prefix, out, st, timeframes, start, cutoff
             merged.pop(int(datetime.fromisoformat(rv["time_utc"].replace("Z", "+00:00")).timestamp()), None)
         for t in list(merged):
             _, o, h, lo, c = merged[t][:5]
-            if not (o > 0 and h >= max(o, c) and lo <= min(o, c) and h >= lo):
+            if not _geometry_ok(o, h, lo, c):
                 invalid.append(iso(datetime.fromtimestamp(t, timezone.utc)))
                 merged.pop(t)
         ts = sorted(merged)

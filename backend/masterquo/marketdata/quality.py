@@ -13,15 +13,18 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
+from ..data import quality as DQ
 from .store import TF_SECONDS, iso
 
 
 def check_rows(rows: list[tuple]) -> tuple[list[tuple], list[dict]]:
-    """Rejects rows with invalid OHLC geometry or non-positive prices (never repaired). rows: tuples in store.COLUMNS order."""
+    """Rejects rows with invalid OHLC geometry or non-positive prices (never repaired). rows: tuples in store.COLUMNS order.
+    Etap 4 (PMW-DQ-CORE-1): the shared checks of data/quality.py with this ingest policy (unchanged): all four prices > 0 and every bound
+    of the bar holds."""
     ok, bad = [], []
     for r in rows:
         t, o, h, lo, c = r[0], r[1], r[2], r[3], r[4]
-        if not (o > 0 and h > 0 and lo > 0 and c > 0 and h >= max(o, c) and lo <= min(o, c) and h >= lo):
+        if not (DQ.prices_positive(o, h, lo, c) and DQ.ohlc_ordered(o, h, lo, c)):
             bad.append({"time_utc": iso(t), "ohlc": [o, h, lo, c], "reason": "nieprawidłowa geometria OHLC"})
         else:
             ok.append(r)
@@ -31,8 +34,7 @@ def check_rows(rows: list[tuple]) -> tuple[list[tuple], list[dict]]:
 def classify_gaps(times: list[int], step: int) -> dict:
     """1.46 (I0051): the shared classifier data/quality.classify_gap_series with the parameters of this report (unchanged): weekend = covers
     a Saturday (hourly probe) and >= 20 h; session break = recurring start on >= max(3, 30 % of days) and <= 3 h; <= 3 missing bars = short."""
-    from ..data.quality import classify_gap_series
-    r = classify_gap_series(times, step, weekend_min_s=20 * 3600, weekend_probe_s=3600, break_max_s=3 * 3600, recurring_min_days=3,
+    r = DQ.classify_gap_series(times, step, weekend_min_s=20 * 3600, weekend_probe_s=3600, break_max_s=3 * 3600, recurring_min_days=3,
                             recurring_share=0.3, recurring_min_missing=3, short_max_missing=3)
     out = {"WEEKEND": 0, "SESSION_BREAK": 0, "NO_TICKS_SHORT": 0, "MISSING": 0, "missing_bars": 0, "missing_list": [],
            "session_break_times_utc": sorted(f"{k // 3600:02d}:{k % 3600 // 60:02d}" for k in r["recurring"])}
@@ -54,13 +56,15 @@ def report(cols: dict, tf: str, requested: tuple[float | None, float | None] | N
     step = TF_SECONDS[tf]
     t = cols.get("time") or []
     n = len(t)
-    unsorted = sum(1 for a, b in zip(t, t[1:]) if b <= a)
-    dups = n - len(set(t))
+    # Etap 4 (PMW-DQ-CORE-1): order / duplicates / geometry are the shared checks of data/quality.py with this report's policy (unchanged):
+    # every non-increasing step, every repeated time, the bounds of the bar and a positive low (h >= l follows from the two body bounds)
+    unsorted = DQ.order_violations(t)
+    dups = DQ.duplicate_count(t)
     misaligned = sum(1 for x in t if x % step)
     invalid = 0
     for i in range(n):
         o, h, lo, c = cols["open"][i], cols["high"][i], cols["low"][i], cols["close"][i]
-        if not (h >= max(o, c) and lo <= min(o, c) and lo > 0):
+        if not (DQ.ohlc_ordered(o, h, lo, c) and DQ.prices_positive(lo)):
             invalid += 1
     gaps = classify_gaps(sorted(set(t)), step) if n > 1 else {}
     days = sorted({datetime.fromtimestamp(x, timezone.utc).date().isoformat() for x in t})
