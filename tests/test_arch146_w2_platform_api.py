@@ -364,10 +364,11 @@ class TestApiUsesPublicServiceInterface(_Base):
     (usługi rejestrują się same: register_with). Publiczne metody to cienkie opakowania dokładnie tych samych operacji."""
 
     def _api_files(self):
-        return sorted((PKG / "api").glob("*.py"))
+        return sorted((PKG / "api").rglob("*.py"))                          # Etap 4 krok B: + api/routes/*.py (handlery create_app)
 
     def test_api_has_no_private_service_access(self):
         bad = []
+        self.assertIn(PKG / "api" / "routes" / "trading.py", self._api_files())
         for f in self._api_files():
             for n in ast.walk(ast.parse(f.read_text(encoding="utf-8"))):
                 if not isinstance(n, ast.Attribute):
@@ -375,11 +376,11 @@ class TestApiUsesPublicServiceInterface(_Base):
                 v = n.value
                 if n.attr.startswith("_") and not n.attr.startswith("__") and isinstance(v, ast.Attribute) and isinstance(v.value, ast.Name) \
                         and v.value.id == "rt":
-                    bad.append(f"{f.name}:{n.lineno} rt.{v.attr}.{n.attr}")
+                    bad.append(f"{f.relative_to(PKG).as_posix()}:{n.lineno} rt.{v.attr}.{n.attr}")
                 if n.attr == "_lock" and not (isinstance(v, ast.Name) and v.id == "self"):    # own lock of an API class is fine
-                    bad.append(f"{f.name}:{n.lineno} ._lock")
+                    bad.append(f"{f.relative_to(PKG).as_posix()}:{n.lineno} ._lock")
                 if n.attr == "next_retry" and isinstance(n.ctx, ast.Store):
-                    bad.append(f"{f.name}:{n.lineno} next_retry=")
+                    bad.append(f"{f.relative_to(PKG).as_posix()}:{n.lineno} next_retry=")
         self.assertEqual(bad, [])
 
     def test_wire_governor_knows_no_internals(self):
@@ -520,7 +521,9 @@ class TestInstrumentSingleSource(_Base):
         self.assertNotIn("mq_instruments", (PKG / "config.py").read_text(encoding="utf-8"))   # nie z pliku danych (fail-closed)
 
     def test_no_literal_lists_in_group_files(self):
-        files = {"config.py": [], "api/app.py": [], "api/deps.py": [], "execution/modes.py": []}
+        routes = sorted(p.relative_to(PKG).as_posix() for p in (PKG / "api" / "routes").glob("*.py"))   # Etap 4 krok B: handlery API
+        self.assertIn("api/routes/mm.py", routes)
+        files = {"config.py": [], "api/app.py": [], "api/schemas.py": [], **{f: [] for f in routes}, "api/deps.py": [], "execution/modes.py": []}
         got = {f: _asset_tuple_literals(PKG / f) for f in files}
         self.assertEqual(got, files)
 
@@ -954,8 +957,10 @@ class TestStudioLaunchVerified(_Base):
         from masterquo.api import app as A
         rt = make_rt()
         fn = ep(A.create_app(rt, PORT), "POST", "/api/v1/studio/launch")
+        # Etap 4 krok B: studio_launch moved to api/routes/studio.py and reads STUDIO_LAUNCH_WAIT_S of that module
+        from masterquo.api.routes import studio
         with mock.patch("subprocess.Popen", mock.MagicMock(return_value=proc)), mock.patch("urllib.request.urlopen", urlopen), \
-                mock.patch.object(A, "STUDIO_LAUNCH_WAIT_S", wait):
+                mock.patch.object(studio, "STUDIO_LAUNCH_WAIT_S", wait):
             return fn(), rt
 
     def test_route_stays_sync(self):

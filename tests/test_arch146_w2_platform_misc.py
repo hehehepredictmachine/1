@@ -760,7 +760,7 @@ class TestI0120SnapshotPerVersion(_DataDir):
         self.assertEqual(M.snapshot_before()["version"], APP_VERSION)
         root = Path(_env.ROOT) / "backend" / "masterquo"
         self.assertNotIn("rollback-config", (root / "__main__.py").read_text(encoding="utf-8"))     # S0: no CLI rollback path
-        self.assertNotIn("rollback_config", (root / "api" / "app.py").read_text(encoding="utf-8"))
+        self.assertNotIn("rollback_config", _env.api_sources())                           # Etap 4 krok B: api/app.py + api/routes
         self.assertIn("_UM.snapshot_before()", (root / "runtime.py").read_text(encoding="utf-8"))
 
 

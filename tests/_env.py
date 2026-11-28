@@ -18,6 +18,14 @@ sys.path.insert(0, str(ROOT / "backend"))
 UTC = timezone.utc
 
 
+def api_sources() -> str:
+    """Source text of the bot API routes: api/app.py + api/schemas.py + api/routes/*.py. Etap 4 krok B moved the handlers of
+    create_app from api/app.py to api/routes/<domain>.py unchanged - tests that read the handler source read all of it."""
+    api = ROOT / "backend" / "masterquo" / "api"
+    files = [api / "app.py", api / "schemas.py", *sorted((api / "routes").glob("*.py"))]
+    return "\n".join(f.read_text(encoding="utf-8") for f in files)
+
+
 class TempData:
     def __init__(self):
         self.dir = tempfile.mkdtemp(prefix="mq_test_")

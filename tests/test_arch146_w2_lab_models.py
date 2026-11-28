@@ -13,7 +13,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
 
-import _env  # noqa: F401
+import _env
 from _env import TempData
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -44,7 +44,7 @@ class TestTabiclInstallFacade(unittest.TestCase):
     """I0212: API wołało prywatne TsfmService._run_job_proc do instalacji TabICL."""
 
     def test_api_does_not_call_private_tsfm_methods(self):
-        src = (ROOT / "backend" / "masterquo" / "api" / "app.py").read_text(encoding="utf-8")
+        src = _env.api_sources()          # Etap 4 krok B: handlers in api/routes/*.py
         import re
         self.assertEqual(re.findall(r"rt\.tsfm\._\w+", src), [])
 
@@ -57,7 +57,7 @@ class TestTabiclInstallFacade(unittest.TestCase):
         argv = ["py", "tools/tsfm_setup.py", "--model", "tabicl"]
         self.assertEqual(TsfmService.start_job_process(stub, "install_tabicl", argv), {"ok": True})
         self.assertEqual(calls, [("install_tabicl", argv, None, None)])
-        src = (ROOT / "backend" / "masterquo" / "api" / "app.py").read_text(encoding="utf-8")
+        src = _env.api_sources()          # Etap 4 krok B: handlers in api/routes/*.py
         self.assertIn('rt.tsfm.start_job_process("install_tabicl", argv)', src)
 
 
@@ -137,7 +137,7 @@ class TestLedgerListingsPerInstrument(unittest.TestCase):
         self.assertEqual([a["assessment_id"] for a in led.assessments(10)], ["A1", "A0"])
 
     def test_api_routes_take_optional_asset(self):
-        src = (ROOT / "backend" / "masterquo" / "api" / "app.py").read_text(encoding="utf-8")
+        src = _env.api_sources()          # Etap 4 krok B: handlers in api/routes/*.py
         for fn in ("def scalp_shadow(", "def forecast_shadow(", "def si_quote_fc(", "def quant_assessments("):
             line = next(x for x in src.splitlines() if fn in x)
             self.assertIn("asset: str | None = None", line, fn)
@@ -655,7 +655,7 @@ class TestIndicatorContextTrainServeParity(unittest.TestCase):
         self.assertEqual(reg_p.read_bytes(), before)
 
     def test_api_reports_current_schema(self):
-        src = (ROOT / "backend" / "masterquo" / "api" / "app.py").read_text(encoding="utf-8")
+        src = _env.api_sources()          # Etap 4 krok B: handlers in api/routes/*.py
         self.assertFalse('"schema": "SCALP_INDICATOR_CONTEXT_V1"' in src)
 
 

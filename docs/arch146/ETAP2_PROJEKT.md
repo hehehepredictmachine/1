@@ -56,6 +56,9 @@ Pogrubione = nowe moduły; *kursywa* = moduły, które zostają, ale zmieniają 
 backend/masterquo/
 ├── runtime.py                  JEDYNY composition root: compose(cfg_dir, demo) -> Services + Runtime(start/stop, Lifecycle wątków)
 │                               (przejmuje obiekty tworzone dziś w api/app.py, api/wf32_routes.py, studio, CLI – §5)
+│                               (Etap 4 krok A: `compose_api_services(port)` / `Runtime.compose_api` budują LocalSecurity, rejestry
+│                               procesów treningu i NSS, PresetStore i IndicatorEngine – API czyta `rt.api_services`; usługi wf32 =
+│                               `rt.wf32_services` (I0088); Studio i CLI to osobne procesy – bez Runtime, bez zmian)
 ├── **registry_io.py**          strict read / blokada OS (jak trainhub/registry.reg_lock) / unikalny tmp + os.replace
 │                               dla WSZYSTKICH rejestrów aktywacji i wskaźników (lab ACTIVE.json, mm SHADOW_ACTIVE.json,
 │                               Monte Carlo registry.json, quant pointer, trainhub registry.json, rodziny, gold_candles, forecast)
@@ -90,6 +93,11 @@ backend/masterquo/
     │                           deals_coverage_from_utc (importują je testy)
     └── **routes/**             <domena>.py z register(app, rt, ctx) – wzorzec już użyty w wf32_routes/export_routes/owner_routes;
                                 ścieżki, metody, nazwy handlerów i kody błędów bez zmian (test: zbiór METHOD+PATH przed == po)
+                                (Etap 4 krok B: 35 modułów, 47 bloków `register(app, ctx)` w `routes.REGISTRATION` w kolejności
+                                create_app sprzed podziału; `ctx` = rt, sec, port + pomocniki / handlery wołane po nazwie, pod tymi
+                                samymi nazwami lokalnymi; `routes/_shared.py` – 3 pomocniki używane przed swoim blokiem; modele
+                                Pydantic w `api/schemas.py`; api.app re-eksportuje stare nazwy; w app.py zostają Guard, lifespan,
+                                strona / sesja; dowód: tests/test_arch146_e4_api_split.py – migawka bazy 7ba7ab0)
 ```
 
 ### 3a. Mapa warstw i strażnik importów leniwych (I0084)
