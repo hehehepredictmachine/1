@@ -567,5 +567,261 @@ class TestLockServiceLayers(unittest.TestCase):
             self.assertIn("LK.export_lock(LK.EXPORT_APP_BOT)", src, f)
 
 
+
+# ============================================================================================ frozen copy: training/promotion.py (cf5d941)
+def _old_block(role, event, reason):
+    return {"allow_promotion": False, "role": role, "event": event, "reason": reason}
+
+
+def _old_ml_champion_policy(*, approx, synthetic, activate=True):
+    if synthetic is None or approx is None:
+        return _old_block("PROVENANCE_UNKNOWN", "NOT_PROMOTED_PROVENANCE_UNKNOWN",
+                          "nieznane pochodzenie danych treningu (APPROX / syntetyczne) – model tylko do badań, champion bez zmian")
+    if synthetic:
+        return _old_block("FIXTURE_ONLY", "NOT_PROMOTED_SYNTHETIC", "dane syntetyczne (symulator terminala) – model techniczny, nigdy champion")
+    if approx:
+        return _old_block("RESEARCH_APPROX", "NOT_PROMOTED_APPROX", "trening na etykietach APPROX (backfill OHLC) – tylko do badań")
+    if not activate:
+        return _old_block("ELIGIBLE_NOT_ACTIVATED", "NOT_PROMOTED_NO_ACTIVATE",
+                          "plan treningu bez aktywacji (TEST_INSTALACJI / --no-activate) – champion bez zmian")
+    return {"allow_promotion": True, "role": "ELIGIBLE_FOR_CHAMPION", "event": None, "reason": None}
+
+
+def _old_approx_rows_in_snapshot(db, manifest):
+    if not manifest.get("include_approx"):
+        return 0
+    r = db.one("SELECT COUNT(*) AS n FROM ml_samples WHERE status='LABELED' AND quality NOT IN ('HIGH','COST_UNKNOWN') AND synthetic=? "
+               "AND label_known_utc <= ?", (1 if manifest.get("synthetic") else 0, manifest["cutoff_utc"]))
+    return int((r or {}).get("n") or 0)
+
+
+# ============================================================================================ frozen copy: training/dataset_ref.py (cf5d941)
+def _old_read(p):
+    try:
+        d = json.loads(Path(p).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    return d if isinstance(d, dict) else None
+
+
+def _old_sha_of(obj):
+    import hashlib
+    if not obj:
+        return None
+    return hashlib.sha256(json.dumps(obj, sort_keys=True, ensure_ascii=False, default=str).encode("utf-8")).hexdigest()
+
+
+def _old_make(*, instrument, source, sha256, data_kind, range_utc=None, symbol=None, location=None, quality=None, rows=None, files=None):
+    return {"version": "PMW-DATASET-REF-1", "instrument": instrument, "symbol": symbol, "source": source, "location": location,
+            "range_utc": list(range_utc) if range_utc else None, "sha256": sha256, "data_kind": data_kind,
+            "quality": quality or {"report": None, "status": None}, "rows": rows, "files": files}
+
+
+def _old_from_export_dir(ds):
+    ds = Path(ds)
+    meta = _old_read(ds / "source_metadata.json")
+    if not meta:
+        return None
+    dq = _old_read(ds / "DATA_QUALITY_REPORT.json") or {}
+    files = meta.get("files_sha256") if isinstance(meta.get("files_sha256"), dict) else None
+    suff = (dq.get("sufficiency") or {}).get("status") if isinstance(dq.get("sufficiency"), dict) else None
+    return _old_make(instrument=meta.get("instrument"), symbol=meta.get("symbol"), source="MT5_EXPORT_RUN", location=str(ds),
+                     range_utc=meta.get("range_utc"), sha256=_old_sha_of(files) or meta.get("dataset_id"), data_kind=meta.get("data_kind"),
+                     quality={"report": str(ds / "DATA_QUALITY_REPORT.json") if dq else None, "status": suff}, files=files)
+
+
+def _old_from_store(inst, store_manifest, *, sha256, quality_path=None, range_utc=None, rows=None):
+    q = _old_read(quality_path) if quality_path else None
+    st = None
+    if q:
+        bad = [tf for tf, r in (q.get("timeframes") or {}).items() if isinstance(r, dict) and r.get("status") != "OK"]
+        st = "OK" if not bad else "BŁĘDY: " + ", ".join(bad)
+    return _old_make(instrument=inst, symbol=(store_manifest or {}).get("symbol"), source="MARKETDATA_STORE",
+                     location=str(quality_path.parent) if quality_path else None, range_utc=range_utc, sha256=sha256,
+                     data_kind=(store_manifest or {}).get("data_kind"), quality={"report": str(quality_path) if q else None, "status": st},
+                     rows=rows)
+
+
+def _old_from_bars(inst, *, source, symbol, data_kind, sha256, range_utc=None, rows=None, quality_path=None):
+    q = _old_read(quality_path) if quality_path else None
+    st = None
+    if q:
+        bad = [tf for tf, r in (q.get("timeframes") or {}).items() if isinstance(r, dict) and r.get("status") != "OK"]
+        st = "OK" if not bad else "BŁĘDY: " + ", ".join(bad)
+    return _old_make(instrument=inst, symbol=symbol, source=source, location=str(quality_path.parent) if q else None, range_utc=range_utc,
+                     sha256=sha256, data_kind=data_kind, quality={"report": str(quality_path) if q else None, "status": st}, rows=rows)
+
+
+class _FakeDb:
+    def __init__(self, n):
+        self.n, self.calls = n, []
+
+    def one(self, sql, params):
+        self.calls.append((sql, params))
+        return None if self.n is None else {"n": self.n}
+
+
+# ============================================================================================ D6: one promotion policy
+class TestPromotionPolicyOneSource(unittest.TestCase):
+    def test_alias_and_leaf_are_one_policy(self):
+        from masterquo.contracts import promotion as CP
+        from masterquo.training import promotion as TP
+        for name in ("ELIGIBLE", "_block", "approx_rows_in_snapshot", "ml_champion_policy"):
+            self.assertIs(getattr(TP, name), getattr(CP, name), name)
+
+    def test_policy_equals_old_on_every_input(self):
+        from masterquo.training import promotion as TP
+        n = 0
+        for approx in (None, False, True, 0, 1, ""):
+            for synthetic in (None, False, True, 0, 1, ""):
+                for activate in (False, True, 0, 1):
+                    self.assertEqual(TP.ml_champion_policy(approx=approx, synthetic=synthetic, activate=activate),
+                                     _old_ml_champion_policy(approx=approx, synthetic=synthetic, activate=activate))
+                    n += 1
+        self.assertGreaterEqual(n, 144)
+
+    def test_approx_rows_equals_old_on_random_manifests(self):
+        from masterquo.contracts.promotion import approx_rows_in_snapshot
+        rnd = random.Random(SEED)
+        for _ in range(240):
+            man = {"cutoff_utc": f"2026-{rnd.randint(1, 12):02d}-{rnd.randint(1, 28):02d}T00:00:00Z"}
+            for k in ("include_approx", "synthetic"):
+                v = rnd.choice((None, True, False, 0, 1, "x", "MISSING"))
+                if v != "MISSING":
+                    man[k] = v
+            n = rnd.choice((None, 0, 3, 250, "7"))
+            a, b = _FakeDb(n), _FakeDb(n)
+            self.assertEqual(approx_rows_in_snapshot(a, dict(man)), _old_approx_rows_in_snapshot(b, dict(man)), man)
+            self.assertEqual(a.calls, b.calls, man)
+
+    def test_every_ml_promotion_path_uses_the_policy(self):
+        """Registry.register (the only champion promotion of the ML registry) is called from the bot's job and the offline training -
+        both with policy= from the one D6 policy; no caller passes allow_promotion on its own."""
+        pkg = Path(_env.ROOT) / "backend" / "masterquo"
+        callers = {}
+        for p in pkg.rglob("*.py"):
+            if "vendor" in p.parts:
+                continue
+            tree = ast.parse(p.read_text(encoding="utf-8"))
+            for n in ast.walk(tree):
+                if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute) and n.func.attr == "register" and \
+                        any(k.arg == "policy" or k.arg == "allow_promotion" for k in n.keywords):
+                    callers.setdefault(str(p.relative_to(pkg)), []).append(sorted(k.arg for k in n.keywords if k.arg))
+        self.assertEqual(sorted(callers), ["ml/offline.py", "ml/service.py"])
+        for f, kws in callers.items():
+            for kw in kws:
+                self.assertIn("policy", kw, f)
+                self.assertNotIn("allow_promotion", kw, f)
+        for f in ("ml/offline.py", "ml/service.py"):
+            src = (pkg / f).read_text(encoding="utf-8")
+            self.assertIn("from ..contracts.promotion import", src, f)
+            self.assertNotIn("from ..training.promotion import", src, f)
+
+    def test_sh_tp_model_rule_is_the_same_policy(self):
+        """sh/train_cli: allow_promotion = real and live_write - the same answer as the one policy (no APPROX labels in SH, synthetic =
+        not REAL_USER_DATA, activate = live_write). Documented equivalence; the SH call is not rewired (protected SH area)."""
+        from masterquo.training.promotion import ml_champion_policy
+        for real in (False, True):
+            for live_write in (False, True):
+                self.assertEqual(ml_champion_policy(approx=False, synthetic=not real, activate=live_write)["allow_promotion"],
+                                 real and live_write)
+        src = (Path(_env.ROOT) / "backend" / "masterquo" / "sh" / "train_cli.py").read_text(encoding="utf-8")
+        self.assertIn("allow_promotion=real and live_write", src)
+
+
+# ============================================================================================ I0064: DatasetRef
+class TestDatasetRefOneSource(unittest.TestCase):
+    NAMES = ("VERSION", "_read", "_sha_of", "make", "from_export_dir", "from_store", "from_bars")
+
+    def test_alias_and_leaf_are_one_module(self):
+        from masterquo.contracts import dataset_ref as CD
+        from masterquo.training import dataset_ref as TD
+        for name in self.NAMES:
+            self.assertIs(getattr(TD, name), getattr(CD, name), name)
+
+    def test_equals_old_on_random_inputs(self):
+        from masterquo.contracts import dataset_ref as DR
+        rnd = random.Random(SEED)
+        base = Path(tempfile.mkdtemp(prefix="mq_e4_dr_"))
+
+        def put(p: Path, v):
+            if v == "MISSING":
+                p.unlink(missing_ok=True)
+            elif isinstance(v, str):
+                p.write_text(v, encoding="utf-8")
+            else:
+                p.write_text(json.dumps(v), encoding="utf-8")
+        try:
+            metas = ["MISSING", "{zepsuty", [], {}, {"instrument": "XAUUSD", "symbol": "XAUUSD-", "range_utc": ["a", "b"], "data_kind": "REAL_USER_DATA",
+                                                    "files_sha256": {"M1.csv": "ab", "M5.csv": "cd"}, "dataset_id": "DS1"},
+                     {"instrument": "BTC", "files_sha256": "nie-słownik", "dataset_id": "DS2"}, {"instrument": "BTC", "files_sha256": {}}]
+            dqs = ["MISSING", "x", {"sufficiency": {"status": "OK"}}, {"sufficiency": "OK"}, {"sufficiency": None}, {}]
+            qrs = ["MISSING", "[]", {"timeframes": {"M1": {"status": "OK"}, "M5": {"status": "GAPS"}}}, {"timeframes": {"M1": {"status": "OK"}}},
+                   {"timeframes": {"M1": "OK"}}, {}, {"timeframes": None}]
+            n = 0
+            for i in range(240):
+                d = base / f"c{i}"
+                d.mkdir()
+                put(d / "source_metadata.json", rnd.choice(metas))
+                put(d / "DATA_QUALITY_REPORT.json", rnd.choice(dqs))
+                qp = d / "quality_report.json"
+                put(qp, rnd.choice(qrs))
+                qpath = rnd.choice((qp, None, d / "brak.json"))
+                man = rnd.choice(({}, None, {"symbol": "X", "data_kind": "SYNTHETIC_TEST"}, {"symbol": "Y"}))
+                rng = rnd.choice((None, [], ("2026-01-01", "2026-02-01"), ["a"]))
+                sha = rnd.choice((None, "abc", ""))
+                rows = rnd.choice((None, 0, 1234))
+                self.assertEqual(DR.from_export_dir(d), _old_from_export_dir(d))
+                self.assertEqual(DR.from_store("XAUUSD", man, sha256=sha, quality_path=qpath, range_utc=rng, rows=rows),
+                                 _old_from_store("XAUUSD", man, sha256=sha, quality_path=qpath, range_utc=rng, rows=rows))
+                kw = {"source": rnd.choice(("MARKETDATA_STORE", "MT5_LIVE_BRIDGE")), "symbol": rnd.choice((None, "S")),
+                      "data_kind": rnd.choice((None, "REAL")), "sha256": sha, "range_utc": rng, "rows": rows, "quality_path": qpath}
+                self.assertEqual(DR.from_bars("BTC", **kw), _old_from_bars("BTC", **kw))
+                obj = rnd.choice((None, {}, {"b": 1, "a": [1, 2]}, [1, "ż"], "x"))
+                self.assertEqual(DR._sha_of(obj), _old_sha_of(obj))
+                n += 1
+            self.assertGreaterEqual(n, 200)
+        finally:
+            import shutil
+            shutil.rmtree(base, ignore_errors=True)
+
+    def test_coverage_of_manifests(self):
+        """I0064 coverage (verified, Etap 4): runner run state (export + model tasks), TrainHub data_manifest.json, model-family
+        manifest.json write a DatasetRef; Legacy ML, Quant MetaModel, SDformer, Granite and the per-trainer manifests of the runner tasks do
+        not (documented gap - adding the field changes artifacts in data/, a separate item)."""
+        pkg = Path(_env.ROOT) / "backend" / "masterquo"
+        covered = {"training/runner.py": "DR.from_export_dir", "trainhub/pipeline.py": "DR.from_store", "trainhub/registry.py": "DR.from_store",
+                   "modelhub/families/run.py": "DR.from_bars"}
+        for f, call in covered.items():
+            self.assertIn(call, (pkg / f).read_text(encoding="utf-8"), f)
+        src_reg = (pkg / "trainhub" / "registry.py").read_text(encoding="utf-8")
+        self.assertIn('"dataset_ref": dataset_ref', src_reg)                               # into data_manifest.json of the package
+        self.assertIn('man["dataset_ref"] = _dataset_ref(', (pkg / "modelhub" / "families" / "run.py").read_text(encoding="utf-8"))
+        writers = {str(p.relative_to(pkg)) for p in pkg.rglob("*.py") if "dataset_ref" in p.read_text(encoding="utf-8")
+                   and p.name != "dataset_ref.py"}
+        self.assertEqual(writers, set(covered))
+        from masterquo.contracts import dataset_ref as DR
+        for gap in ("Legacy ML", "Quant", "SDformer", "Granite", "per-trainer manifests"):
+            self.assertIn(gap, DR.__doc__)
+
+
+class TestContractsLeavesLayers(unittest.TestCase):
+    REMOVED = ("masterquo.ml.offline -> masterquo.training.promotion", "masterquo.ml.service -> masterquo.training.promotion",
+               "masterquo.modelhub.families.run -> masterquo.training.dataset_ref", "masterquo.trainhub.pipeline -> masterquo.training.dataset_ref",
+               "masterquo.trainhub.registry -> masterquo.training.dataset_ref")
+
+    def test_upward_edges_removed_and_leaves_stdlib_only(self):
+        import importlib
+        sys.path.insert(0, str(Path(_env.ROOT) / "tools"))
+        import cycles
+        C = importlib.reload(cycles)
+        up = C.upward(C.edges())
+        for k in self.REMOVED + TestLockServiceLayers.REMOVED:
+            self.assertNotIn(k, up)
+        for f in ("promotion.py", "dataset_ref.py"):
+            tree = ast.parse((Path(_env.ROOT) / "backend" / "masterquo" / "contracts" / f).read_text(encoding="utf-8"))
+            self.assertFalse([n for n in ast.walk(tree) if isinstance(n, ast.ImportFrom) and n.level], f)     # stdlib only (contracts rule)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -111,7 +111,8 @@ def train(inst: str, dataset: Path, *, include_approx: bool = True, days: int = 
     champion stays. The champion rule is the one shared with the bot's job (training/promotion.ml_champion_policy)."""
     import mq_instruments
     from ..config import ConfigStore
-    from ..training.promotion import approx_rows_in_snapshot, ml_champion_policy
+    # 1.46 arch Etap 4: the policy from the L0 leaf (training/promotion.py is its alias)
+    from ..contracts.promotion import approx_rows_in_snapshot, ml_champion_policy
     from . import backfill, trainer
     from .dataset import SampleStore
     from .registry import Registry

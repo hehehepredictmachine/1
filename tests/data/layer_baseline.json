@@ -78,7 +78,7 @@
   "wf32_services": "L5 kompozycja",
   "zones": "L2 analizy"
  },
- "count": 58,
+ "count": 53,
  "edges": {
   "masterquo.analytics.liquidity_cli -> masterquo.extind.cli": {
    "from": "L2 analizy",
@@ -331,17 +331,6 @@
     231
    ]
   },
-  "masterquo.ml.offline -> masterquo.training.promotion": {
-   "from": "L4 SHADOW/badania",
-   "to": "L5 kompozycja",
-   "kinds": [
-    "FUNCTION"
-   ],
-   "lines": [
-    114,
-    114
-   ]
-  },
   "masterquo.ml.service -> masterquo.training.core": {
    "from": "L4 SHADOW/badania",
    "to": "L5 kompozycja",
@@ -349,18 +338,7 @@
     "FUNCTION"
    ],
    "lines": [
-    375
-   ]
-  },
-  "masterquo.ml.service -> masterquo.training.promotion": {
-   "from": "L4 SHADOW/badania",
-   "to": "L5 kompozycja",
-   "kinds": [
-    "FUNCTION"
-   ],
-   "lines": [
-    342,
-    414
+    376
    ]
   },
   "masterquo.modelhub.check -> masterquo.runtime": {
@@ -372,16 +350,6 @@
    "lines": [
     135,
     141
-   ]
-  },
-  "masterquo.modelhub.families.run -> masterquo.training.dataset_ref": {
-   "from": "L4 SHADOW/badania",
-   "to": "L5 kompozycja",
-   "kinds": [
-    "FUNCTION"
-   ],
-   "lines": [
-    148
    ]
   },
   "masterquo.modelhub.families.service -> masterquo.training.core": {
@@ -629,26 +597,6 @@
     290,
     290,
     309
-   ]
-  },
-  "masterquo.trainhub.pipeline -> masterquo.training.dataset_ref": {
-   "from": "L4 SHADOW/badania",
-   "to": "L5 kompozycja",
-   "kinds": [
-    "FUNCTION"
-   ],
-   "lines": [
-    194
-   ]
-  },
-  "masterquo.trainhub.registry -> masterquo.training.dataset_ref": {
-   "from": "L4 SHADOW/badania",
-   "to": "L5 kompozycja",
-   "kinds": [
-    "FUNCTION"
-   ],
-   "lines": [
-    89
    ]
   },
   "masterquo.zones.hlze -> masterquo.strategies.base": {

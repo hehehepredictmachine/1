@@ -86,7 +86,8 @@ def save_package(inst: str, cfg: dict, trained: dict, ds_desc: dict, store_manif
     metrics = {k: v for k, v in res.items() if k != "sample"}
     atomic_json(d / "metrics.json", metrics)
     if dataset_ref is None:                       # arch146 I0064: lineage of the training set (training/dataset_ref.py)
-        from ..training import dataset_ref as DR
+        # 1.46 arch Etap 4: DatasetRef from the L0 leaf (training/dataset_ref.py is its alias)
+        from ..contracts import dataset_ref as DR
         dataset_ref = DR.from_store(inst, store_manifest, sha256=ds_desc.get("hash"), range_utc=ds_desc.get("range_utc"),
                                     rows=ds_desc.get("rows_usable"))
     atomic_json(d / "data_manifest.json", {"instrument": inst, "symbol": store_manifest.get("symbol"), "data_kind": store_manifest.get("data_kind"),

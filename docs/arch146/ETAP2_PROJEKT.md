@@ -82,6 +82,8 @@ backend/masterquo/
 │   ├── core.py                 + **jedna usługa blokad treningu** ('train:<inst>', 'export:<inst>'), DatasetRef w manifeście
 │   │                           (Etap 4: implementacja w liściu L0 `locks.py`, core = wejście `LOCKS` + cienkie wrappery RUNNING.lock)
 │   └── **promotion.py**        jedna polityka promocji/aktywacji (krok 1: tylko liczy i loguje; egzekwowanie = decyzja D6/D7)
+│                               (Etap 4: implementacja `contracts/promotion.py`, DatasetRef `contracts/dataset_ref.py` – liście L0;
+│                               training/promotion.py i training/dataset_ref.py = aliasy zgodności)
 ├── indicators/                 + wskaźniki z strategies/indicators.py (shim zostaje) – zrywa cykl pakietów analysis↔strategies
 └── api/
     ├── app.py                  create_app: middleware, sesja, bezpieczeństwo, montowanie routerów; re-eksport body_num,
@@ -108,7 +110,7 @@ Krawędź w obrębie jednej warstwy jest dozwolona; import z warstwy niższej do
 `ast` WSZYSTKIE importy wewnętrzne (modułowe, w funkcjach/metodach i dynamiczne `__import__`/`import_module` z literałem). Dzisiejsze
 krawędzie w górę (56 par moduł → moduł po scaleniu fali 2b, m.in. sh → lab/kronos/tsfm/modelhub/trainhub/mm/montecarlo, decision →
 quant/tsfm/evaluation, engine → extind/scalp; do liści bez importów wewnętrznych: config/sh.models → quant.ids, config → strategies.ids,
-ml → training.promotion – kandydaci do przeniesienia do L0 w Etapie 4) są zapisane jako baseline w `tests/data/layer_baseline.json`. Test
+ml → training.promotion – kandydaci do przeniesienia do L0 w Etapie 4; Etap 4 / trening: polityka promocji i DatasetRef w `contracts/`, usługa blokad w `locks.py`, par w górę 63 → 53) są zapisane jako baseline w `tests/data/layer_baseline.json`. Test
 (`tests/test_arch146_w2_tools_cli.py::TestLayerGuard`) nie przechodzi przy NOWEJ parze w górę; para usunięta jest tylko informacją.
 Klucz to para modułów, numery linii są informacyjne (edycja pliku nie psuje strażnika). Po przeglądzie zmiany baseline odświeża
 `python tools/cycles.py --write-baseline` (także po scaleniu każdej grupy, która dodaje komponent albo parę w górę – test je wskaże). Przeniesienie importów i porty wstrzykiwane przez `runtime` (wzorzec `scalp.extind`,

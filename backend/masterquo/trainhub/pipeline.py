@@ -191,7 +191,8 @@ def stage_train(store: Store, inst: str, cfg: dict, progress=None, cancel=None, 
                                    "svm_fallback_folds": tr["result"].get("svm_fallback_folds"), "holdout": tr["result"]["holdout"]})
             continue
         # arch146 I0064: the store this training read, with its quality report
-        from ..training import dataset_ref as DR
+        # 1.46 arch Etap 4: DatasetRef from the L0 leaf (training/dataset_ref.py is its alias)
+        from ..contracts import dataset_ref as DR
         ref = DR.from_store(inst, man, sha256=desc.get("hash"), quality_path=store.inst_dir(inst) / "quality_report.json",
                             range_utc=desc.get("range_utc"), rows=desc.get("rows_usable"))
         pkg = R.save_package(inst, cfg, tr, desc, man, dataset_ref=ref)

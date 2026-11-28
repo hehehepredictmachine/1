@@ -339,7 +339,8 @@ class MLService:
             if cnt["labeled"] < 4 * c.min_block_samples:
                 return {"started": False, "reason": f"ZA_MALO_ETYKIET_{cnt['labeled']}_POTRZEBA_CO_NAJMNIEJ_{4 * c.min_block_samples}"}
             snap = self.store.snapshot(self.root / "snapshots", include_approx=approx, synthetic=self.synthetic)
-            from ..training.promotion import approx_rows_in_snapshot
+            # 1.46 arch Etap 4: the policy from the L0 leaf (training/promotion.py is its alias)
+            from ..contracts.promotion import approx_rows_in_snapshot
             approx_rows = approx_rows_in_snapshot(self.db, snap)        # 1.46 D6: provenance for the one promotion policy (_handle_result)
             job_id = "JOB-" + utcnow().strftime("%Y%m%dT%H%M%S") + "-" + __import__("uuid").uuid4().hex[:4]
             jcfg = {k: getattr(c, k) for k in ("embargo_minutes", "min_block_samples", "min_block_per_class", "dt_tuning_budget", "xgb_tuning_budget",
@@ -411,7 +412,8 @@ class MLService:
         labels or on the simulator's samples is evaluated and stored, never the champion. Was: register() with promotion always allowed.
         A job file of an older version has no approx_labels / synthetic: the include flag and world of its snapshot manifest decide
         (conservative); nothing known -> PROVENANCE_UNKNOWN (not promoted)."""
-        from ..training.promotion import ml_champion_policy
+        # 1.46 arch Etap 4: the policy from the L0 leaf (training/promotion.py is its alias)
+        from ..contracts.promotion import ml_champion_policy
         man = job.get("manifest") or {}
         approx = job.get("approx_labels")
         if approx is None:
