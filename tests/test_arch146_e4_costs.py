@@ -109,6 +109,34 @@ class TestDeclarations(unittest.TestCase):
         with self.assertRaises(ValueError):
             C.resolve(C.profile("ACTIVE"), commission_per_lot_side=1.0, slippage=5, point=0.01, move_value=lambda d: d, gate_check=True)
 
+    def test_outside_resolver_inventory_is_current(self):
+        """Etap 4 not_done (review): the cost formulas that do NOT go through the resolver are declared with their convention and the
+        reason they stay; each marker is still in its file (a site moved or changed must update the inventory), every site named by
+        the review is listed, and neither the docstring nor a routed track claims more than the six decision tracks."""
+        from masterquo import costs as C
+        from masterquo.costs import policy as P
+        root = _env.ROOT / "backend" / "masterquo"
+        groups = {P.GROUP_REPLAY_OUTCOME, P.GROUP_LIVE_EXECUTION, P.GROUP_TRAINING_LABEL, P.GROUP_PANEL}
+        self.assertEqual(len({(s.path, s.marker) for s in C.OUTSIDE_RESOLVER}), len(C.OUTSIDE_RESOLVER))
+        for s in C.OUTSIDE_RESOLVER:
+            f = root / s.path
+            self.assertTrue(f.is_file(), s.path)
+            self.assertIn(s.marker, f.read_text(encoding="utf-8"), f"{s.path}: formula changed or moved - update OUTSIDE_RESOLVER")
+            self.assertIn(s.group, groups, s)
+            self.assertTrue(s.computes and s.unknown_commission and s.reason, s)
+            self.assertNotIn("C.", s.marker, s)                          # a resolver call is not a site outside the resolver
+        review = {"scalp/replay.py", "scalp/service.py", "sh/service.py", "sh/replay.py", "sh/pack/solver.py", "sh/scenario.py",
+                  "sh/train_cli.py", "ml/labels.py", "trainhub/pipeline.py", "extind/trainer.py"}
+        self.assertLessEqual(review, {s.path for s in C.OUTSIDE_RESOLVER})
+        # ETAP2 §5 row "Koszty": the labels ML / trainhub / extind - declared as not moved (training labels, own versioned basis)
+        self.assertEqual({s.path for s in C.OUTSIDE_RESOLVER if s.group == P.GROUP_TRAINING_LABEL},
+                         {"ml/labels.py", "trainhub/pipeline.py", "extind/trainer.py"})
+        self.assertIn("OUTSIDE_RESOLVER", P.__doc__)
+        self.assertNotIn("one source of truth: `POLICIES`", P.__doc__)
+        self.assertIn("NOT the replay / outcome costs dict", C.POLICIES["SCALP"].where)   # the live gate only, not the outcome costs
+        for t in C.TRACKS:
+            self.assertNotIn("outcome", C.POLICIES[t].where.split("NOT the replay")[0], t)
+
     def test_costs_is_a_stdlib_leaf(self):
         import cycles
         self.assertEqual(cycles.LAYERS.get("costs"), 0)

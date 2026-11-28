@@ -7,6 +7,10 @@
                     cost) - the formulas of the tracks before Etap 4, bit for bit (tests/test_arch146_e4_costs.py)
   costs.commission  commission source of the cost config (CONFIGURED / FROM_DEAL_HISTORY), moved from risk/costs.py (alias there)
 
+Scope: the six decision tracks above go through the resolver. The cost formulas that still compute their own cost (replay / outcome
+arithmetic, LIVE hedge cost and execution sizing, the training labels ML / trainhub / extind, panel calculators) are listed with
+their convention and the reason they were not moved in Etap 4 in costs.policy.OUTSIDE_RESOLVER (not_done).
+
 Standard library only (layer L0 of tools/cycles.py): every track - risk / sh (L3), scalp / evaluation / quant (L4) - imports it
 without an upward edge.
 """
@@ -24,6 +28,7 @@ from .policy import (
     ACTIVE,
     EVALUATION_ACTIVE,
     EVALUATION_SH,
+    OUTSIDE_RESOLVER,
     POLICIES,
     QUANT_LABEL,
     SCALP,
@@ -36,6 +41,7 @@ from .policy import (
     TRACKS,
     CostPolicy,
     CostProfile,
+    CostSite,
     policies,
     profile,
 )
@@ -59,6 +65,7 @@ __all__ = [
     "DEAL_TYPE_SELL",
     "EVALUATION_ACTIVE",
     "EVALUATION_SH",
+    "OUTSIDE_RESOLVER",
     "POLICIES",
     "QUANT_LABEL",
     "SCALP",
@@ -72,6 +79,7 @@ __all__ = [
     "CostBreakdown",
     "CostPolicy",
     "CostProfile",
+    "CostSite",
     "be_offset",
     "commission_from_history",
     "commission_price_side",
