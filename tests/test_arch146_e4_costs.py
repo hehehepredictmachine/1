@@ -353,5 +353,64 @@ class TestSH(unittest.TestCase):
         self.assertIn("PASS", statuses)
 
 
+# ====================================================================================================================== SCALP
+def _old_commission_price(com, contract_size, mpp):
+    """scalp/service.commission_price at cf5d941 (verbatim)."""
+    old = com / contract_size if contract_size > 0 else 0.0
+    return max(old, com / mpp) if mpp else old
+
+
+def _old_scalp_extras(com, contract_size, mpp, slippage_ticks, tick):
+    """scalp/service.economics_gate at cf5d941: extra (account-currency conversion) and extra0 (the cost before 1.46 arch)."""
+    extra = 2 * _old_commission_price(com, contract_size, mpp) + 2 * slippage_ticks * tick
+    extra0 = 2 * com / contract_size + 2 * slippage_ticks * tick
+    return extra, extra0
+
+
+class TestScalp(unittest.TestCase):
+    def _inputs(self, rng):
+        com = rng.choice([0.0, -0.0, 3.5, 7.0, rng.uniform(0, 12)])
+        cs = rng.choice([100.0, 1.0, 10.0, 100000.0, rng.uniform(0.5, 500)])
+        mpp = rng.choice([None, 0.0, 50.0, 92.0, 100.0, 400.0, rng.uniform(0.1, 1000)])
+        return com, cs, mpp, rng.choice([0, 0.0, 1, 2.0, rng.uniform(0, 10)]), rng.choice([0.01, 0.001, 0.1, 0.00001])
+
+    def test_resolver_equals_old_formula(self):
+        from masterquo import costs as C
+        from masterquo.scalp import service as svc
+        from masterquo.scalp import strategy as st
+        rng = random.Random(SEED + 20)
+        for i in range(N):
+            com, cs, mpp, slip, tick = self._inputs(rng)
+            self.assertEqual(_bits(svc.commission_price(com, cs, mpp)), _bits(_old_commission_price(com, cs, mpp)), i)
+            self.assertEqual(_bits(C.commission_price_side(com, cs, mpp)), _bits(_old_commission_price(com, cs, mpp)), i)
+            new = (st.cost_extra(com, cs, mpp, slip, tick), st.cost_extra(com, cs, mpp, slip, tick, pre_146=True))
+            self.assertEqual(_bits(new), _bits(_old_scalp_extras(com, cs, mpp, slip, tick)), i)
+        cb = C.resolve(C.profile(C.SCALP), commission_per_lot_side=None, contract_size=100.0, money_per_price=None, slippage=2, tick=0.01)
+        self.assertEqual((cb.total, cb.commission_known), (2 * 2 * 0.01, False))       # unknown -> 0 in the cost, the gate blocks it
+
+    def test_whole_economics_gate_old_vs_new(self):
+        old = _old_module("backend/masterquo/scalp/service.py", "masterquo.scalp._e4_old_service")
+        from masterquo.scalp import service as new
+        from masterquo.scalp import strategy as st
+        p = st.load_profile()
+        rng = random.Random(SEED + 21)
+        oks = set()
+        for i in range(N):
+            com, cs, mpp, slip, tick = self._inputs(rng)
+            cs = cs or 100.0                                                        # the service calls the gate only with cs > 0
+            side = rng.choice(["BUY", "SELL"])
+            sgn = 1 if side == "BUY" else -1
+            sl_d, t1 = rng.uniform(0.2, 6), rng.uniform(0.2, 8)
+            plan = {"direction": side, "sl": round(2000 - sgn * sl_d, 2), "tp1": round(2000 + sgn * t1, 2),
+                    "tp2": round(2000 + sgn * (t1 + rng.uniform(0, 6)), 2)}
+            fill = round(2000 + sgn * rng.uniform(-sl_d - 0.5, t1 + 0.5), 2)
+            sp = rng.choice([0.0, 0.05, 0.3, rng.uniform(0, 1)])
+            a = _outcome(old.economics_gate, plan, fill, sp, com, cs, mpp, slip, tick, p)
+            b = _outcome(new.economics_gate, plan, fill, sp, com, cs, mpp, slip, tick, p)
+            self.assertEqual(b, a, i)
+            oks.add(a[2] if isinstance(a, tuple) and len(a) == 4 else a)
+        self.assertEqual(oks, {True, False})
+
+
 if __name__ == "__main__":
     unittest.main()

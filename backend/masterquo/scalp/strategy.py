@@ -19,6 +19,7 @@ import math
 from datetime import datetime, timezone
 from pathlib import Path
 
+from .. import costs as C
 from . import candles_sci, indicators as ind
 
 STATES = ("WARMUP", "SEARCH_RANGE", "RANGE_ARMED", "WAIT_SWEEP", "WAIT_RETEST", "ENTRY_CANDIDATE", "READY_SHADOW", "READY_EXECUTION",
@@ -586,9 +587,22 @@ def _rt(x: float, tick: float) -> float:
     return round(round(x / tick) * tick, 10)
 
 
+COST_TRACK = C.SCALP          # Etap 4 (PMW-COSTS-1): the declared cost policy of the scalp track (costs.policy.POLICIES["SCALP"])
+
+
+def cost_extra(com: float, contract_size: float, money_per_price: float | None, slippage_ticks: float, tick: float, *,
+               pre_146: bool = False, instrument: str | None = None) -> float:
+    """economics() cost_extra in price per unit volume through the cost resolver (policy SCALP): 2 x commission per side in price
+    (the larger of com / contract size and com / money per price, I0738) + 2 x slippage_ticks x tick; the spread stays inside the
+    fill. pre_146=True: the cost before 1.46 arch (2 x com / contract size + slippage) that the live gate also requires."""
+    return C.resolve(C.profile(COST_TRACK, instrument), commission_per_lot_side=com, contract_size=contract_size,
+                     money_per_price=money_per_price, slippage=slippage_ticks, tick=tick, gate_check=pre_146).total
+
+
 def economics(plan: dict, fill: float, spread: float, cost_extra: float, prof: dict) -> dict:
     """Geometry filter in price units per 1 unit of volume. fill = execution price (Ask for BUY, Bid for SELL);
-    cost_extra = commission round trip + slippage expressed in price. Spread is already inside fill/exit sides."""
+    cost_extra = commission round trip + slippage expressed in price (cost_extra() above - the cost resolver, policy SCALP).
+    Spread is already inside fill/exit sides (spread policy IN_FILL); only the cost/TP1 ratio adds it to the extra cost."""
     sgn = 1 if plan["direction"] == "BUY" else -1
     tp1, tp2, sl = plan["tp1"], plan["tp2"], plan["sl"]
     # TP/SL are ORDER prices: BUY exits are compared with Bid, SELL exits with Ask, so the exit price is the level itself

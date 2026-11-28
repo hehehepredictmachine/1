@@ -18,6 +18,7 @@ import time
 from datetime import datetime
 from pathlib import Path
 
+from .. import costs as C
 from ..timeutil import iso, parse_iso, utcnow
 from . import adapters, hedge as hedge_mod, indicators as ind, replay, sessions, strategy as st
 
@@ -745,9 +746,9 @@ def money_per_price(info: dict) -> float | None:
 
 def commission_price(com: float, contract_size: float, mpp: float | None) -> float:
     """Commission per lot side (account currency) in price units per unit volume - the larger of com / contract size (quote currency =
-    account currency, the value before 1.46 arch) and com / money_per_price (MT5 conversion): never a smaller cost than before."""
-    old = com / contract_size if contract_size > 0 else 0.0
-    return max(old, com / mpp) if mpp else old
+    account currency, the value before 1.46 arch) and com / money_per_price (MT5 conversion): never a smaller cost than before.
+    Etap 4: computed by the cost resolver (costs.commission_price_side, policy SCALP) - the same formula."""
+    return C.commission_price_side(com, contract_size, mpp)
 
 
 def economics_gate(plan: dict, fill: float, spread: float, com: float, contract_size: float, mpp: float | None, slippage_ticks: float,
@@ -756,9 +757,9 @@ def economics_gate(plan: dict, fill: float, spread: float, com: float, contract_
     1.46 arch (I0738, review): a higher cost alone is not monotonic in economics (risk = side + cost crosses 0 for an entry at / beyond the
     SL), so the gate also requires the economics at the cost before 1.46 arch (2 x com / contract size + slippage, the same formula) -
     by construction never a pass that the code before did not give. economics() itself rejects an execution price at / beyond the SL."""
-    extra = 2 * commission_price(com, contract_size, mpp) + 2 * slippage_ticks * tick
+    extra = st.cost_extra(com, contract_size, mpp, slippage_ticks, tick)                  # Etap 4: cost resolver, policy SCALP
     eco = st.economics(plan, fill, spread, extra, prof)
-    extra0 = 2 * com / contract_size + 2 * slippage_ticks * tick
+    extra0 = st.cost_extra(com, contract_size, mpp, slippage_ticks, tick, pre_146=True)   # 2 x com / contract size + slippage
     eco0 = eco if extra0 == extra else st.economics(plan, fill, spread, extra0, prof)
     ok = bool(eco["ok"] and eco0["ok"])
     detail = eco["reason"] if ok or not eco["ok"] else f"{eco0['reason']} (koszt sprzed 1.46: prowizja / rozmiar kontraktu)"
