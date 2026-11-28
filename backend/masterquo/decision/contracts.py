@@ -50,6 +50,12 @@ SCHEMAS: dict[str, dict] = {
 }
 
 
+# 1.46 arch (I0053): schemas of the PMW-ARC-1 chain that no production path creates (only tests do) - a marker, NOT part of SCHEMAS:
+# make() / validate() / inputs_hash() / instrument_spec() are unchanged. K.make() runs for DecisionRecord, ExecutionIntent, ExecutionOutcome,
+# ModelForecast and StrategyCandidate only; the live instrument specification is sh/units.SymbolSpec (instrument_spec(): tests only).
+UNUSED_IN_PRODUCTION = ("InstrumentSpec", "ObservationEvent", "MarketSnapshot", "FeatureSet", "MarketContext", "instrument_spec")
+
+
 class ContractViolation(ValueError):
     pass
 

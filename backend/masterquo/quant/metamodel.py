@@ -387,19 +387,37 @@ def _strategy(netr: np.ndarray) -> dict:
 
 
 # ------------------------------------------------------------------------------------------------ inference
-def predict(model: dict, feats: dict) -> dict:
-    names = model["feature_names"]
-    v, m = F.vectorise(feats, names)
-    X = np.asarray([v + m], float)
+# 1.46 arch (I0530): a feature present in EVERY training row has a constant mask column (scaler mean 0, scale 1) and the L2 fit gives that
+# mask coefficient 0 - the model never learned what "missing" means for it. vectorise() turns a missing value into 0, so p(missing) was
+# p(value = 0), an arbitrary point of the feature's scale (measured: p(missing ctx:hour_sin) == p(ctx:hour_sin = 0)). Such a feature, when
+# missing at inference, now gets its TRAINING MEAN (standardised 0 = no push in either direction) and is listed in missing_never_seen;
+# QuantService.assess then holds the candidate in ASSIST (the estimate is not trustworthy - fail-closed). The pre-change zero-filled
+# values stay in out["legacy"] (artifact reproduction check, the D4 evaluation without regime - so no existing HOLD can disappear).
+def _missing_never_seen(scaler: dict, names: list[str], masks: list[float]) -> list[int]:
+    mean = np.asarray(scaler.get("mean") or [], float)
+    k = len(names)
+    if mean.shape != (2 * k,):
+        return []
+    return [i for i in range(k) if masks[i] and abs(float(mean[k + i])) < 1e-12]
+
+
+def _row(scaler: dict, vals: list[float], idx: list[int]) -> np.ndarray:
+    v = list(vals)
+    for i in idx:
+        v[i] = float(scaler["mean"][i])
+    return np.asarray(v, float)
+
+
+def _evaluate(model: dict, xv: np.ndarray, xr: np.ndarray, m: list[float]) -> dict:
     sc = model["scaler"]
+    X = np.concatenate([xv, np.asarray(m, float)])[None, :]
     z = ((X - np.asarray(sc["mean"])) / np.asarray(sc["scale"])) @ np.asarray(model["logit"]["coef"]) + model["logit"]["intercept"]
-    p = float(apply_cal(model["calibrator"], N.sigmoid(z))[0])
-    out = {"p_event": p, "event_id": model.get("event_id"), "missing_features": [n for n, mm in zip(names, m) if mm],
-           "coverage": 1 - sum(m) / max(1, len(names))}
+    out = {"p_event": float(apply_cal(model["calibrator"], N.sigmoid(z))[0])}
     r = model.get("ridge")
     if r:
         rs = r["scaler"]
-        e = float((((X - np.asarray(rs["mean"])) / np.asarray(rs["scale"])) @ np.asarray(r["coef"]) + r["intercept"])[0])
+        Xr = np.concatenate([xr, np.asarray(m, float)])[None, :]
+        e = float((((Xr - np.asarray(rs["mean"])) / np.asarray(rs["scale"])) @ np.asarray(r["coef"]) + r["intercept"])[0])
         out["e_net_r"] = e
         out["outcome_interval_80"] = [e + r["resid_q"][0], e + r["resid_q"][1]] if r.get("resid_q") else None
     else:
@@ -410,12 +428,28 @@ def predict(model: dict, feats: dict) -> dict:
     return out
 
 
-def contributions(model: dict, feats: dict, top: int = 8) -> list[dict]:
-    """Linear trace of the logit: (value - mean) / scale * coef per input (incl. masks) - 'what had influence and why'."""
+def predict(model: dict, feats: dict) -> dict:
     names = model["feature_names"]
     v, m = F.vectorise(feats, names)
-    x = np.asarray(v + m, float)
+    never = _missing_never_seen(model["scaler"], names, m)
+    r = model.get("ridge")
+    never_r = _missing_never_seen(r["scaler"], names, m) if r else []
+    out = _evaluate(model, _row(model["scaler"], v, never), _row(r["scaler"], v, never_r) if r else np.asarray(v, float), m)
+    out.update(event_id=model.get("event_id"), missing_features=[n for n, mm in zip(names, m) if mm],
+               coverage=1 - sum(m) / max(1, len(names)), missing_never_seen=[names[i] for i in sorted(set(never) | set(never_r))])
+    if out["missing_never_seen"]:
+        z = np.asarray(v, float)
+        out["legacy"] = _evaluate(model, z, z, m)               # the computation before I0530 (missing = 0)
+    return out
+
+
+def contributions(model: dict, feats: dict, top: int = 8) -> list[dict]:
+    """Linear trace of the logit: (value - mean) / scale * coef per input (incl. masks) - 'what had influence and why'. The value of a
+    missing feature never missing in training is its training mean, as in predict() (I0530)."""
+    names = model["feature_names"]
+    v, m = F.vectorise(feats, names)
     sc = model["scaler"]
+    x = np.concatenate([_row(sc, v, _missing_never_seen(sc, names, m)), np.asarray(m, float)])
     c = (x - np.asarray(sc["mean"])) / np.asarray(sc["scale"]) * np.asarray(model["logit"]["coef"])
     labels = names + ["m:" + n for n in names]
     idx = np.argsort(-np.abs(c))[:top]
@@ -472,7 +506,10 @@ def load(inst: str, task_hash: str, ver: str) -> tuple[dict, dict]:
         raise MetaError("INCOMPATIBLE_FEATURE_SCHEMA")
     for s in (man.get("report") or {}).get("reproduction") or []:                 # save/load/predict reproduction
         got = predict(model, s["features"])
-        if abs(got["p_event"] - s["out"]["p_event"]) > 1e-9:
+        # 1.46 (I0530): compared on the frozen computation (missing = 0 - what train() evaluated and pre-I0530 artifacts stored), so the
+        # mean fill of a never-missing feature can never turn an existing artifact into REPRODUCTION_MISMATCH (= unloaded, ASSIST off)
+        ref = s["out"].get("legacy") or s["out"]
+        if abs((got.get("legacy") or got)["p_event"] - ref["p_event"]) > 1e-9:
             raise MetaError("REPRODUCTION_MISMATCH")
     return model, man
 
@@ -524,12 +561,20 @@ SEMANTICS_NOTE = {
                 "którakolwiek ocena – sam reżim tylko zaostrza). Względem dotychczasowego artefaktu FEAT-1 to inny model na innych cechach: "
                 "zbiór HOLD w ASSIST zmienia się w obie strony. Cofnięcie: POST /api/v1/quant/models/rollback albo "
                 "python -m masterquo quant rollback --instrument <I> --task <task_hash>.",
+    F.VERSION4: "PMW-QUANT-FEAT-4: jak FEAT-3 (reżim w kandydacie SH koordynatora z oceną bez reżimu – HOLD, gdy wstrzymuje którakolwiek; "
+                "Kalman *_CANDIDATE = 0, DXY STALE = maska), a reżim w słowniku swojego źródła: ctx:regime_sh=<stan> (SH RegimeMachine v2: "
+                "TREND_UP/TREND_DOWN/RANGE/TRANSITION) i ctx:regime_active=<stan> (ACTIVE MarketRegimeEngine) + ctx:regime_<źródło>:"
+                "trend_aligned; stan nieznany / DATA_UNAVAILABLE / STALE = brak cechy (maska). FEAT-3 kodował trend jako same zera "
+                "(ctx:regime=*). Względem dotychczasowego artefaktu to inny model na innych cechach: zbiór HOLD w ASSIST zmienia się w obie "
+                "strony. Cofnięcie: POST /api/v1/quant/models/rollback albo python -m masterquo quant rollback --instrument <I> "
+                "--task <task_hash>.",
 }
 
 
 def feature_semantics(inst: str, task_hash: str, ver: str) -> dict:
     """1.46: which feature semantics an artifact gets when served (for the activation answer of the API / CLI): FEAT-1 = the pre-1.46
-    input, FEAT-3 = the fixed meaning (D4 regime in the SH coordinator candidate - tightening only, D8, D9)."""
+    input, FEAT-3 = the fixed meaning (D4 regime in the SH coordinator candidate - tightening only, D8, D9), FEAT-4 = FEAT-3 with the
+    regime in the vocabulary of its source (I0561 / I0566)."""
     model, _ = load(inst, task_hash, ver)
     fv = F.version_of(model.get("feature_schema"))
     return {"feature_version": fv, "feature_schema": model.get("feature_schema"), "note": SEMANTICS_NOTE.get(fv)}
