@@ -199,8 +199,12 @@ class ActiveEngine:
                  "invalidation_level": rec.get("invalidation_level"), "missing_confirmations": rec.get("missing_confirmations"),
                  "entry_plan": rec.get("entry_plan"), "event_id": rec.get("event_id"), "synthetic": rec.get("synthetic")}
         levels = levels_for(rec)
+        # 1.46 arch (I0749): the selected setup in a LONG/SHORT conflict of its horizon is SUSPENDED - an extra block only (decision
+        # node PERMISSION FAIL, no order); the setup, the AI gate and every other input of the decision stay what they were
+        sus = self.selector.suspended
+        hold = sus["code"] if sus and sus.get("setup_id") == r["setup_id"] else None
         return setup, levels, {"regime": reg, "bias": rec["direction"], "trade_allowed": trade_allowed(cfg, rec["strategy_id"]),
-                               "reason_codes": st.get("reason_codes")}
+                               "reason_codes": st.get("reason_codes"), "selection_suspended": hold}
 
     def hypothetical_entry(self) -> float | None:
         r = self.selected_row()
@@ -226,6 +230,7 @@ class ActiveEngine:
                "regime": st.get("regime"), "selected_strategy_id": (sel or {}).get("strategy_id"),
                "selected_strategy_version": (sel or {}).get("strategy_version"), "selected": public(sel_row),
                "selection_reason_codes": st.get("reason_codes"), "candidate_ranking": st.get("candidate_ranking") or [],
+               "selection_suspended": st.get("suspended"),       # 1.46 arch (I0749): added field - the selection blocked by a conflict
                "alternative": st.get("alternative"), "selected_at": st.get("selected_at"), "last_evaluated_at": st.get("last_evaluated_at"),
                "snapshot_id": st.get("snapshot_id"), "data_status": self.data_status, "last_change": st.get("last_change"),
                "manual_fit": st.get("manual_fit"), "scan_ms": self.last_scan_ms, "scans": self.scans,

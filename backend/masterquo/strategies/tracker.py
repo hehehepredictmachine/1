@@ -9,7 +9,8 @@
   for TOUCH rules), expiry (time/bars), MISSED_ENTRY after the confirmed window, data STALE (flag,
   no new setups while stale), strategy disabled.
 * a setup no longer reported by its strategy for `cancel_after_misses` new-data updates is CANCELLED
-  (kept in history - publications are never deleted).
+  (kept in history - publications are never deleted). A soft-cancelled setup (also RESTART_REVALIDATION) may come back as a new
+  version only inside the window it had: its expires_at never moves later; after that window it ends EXPIRED / MISSED_ENTRY.
 """
 from __future__ import annotations
 
@@ -55,6 +56,9 @@ class SetupTracker:
     def _save(self, r: dict) -> None:
         # 1.46: strategy_version / config_hash / event_id follow record_json on update (were frozen at the first write - the playbook
         # report showed a strategy version different from the plan after a reactivation or a parameter change)
+        # 1.46 arch (I0751, patch 649be2f): a final status that is never republished (ENTERED / INVALIDATED / EXPIRED / MISSED_ENTRY) is not
+        # overwritten by a stale copy - the scan thread writes rows read at its start, so an ENTERED set meanwhile by the execution (API
+        # thread) went back to ACTIVE and the setup could be selected and executed again. CANCELLED (soft stop) is still reactivated.
         rec = r["record"]
         self.db.execute("""INSERT INTO strategy_setups(setup_id, account_key, symbol, strategy_id, strategy_version, config_hash, direction, timeframe,
                            structure_key, event_id, stage, status, version, score, first_seen_at, first_price, updated_at, stage_changed_at, data_updates,
@@ -64,7 +68,8 @@ class SetupTracker:
                            strategy_version=excluded.strategy_version, config_hash=excluded.config_hash, event_id=excluded.event_id,
                            updated_at=excluded.updated_at, stage_changed_at=excluded.stage_changed_at, data_updates=excluded.data_updates,
                            expires_at=excluded.expires_at, terminal_reason=excluded.terminal_reason, terminal_at=excluded.terminal_at, stale=excluded.stale,
-                           record_json=excluded.record_json, history_json=excluded.history_json""",
+                           record_json=excluded.record_json, history_json=excluded.history_json
+                           WHERE strategy_setups.status NOT IN ('ENTERED', 'INVALIDATED', 'EXPIRED', 'MISSED_ENTRY')""",
                         (r["setup_id"], r["account_key"], r["symbol"], rec["strategy_id"], rec["strategy_version"], rec["config_hash"], rec["direction"],
                          rec["timeframe"], rec["structure_key"], rec["event_id"], r["stage"], r["status"], r["version"], rec["setup_score"],
                          r["first_seen_at"], r["first_price"], r["updated_at"], r["stage_changed_at"], r["data_updates"], r["expires_at"],
@@ -108,9 +113,27 @@ class SetupTracker:
                     # a structure that only faded (soft cancel) may come back as a new version;
                     # invalidated/expired/entered structures are never republished
                     if old["status"] == "CANCELLED" and old.get("terminal_reason") in ("CONDITIONS_NO_LONGER_MET", "RESTART_REVALIDATION"):
+                        # 1.46 arch (I0750): the window of a reactivated setup never exceeds the one it had - a restart
+                        # (RESTART_REVALIDATION) or returning conditions gave a FULL new TTL from expires_bars (also for CONFIRMED,
+                        # created with confirmed_window_bars) and revived setups whose window had already elapsed
+                        old_exp = self._expiry(old)
+                        if old_exp is not None and old_exp <= now:
+                            st = "MISSED_ENTRY" if old["stage"] == "CONFIRMED" else "EXPIRED"
+                            old.update(status=st, terminal_reason="TTL_ELAPSED_BEFORE_REACTIVATION", terminal_at=now_s, updated_at=now_s)
+                            old["history"].append({"at": now_s, "event": st, "reason": "TTL_ELAPSED_BEFORE_REACTIVATION"})
+                            self._save(old)
+                            # the terminal transition is reported like the hard checks below (funnel, log, listeners); the row is not
+                            # ACTIVE, so no listener can act on it as a live setup (signals / evaluation / ML take *_CONFIRMED kinds only)
+                            events.append((st, old))
+                            continue
+                        n_bars = max(1, c["expires_bars"])
+                        if c["stage"] == "CONFIRMED":
+                            n_bars = min(n_bars, cfg.confirmed_window_bars)
+                        exp = now + timedelta(seconds=TF_SECONDS[c["timeframe"]] * n_bars)
+                        if old_exp is not None:
+                            exp = min(exp, old_exp)
                         old.update(status="ACTIVE", terminal_reason=None, terminal_at=None, version=old["version"] + 1, updated_at=now_s,
-                                   stage=c["stage"], stage_changed_at=now_s, stale=0,
-                                   expires_at=iso(now + timedelta(seconds=TF_SECONDS[c["timeframe"]] * max(1, c["expires_bars"]))))
+                                   stage=c["stage"], stage_changed_at=now_s, stale=0, expires_at=iso(exp))
                         old["record"] = {**c, "pending_downgrade": 0, "misses": 0}
                         old["history"].append({"at": now_s, "event": "REACTIVATED", "stage": c["stage"], "score": c["setup_score"]})
                         self._save(old)
@@ -128,6 +151,14 @@ class SetupTracker:
                 events.append(("NEW_" + c["stage"], r))
                 continue
             rec = r["record"]
+            # 1.46 arch (I0752): a new invalidation level / rule replaces the published one only if the published one still holds - the
+            # record was overwritten first and the hard checks below compared the closes with the NEW level, so a close beyond the level
+            # in force was forgiven when the same scan moved the level further away. Only adds invalidations (same level -> as before).
+            if (rec.get("invalidation_level"), rec.get("invalidation_rule")) != (c.get("invalidation_level"), c.get("invalidation_rule")):
+                why = self._invalidation(r, view)
+                if why:
+                    events.append(("INVALIDATED", self.terminate(sid, "INVALIDATED", why, now_s)))
+                    continue
             changed = False
             if r["stale"]:
                 r["stale"] = 0
@@ -189,13 +220,22 @@ class SetupTracker:
         return events
 
     @staticmethod
+    def _expiry(r: dict) -> datetime | None:
+        try:
+            return parse_iso(r["expires_at"]) if r.get("expires_at") else None
+        except (TypeError, ValueError):
+            return None
+
+    @staticmethod
     def _plan_moved(old: dict, new: dict) -> bool:
         def moved(a, b):
             return a is not None and b is not None and abs(a - b) > max(abs(a), 1.0) * 0.0015
         return moved(old.get("stop_loss"), new.get("stop_loss")) or moved(old.get("invalidation_level"), new.get("invalidation_level"))
 
     @staticmethod
-    def _hard_check(r: dict, view, now: datetime) -> tuple[str, str] | None:
+    def _invalidation(r: dict, view) -> str | None:
+        """Reason code when the row's CURRENT record level is violated: a closed setup-TF bar since first detection beyond the level, or
+        (TOUCH rule) the quote beyond it; None otherwise."""
         rec = r["record"]
         lvl = rec.get("invalidation_level")
         d = rec["direction"]
@@ -208,10 +248,17 @@ class SetupTracker:
                 if close_time <= since:
                     break
                 if (d == "LONG" and v.c[k] < lvl) or (d == "SHORT" and v.c[k] > lvl):
-                    return "INVALIDATED", f"CLOSE_BEYOND_{round(lvl, 3)}"
+                    return f"CLOSE_BEYOND_{round(lvl, 3)}"
             if rec.get("invalidation_rule") == "TOUCH" and view.bid is not None:
                 if (d == "LONG" and view.bid < lvl) or (d == "SHORT" and view.ask > lvl):
-                    return "INVALIDATED", f"TOUCH_{round(lvl, 3)}"
+                    return f"TOUCH_{round(lvl, 3)}"
+        return None
+
+    @staticmethod
+    def _hard_check(r: dict, view, now: datetime) -> tuple[str, str] | None:
+        why = SetupTracker._invalidation(r, view)
+        if why:
+            return "INVALIDATED", why
         if r.get("expires_at") and parse_iso(r["expires_at"]) <= now:
             return ("MISSED_ENTRY", "CONFIRMED_WINDOW_ELAPSED") if r["stage"] == "CONFIRMED" else ("EXPIRED", "TTL_ELAPSED")
         return None
