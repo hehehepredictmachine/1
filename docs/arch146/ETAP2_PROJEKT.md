@@ -93,6 +93,11 @@ backend/masterquo/
     │                           deals_coverage_from_utc (importują je testy)
     └── **routes/**             <domena>.py z register(app, rt, ctx) – wzorzec już użyty w wf32_routes/export_routes/owner_routes;
                                 ścieżki, metody, nazwy handlerów i kody błędów bez zmian (test: zbiór METHOD+PATH przed == po)
+                                (Etap 4 krok B: 35 modułów, 47 bloków `register(app, ctx)` w `routes.REGISTRATION` w kolejności
+                                create_app sprzed podziału; `ctx` = rt, sec, port + pomocniki / handlery wołane po nazwie, pod tymi
+                                samymi nazwami lokalnymi; `routes/_shared.py` – 3 pomocniki używane przed swoim blokiem; modele
+                                Pydantic w `api/schemas.py`; api.app re-eksportuje stare nazwy; w app.py zostają Guard, lifespan,
+                                strona / sesja; dowód: tests/test_arch146_e4_api_split.py – migawka bazy 7ba7ab0)
 ```
 
 ### 3a. Mapa warstw i strażnik importów leniwych (I0084)
