@@ -6,11 +6,11 @@
 |---|---|
 | Rodzaj | PRETRAINED_ADAPTER (trening w Centrum MM (mm/event_engine)) |
 | Zadanie | EVENT_UNITS_DIR3 – typ PMW-PRED-2 `CLASS_PROBABILITIES`, jednostka `probability` |
-| Interwał / horyzonty | EVENT / 1 |
+| Interwał / horyzonty | EVENT / 2 jednostki zdarzeń (16 zdarzeń/jednostka) |
 | Środowisko | MAIN (bez dodatkowych bibliotek) |
 | Dane | EVENTS, EVENT_UNITS_V1, jednostki zdarzeń (inne niż świece) – wagi niezamienne z SEQ_GRU |
 | Odbiorcy | PANEL:model_status, MM_BOARD:evidence |
-| Role | OFF = nie liczy; SHADOW = liczy i zapisuje, rola OBSERVE (bez wpływu); ASSIST = tylko po walidacji APPROVED na danych REAL – może wyłącznie wstrzymać wejście (SH: READY→WAIT, ACTIVE: węzeł MODELS); REQUIRED = `config.decision.required_models` – brak / nieświeża / przeciwna prognoza blokuje nowe wejście. Żadna rola nie tworzy wejścia ani nie podnosi WAIT. |
+| Role | OFF = nie liczy; SHADOW = liczy i zapisuje, rola OBSERVE (bez wpływu); ASSIST = niedostępna – typ wyniku `CLASS_PROBABILITIES` nie ma odbiorcy roli ASSIST (odmowa ASSIST_NO_RECEIVER); wynik działa tylko jako obserwacja; REQUIRED = `config.decision.required_models` – brak / nieświeża / przeciwna prognoza blokuje nowe wejście. Żadna rola nie tworzy wejścia ani nie podnosi WAIT. |
 
 ## Walidacja
 

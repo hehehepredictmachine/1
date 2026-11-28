@@ -9,8 +9,9 @@
 | Interwał / horyzonty | M5 / 1, 6, 12 |
 | Środowisko | MAIN (arch, scipy) |
 | Dane | BARS, M5, ≥ 1000 świec |
-| Odbiorcy | RISK:volatility_scenario, SH_CONTEXT:volatility, PANEL:model_status |
-| Role | OFF = nie liczy; SHADOW = liczy i zapisuje, rola OBSERVE (bez wpływu); ASSIST = tylko po walidacji APPROVED na danych REAL – może wyłącznie wstrzymać wejście (SH: READY→WAIT, ACTIVE: węzeł MODELS); REQUIRED = `config.decision.required_models` – brak / nieświeża / przeciwna prognoza blokuje nowe wejście. Żadna rola nie tworzy wejścia ani nie podnosi WAIT. |
+| Odbiorcy | SH_CONTEXT:volatility, PANEL:model_status |
+| Odbiorcy planowani | RISK:volatility_scenario – niepodłączeni w 1.46 (brak odbiorcy w kodzie) |
+| Role | OFF = nie liczy; SHADOW = liczy i zapisuje, rola OBSERVE (bez wpływu); ASSIST = tylko po walidacji APPROVED na danych REAL – dodaje scenariusz zmienności do widoku ryzyka setupu SH (informacja; limity bez zmian), nie wstrzymuje wejść; REQUIRED = `config.decision.required_models` – brak / nieświeża / przeciwna prognoza blokuje nowe wejście. Żadna rola nie tworzy wejścia ani nie podnosi WAIT. |
 
 ## Walidacja
 

@@ -9,8 +9,9 @@
 | Interwał / horyzonty | M5 / 1 |
 | Środowisko | MAIN (bez dodatkowych bibliotek) |
 | Dane | BARS, M5, ≥ 1500 świec |
-| Odbiorcy | SH_CONTEXT:breakout_state, STRATEGY:S05/S12 BREAKOUT_RETEST context, PANEL:model_status |
-| Role | OFF = nie liczy; SHADOW = liczy i zapisuje, rola OBSERVE (bez wpływu); ASSIST = tylko po walidacji APPROVED na danych REAL – może wyłącznie wstrzymać wejście (SH: READY→WAIT, ACTIVE: węzeł MODELS); REQUIRED = `config.decision.required_models` – brak / nieświeża / przeciwna prognoza blokuje nowe wejście. Żadna rola nie tworzy wejścia ani nie podnosi WAIT. |
+| Odbiorcy | SH_CONTEXT:breakout_state, PANEL:model_status |
+| Odbiorcy planowani | STRATEGY:S05/S12 BREAKOUT_RETEST context – niepodłączeni w 1.46 (brak odbiorcy w kodzie) |
+| Role | OFF = nie liczy; SHADOW = liczy i zapisuje, rola OBSERVE (bez wpływu); ASSIST = niedostępna – typ wyniku `FILTER_STATE` nie ma odbiorcy roli ASSIST (odmowa ASSIST_NO_RECEIVER); wynik działa tylko jako obserwacja; REQUIRED = `config.decision.required_models` – brak / nieświeża / przeciwna prognoza blokuje nowe wejście. Żadna rola nie tworzy wejścia ani nie podnosi WAIT. |
 
 ## Walidacja
 

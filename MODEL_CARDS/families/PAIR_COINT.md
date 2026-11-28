@@ -9,8 +9,9 @@
 | Interwał / horyzonty | H1 / 1 |
 | Środowisko | MAIN (statsmodels) |
 | Dane | MULTI_SERIES, H1, ≥ 500 świec |
-| Odbiorcy | PANEL:pair_relation, AGENT:context, PORTFOLIO:basket_proposal (via risk/gateway) |
-| Role | OFF = nie liczy; SHADOW = liczy i zapisuje, rola OBSERVE (bez wpływu); ASSIST = tylko po walidacji APPROVED na danych REAL – może wyłącznie wstrzymać wejście (SH: READY→WAIT, ACTIVE: węzeł MODELS); REQUIRED = `config.decision.required_models` – brak / nieświeża / przeciwna prognoza blokuje nowe wejście. Żadna rola nie tworzy wejścia ani nie podnosi WAIT. |
+| Odbiorcy | PANEL:pair_relation |
+| Odbiorcy planowani | AGENT:context, PORTFOLIO:basket_proposal (via risk/gateway) – niepodłączeni w 1.46 (brak odbiorcy w kodzie) |
+| Role | OFF = nie liczy; SHADOW = liczy i zapisuje, rola OBSERVE (bez wpływu); ASSIST = niedostępna – typ wyniku `PAIR_RELATION` nie ma odbiorcy roli ASSIST (odmowa ASSIST_NO_RECEIVER); wynik działa tylko jako obserwacja; REQUIRED = `config.decision.required_models` – brak / nieświeża / przeciwna prognoza blokuje nowe wejście. Żadna rola nie tworzy wejścia ani nie podnosi WAIT. |
 
 ## Walidacja
 

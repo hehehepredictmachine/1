@@ -9,8 +9,9 @@
 | Interwał / horyzonty | H1 / 1, 3, 5 |
 | Środowisko | MAIN (statsmodels, pandas, scipy) |
 | Dane | BARS, H1, ≥ 600 świec, kalendarz sesji (znany z góry) |
-| Odbiorcy | SH_CONTEXT:expected_move_h1, PANEL:model_status, AGENT:context |
-| Role | OFF = nie liczy; SHADOW = liczy i zapisuje, rola OBSERVE (bez wpływu); ASSIST = tylko po walidacji APPROVED na danych REAL – może wyłącznie wstrzymać wejście (SH: READY→WAIT, ACTIVE: węzeł MODELS); REQUIRED = `config.decision.required_models` – brak / nieświeża / przeciwna prognoza blokuje nowe wejście. Żadna rola nie tworzy wejścia ani nie podnosi WAIT. |
+| Odbiorcy | SH_CONTEXT:expected_move_h1, DECISION:coordinator (REQUIRED / ASSIST – kierunek UP/FLAT/DOWN), PANEL:model_status |
+| Odbiorcy planowani | AGENT:context – niepodłączeni w 1.46 (brak odbiorcy w kodzie) |
+| Role | OFF = nie liczy; SHADOW = liczy i zapisuje, rola OBSERVE (bez wpływu); ASSIST = niedostępna – typ wyniku `REGRESSION` nie ma odbiorcy roli ASSIST (odmowa ASSIST_NO_RECEIVER); wynik działa tylko jako obserwacja; REQUIRED = `config.decision.required_models` – brak / nieświeża / przeciwna prognoza blokuje nowe wejście. Żadna rola nie tworzy wejścia ani nie podnosi WAIT. |
 
 ## Walidacja
 

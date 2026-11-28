@@ -451,7 +451,7 @@
       "base_tf": "NONE",
       "horizon": null,
       "side": null,
-      "category": "TRAINABLE",
+      "category": "MEASUREMENT",
       "adapter": "FAMILY",
       "sources": [
         {
@@ -509,17 +509,10 @@
         "export": "CHUNK_CHECKPOINT",
         "training": "RESTART_FROM_DATASET"
       },
-      "state": "SUPPORTED",
-      "reason": null,
+      "state": "NOT_IMPLEMENTED",
+      "reason": "Studio nie eksportuje serii pary / koszyka – trenuj w bocie (Centrum modeli)",
       "transfer": "FAMILY_STORE",
-      "operations": [
-        "FULL_EXPORT",
-        "VALIDATE",
-        "BUILD_DATASET",
-        "TRAIN",
-        "FULL_PROCESS",
-        "TRANSFER"
-      ]
+      "operations": []
     },
     {
       "task_key": "STATARB:XAUUSD:H1:H1:4bee3d3944a355b9",
@@ -549,17 +542,10 @@
         "export": "CHUNK_CHECKPOINT",
         "training": "RESTART_FROM_DATASET"
       },
-      "state": "SUPPORTED",
-      "reason": null,
+      "state": "NOT_IMPLEMENTED",
+      "reason": "Studio nie eksportuje serii pary / koszyka – trenuj w bocie (Centrum modeli)",
       "transfer": "FAMILY_STORE",
-      "operations": [
-        "FULL_EXPORT",
-        "VALIDATE",
-        "BUILD_DATASET",
-        "TRAIN",
-        "FULL_PROCESS",
-        "TRANSFER"
-      ]
+      "operations": []
     },
     {
       "task_key": "KALMAN_LS:XAUUSD:M5:H1:0ab4571200280f3a",
@@ -666,8 +652,8 @@
         "export": "CHUNK_CHECKPOINT",
         "training": "RESTART_FROM_DATASET"
       },
-      "state": "SUPPORTED",
-      "reason": null,
+      "state": "BLOCKED_DEPENDENCY",
+      "reason": "brak środowiska .venv_deep (instalacja: 34_DEEP_INSTALUJ.bat)",
       "transfer": "FAMILY_STORE",
       "operations": [
         "FULL_EXPORT",
@@ -705,8 +691,8 @@
         "export": "CHUNK_CHECKPOINT",
         "training": "RESTART_FROM_DATASET"
       },
-      "state": "SUPPORTED",
-      "reason": null,
+      "state": "BLOCKED_DEPENDENCY",
+      "reason": "brak środowiska .venv_deep (instalacja: 34_DEEP_INSTALUJ.bat)",
       "transfer": "FAMILY_STORE",
       "operations": [
         "FULL_EXPORT",
@@ -744,8 +730,8 @@
         "export": "CHUNK_CHECKPOINT",
         "training": "RESTART_FROM_DATASET"
       },
-      "state": "SUPPORTED",
-      "reason": null,
+      "state": "BLOCKED_DEPENDENCY",
+      "reason": "brak środowiska .venv_deep (instalacja: 34_DEEP_INSTALUJ.bat)",
       "transfer": "FAMILY_STORE",
       "operations": [
         "FULL_EXPORT",
@@ -796,13 +782,13 @@
       ]
     },
     {
-      "task_key": "SEQ_GRU_EVENT:XAUUSD:EVENT:H1:5a3b0af189c72e74",
+      "task_key": "SEQ_GRU_EVENT:XAUUSD:EVENT:H2:ea7787753abdc99d",
       "model_id": "SEQ_GRU_EVENT",
       "task_id": "EVENT_UNITS_DIR3",
       "instrument": "XAUUSD",
       "broker_symbol": null,
       "base_tf": "EVENT",
-      "horizon": 1,
+      "horizon": 2,
       "side": null,
       "category": "EXTERNAL",
       "adapter": "FAMILY",
@@ -885,23 +871,13 @@
           "kind": "BARS_RUNNER_EXPORT",
           "tf": "M1",
           "mandatory": true
-        },
-        {
-          "kind": "BARS_RUNNER_EXPORT",
-          "tf": "M15",
-          "mandatory": true
-        },
-        {
-          "kind": "BARS_RUNNER_EXPORT",
-          "tf": "H1",
-          "mandatory": true
         }
       ],
       "feature_schema_version": "runner:scalp_A",
       "label_schema_version": "runner:scalp_A",
       "trainer": "training.runner STEPS['scalp_A'] (jawny dataset, bez aktywacji)",
       "loader": "rejestr zadania (runner)",
-      "env": ".venv",
+      "env": ".venv_candles",
       "resume": {
         "export": "RUNNER_EXPORT",
         "training": "RESTART_FROM_DATASET"
@@ -936,12 +912,27 @@
         },
         {
           "kind": "BARS_RUNNER_EXPORT",
+          "tf": "M1",
+          "mandatory": true
+        },
+        {
+          "kind": "BARS_RUNNER_EXPORT",
           "tf": "M15",
           "mandatory": true
         },
         {
           "kind": "BARS_RUNNER_EXPORT",
           "tf": "H1",
+          "mandatory": true
+        },
+        {
+          "kind": "BARS_RUNNER_EXPORT",
+          "tf": "H4",
+          "mandatory": true
+        },
+        {
+          "kind": "BARS_RUNNER_EXPORT",
+          "tf": "D1",
           "mandatory": true
         }
       ],
@@ -1029,6 +1020,11 @@
           "kind": "BARS_RUNNER_EXPORT",
           "tf": "M5",
           "mandatory": true
+        },
+        {
+          "kind": "BARS_RUNNER_EXPORT",
+          "tf": "M15",
+          "mandatory": true
         }
       ],
       "feature_schema_version": "runner:indicator_context",
@@ -1066,11 +1062,6 @@
         {
           "kind": "BARS_RUNNER_EXPORT",
           "tf": "M1",
-          "mandatory": true
-        },
-        {
-          "kind": "BARS_RUNNER_EXPORT",
-          "tf": "M5",
           "mandatory": true
         }
       ],
@@ -1114,6 +1105,16 @@
         {
           "kind": "BARS_RUNNER_EXPORT",
           "tf": "M5",
+          "mandatory": true
+        },
+        {
+          "kind": "BARS_RUNNER_EXPORT",
+          "tf": "M15",
+          "mandatory": true
+        },
+        {
+          "kind": "BARS_RUNNER_EXPORT",
+          "tf": "H1",
           "mandatory": true
         }
       ],
@@ -1163,6 +1164,11 @@
           "kind": "BARS_RUNNER_EXPORT",
           "tf": "M15",
           "mandatory": true
+        },
+        {
+          "kind": "BARS_RUNNER_EXPORT",
+          "tf": "H1",
+          "mandatory": true
         }
       ],
       "feature_schema_version": "runner:structure_intelligence",
@@ -1200,11 +1206,6 @@
         {
           "kind": "BARS_RUNNER_EXPORT",
           "tf": "M1",
-          "mandatory": true
-        },
-        {
-          "kind": "BARS_RUNNER_EXPORT",
-          "tf": "M5",
           "mandatory": true
         }
       ],
@@ -1320,6 +1321,64 @@
       ]
     },
     {
+      "task_key": "RUNNER:sh_pack:XAUUSD:M1:HNone:34e1f027e3604075",
+      "model_id": "RUNNER:sh_pack",
+      "task_id": "sh_pack",
+      "instrument": "XAUUSD",
+      "broker_symbol": null,
+      "base_tf": "M1",
+      "horizon": null,
+      "side": null,
+      "category": "SIMULATION",
+      "adapter": "RUNNER_GROUP",
+      "sources": [
+        {
+          "kind": "BARS_RUNNER_EXPORT",
+          "tf": "M1",
+          "mandatory": true
+        },
+        {
+          "kind": "BARS_RUNNER_EXPORT",
+          "tf": "M3",
+          "mandatory": true
+        },
+        {
+          "kind": "BARS_RUNNER_EXPORT",
+          "tf": "M5",
+          "mandatory": true
+        },
+        {
+          "kind": "BARS_RUNNER_EXPORT",
+          "tf": "M15",
+          "mandatory": true
+        },
+        {
+          "kind": "BARS_RUNNER_EXPORT",
+          "tf": "H1",
+          "mandatory": true
+        }
+      ],
+      "feature_schema_version": "runner:sh_pack",
+      "label_schema_version": "runner:sh_pack",
+      "trainer": "training.runner STEPS['sh_pack'] (jawny dataset, bez aktywacji)",
+      "loader": "rejestr zadania (runner)",
+      "env": ".venv",
+      "resume": {
+        "export": "RUNNER_EXPORT",
+        "training": "RESTART_FROM_DATASET"
+      },
+      "state": "SUPPORTED",
+      "reason": null,
+      "transfer": "MANUAL_ACTIVATION_IN_BOT",
+      "operations": [
+        "FULL_EXPORT",
+        "VALIDATE",
+        "BUILD_DATASET",
+        "CALIBRATE",
+        "FULL_PROCESS"
+      ]
+    },
+    {
       "task_key": "RUNNER:monte_carlo:XAUUSD:M1:HNone:7f068b1ce35d9f84",
       "model_id": "RUNNER:monte_carlo",
       "task_id": "monte_carlo",
@@ -1339,6 +1398,11 @@
         {
           "kind": "BARS_RUNNER_EXPORT",
           "tf": "M5",
+          "mandatory": true
+        },
+        {
+          "kind": "BARS_RUNNER_EXPORT",
+          "tf": "M15",
           "mandatory": true
         }
       ],
@@ -1377,6 +1441,21 @@
         {
           "kind": "BARS_RUNNER_EXPORT",
           "tf": "M5",
+          "mandatory": true
+        },
+        {
+          "kind": "BARS_RUNNER_EXPORT",
+          "tf": "M1",
+          "mandatory": true
+        },
+        {
+          "kind": "BARS_RUNNER_EXPORT",
+          "tf": "M15",
+          "mandatory": true
+        },
+        {
+          "kind": "BARS_RUNNER_EXPORT",
+          "tf": "M30",
           "mandatory": true
         }
       ],
@@ -1504,14 +1583,10 @@
         "export": "CHUNK_CHECKPOINT",
         "training": "NOT_APPLICABLE"
       },
-      "state": "SUPPORTED",
-      "reason": null,
+      "state": "NOT_IMPLEMENTED",
+      "reason": "Studio nie eksportuje serii DXY – wskaźnik liczy bot",
       "transfer": null,
-      "operations": [
-        "FULL_EXPORT",
-        "VALIDATE",
-        "EXPORT_FEATURES"
-      ]
+      "operations": []
     },
     {
       "task_key": "KRONOS_SMALL:XAUUSD:M5:HNone:a16f8c8cc280395c",
@@ -1992,7 +2067,7 @@
       "base_tf": "NONE",
       "horizon": null,
       "side": null,
-      "category": "TRAINABLE",
+      "category": "MEASUREMENT",
       "adapter": "FAMILY",
       "sources": [
         {
@@ -2050,17 +2125,10 @@
         "export": "CHUNK_CHECKPOINT",
         "training": "RESTART_FROM_DATASET"
       },
-      "state": "SUPPORTED",
-      "reason": null,
+      "state": "NOT_IMPLEMENTED",
+      "reason": "Studio nie eksportuje serii pary / koszyka – trenuj w bocie (Centrum modeli)",
       "transfer": "FAMILY_STORE",
-      "operations": [
-        "FULL_EXPORT",
-        "VALIDATE",
-        "BUILD_DATASET",
-        "TRAIN",
-        "FULL_PROCESS",
-        "TRANSFER"
-      ]
+      "operations": []
     },
     {
       "task_key": "STATARB:BTC:H1:H1:0260acd266efaa8a",
@@ -2090,17 +2158,10 @@
         "export": "CHUNK_CHECKPOINT",
         "training": "RESTART_FROM_DATASET"
       },
-      "state": "SUPPORTED",
-      "reason": null,
+      "state": "NOT_IMPLEMENTED",
+      "reason": "Studio nie eksportuje serii pary / koszyka – trenuj w bocie (Centrum modeli)",
       "transfer": "FAMILY_STORE",
-      "operations": [
-        "FULL_EXPORT",
-        "VALIDATE",
-        "BUILD_DATASET",
-        "TRAIN",
-        "FULL_PROCESS",
-        "TRANSFER"
-      ]
+      "operations": []
     },
     {
       "task_key": "KALMAN_LS:BTC:M5:H1:54a0c7fa84c06880",
@@ -2207,8 +2268,8 @@
         "export": "CHUNK_CHECKPOINT",
         "training": "RESTART_FROM_DATASET"
       },
-      "state": "SUPPORTED",
-      "reason": null,
+      "state": "BLOCKED_DEPENDENCY",
+      "reason": "brak środowiska .venv_deep (instalacja: 34_DEEP_INSTALUJ.bat)",
       "transfer": "FAMILY_STORE",
       "operations": [
         "FULL_EXPORT",
@@ -2246,8 +2307,8 @@
         "export": "CHUNK_CHECKPOINT",
         "training": "RESTART_FROM_DATASET"
       },
-      "state": "SUPPORTED",
-      "reason": null,
+      "state": "BLOCKED_DEPENDENCY",
+      "reason": "brak środowiska .venv_deep (instalacja: 34_DEEP_INSTALUJ.bat)",
       "transfer": "FAMILY_STORE",
       "operations": [
         "FULL_EXPORT",
@@ -2285,8 +2346,8 @@
         "export": "CHUNK_CHECKPOINT",
         "training": "RESTART_FROM_DATASET"
       },
-      "state": "SUPPORTED",
-      "reason": null,
+      "state": "BLOCKED_DEPENDENCY",
+      "reason": "brak środowiska .venv_deep (instalacja: 34_DEEP_INSTALUJ.bat)",
       "transfer": "FAMILY_STORE",
       "operations": [
         "FULL_EXPORT",
@@ -2337,13 +2398,13 @@
       ]
     },
     {
-      "task_key": "SEQ_GRU_EVENT:BTC:EVENT:H1:d3b33efa4ab7e1c7",
+      "task_key": "SEQ_GRU_EVENT:BTC:EVENT:H2:8314b0c76c1e5f91",
       "model_id": "SEQ_GRU_EVENT",
       "task_id": "EVENT_UNITS_DIR3",
       "instrument": "BTC",
       "broker_symbol": null,
       "base_tf": "EVENT",
-      "horizon": 1,
+      "horizon": 2,
       "side": null,
       "category": "EXTERNAL",
       "adapter": "FAMILY",
@@ -2426,23 +2487,13 @@
           "kind": "BARS_RUNNER_EXPORT",
           "tf": "M1",
           "mandatory": true
-        },
-        {
-          "kind": "BARS_RUNNER_EXPORT",
-          "tf": "M15",
-          "mandatory": true
-        },
-        {
-          "kind": "BARS_RUNNER_EXPORT",
-          "tf": "H1",
-          "mandatory": true
         }
       ],
       "feature_schema_version": "runner:scalp_A",
       "label_schema_version": "runner:scalp_A",
       "trainer": "training.runner STEPS['scalp_A'] (jawny dataset, bez aktywacji)",
       "loader": "rejestr zadania (runner)",
-      "env": ".venv",
+      "env": ".venv_candles",
       "resume": {
         "export": "RUNNER_EXPORT",
         "training": "RESTART_FROM_DATASET"
@@ -2477,12 +2528,27 @@
         },
         {
           "kind": "BARS_RUNNER_EXPORT",
+          "tf": "M1",
+          "mandatory": true
+        },
+        {
+          "kind": "BARS_RUNNER_EXPORT",
           "tf": "M15",
           "mandatory": true
         },
         {
           "kind": "BARS_RUNNER_EXPORT",
           "tf": "H1",
+          "mandatory": true
+        },
+        {
+          "kind": "BARS_RUNNER_EXPORT",
+          "tf": "H4",
+          "mandatory": true
+        },
+        {
+          "kind": "BARS_RUNNER_EXPORT",
+          "tf": "D1",
           "mandatory": true
         }
       ],
@@ -2570,6 +2636,11 @@
           "kind": "BARS_RUNNER_EXPORT",
           "tf": "M5",
           "mandatory": true
+        },
+        {
+          "kind": "BARS_RUNNER_EXPORT",
+          "tf": "M15",
+          "mandatory": true
         }
       ],
       "feature_schema_version": "runner:indicator_context",
@@ -2607,11 +2678,6 @@
         {
           "kind": "BARS_RUNNER_EXPORT",
           "tf": "M1",
-          "mandatory": true
-        },
-        {
-          "kind": "BARS_RUNNER_EXPORT",
-          "tf": "M5",
           "mandatory": true
         }
       ],
@@ -2655,6 +2721,16 @@
         {
           "kind": "BARS_RUNNER_EXPORT",
           "tf": "M5",
+          "mandatory": true
+        },
+        {
+          "kind": "BARS_RUNNER_EXPORT",
+          "tf": "M15",
+          "mandatory": true
+        },
+        {
+          "kind": "BARS_RUNNER_EXPORT",
+          "tf": "H1",
           "mandatory": true
         }
       ],
@@ -2704,6 +2780,11 @@
           "kind": "BARS_RUNNER_EXPORT",
           "tf": "M15",
           "mandatory": true
+        },
+        {
+          "kind": "BARS_RUNNER_EXPORT",
+          "tf": "H1",
+          "mandatory": true
         }
       ],
       "feature_schema_version": "runner:structure_intelligence",
@@ -2741,11 +2822,6 @@
         {
           "kind": "BARS_RUNNER_EXPORT",
           "tf": "M1",
-          "mandatory": true
-        },
-        {
-          "kind": "BARS_RUNNER_EXPORT",
-          "tf": "M5",
           "mandatory": true
         }
       ],
@@ -2861,6 +2937,58 @@
       ]
     },
     {
+      "task_key": "RUNNER:sh_pack:BTC:M1:HNone:42719f07a0fab484",
+      "model_id": "RUNNER:sh_pack",
+      "task_id": "sh_pack",
+      "instrument": "BTC",
+      "broker_symbol": null,
+      "base_tf": "M1",
+      "horizon": null,
+      "side": null,
+      "category": "SIMULATION",
+      "adapter": "RUNNER_GROUP",
+      "sources": [
+        {
+          "kind": "BARS_RUNNER_EXPORT",
+          "tf": "M1",
+          "mandatory": true
+        },
+        {
+          "kind": "BARS_RUNNER_EXPORT",
+          "tf": "M3",
+          "mandatory": true
+        },
+        {
+          "kind": "BARS_RUNNER_EXPORT",
+          "tf": "M5",
+          "mandatory": true
+        },
+        {
+          "kind": "BARS_RUNNER_EXPORT",
+          "tf": "M15",
+          "mandatory": true
+        },
+        {
+          "kind": "BARS_RUNNER_EXPORT",
+          "tf": "H1",
+          "mandatory": true
+        }
+      ],
+      "feature_schema_version": "runner:sh_pack",
+      "label_schema_version": "runner:sh_pack",
+      "trainer": "training.runner STEPS['sh_pack'] (jawny dataset, bez aktywacji)",
+      "loader": "rejestr zadania (runner)",
+      "env": ".venv",
+      "resume": {
+        "export": "RUNNER_EXPORT",
+        "training": "RESTART_FROM_DATASET"
+      },
+      "state": "NOT_IMPLEMENTED",
+      "reason": "nie dotyczy instrumentu BTC: pakiet 20 strategii jest zdefiniowany dla XAUUSD (definicja pipsa PMW_XAU_PRICE_0_10_V1)",
+      "transfer": "MANUAL_ACTIVATION_IN_BOT",
+      "operations": []
+    },
+    {
       "task_key": "RUNNER:monte_carlo:BTC:M1:HNone:6b75f1c23c856b8e",
       "model_id": "RUNNER:monte_carlo",
       "task_id": "monte_carlo",
@@ -2880,6 +3008,11 @@
         {
           "kind": "BARS_RUNNER_EXPORT",
           "tf": "M5",
+          "mandatory": true
+        },
+        {
+          "kind": "BARS_RUNNER_EXPORT",
+          "tf": "M15",
           "mandatory": true
         }
       ],
@@ -2918,6 +3051,21 @@
         {
           "kind": "BARS_RUNNER_EXPORT",
           "tf": "M5",
+          "mandatory": true
+        },
+        {
+          "kind": "BARS_RUNNER_EXPORT",
+          "tf": "M1",
+          "mandatory": true
+        },
+        {
+          "kind": "BARS_RUNNER_EXPORT",
+          "tf": "M15",
+          "mandatory": true
+        },
+        {
+          "kind": "BARS_RUNNER_EXPORT",
+          "tf": "M30",
           "mandatory": true
         }
       ],
@@ -3045,14 +3193,10 @@
         "export": "CHUNK_CHECKPOINT",
         "training": "NOT_APPLICABLE"
       },
-      "state": "SUPPORTED",
-      "reason": null,
+      "state": "NOT_IMPLEMENTED",
+      "reason": "Studio nie eksportuje serii DXY – wskaźnik liczy bot",
       "transfer": null,
-      "operations": [
-        "FULL_EXPORT",
-        "VALIDATE",
-        "EXPORT_FEATURES"
-      ]
+      "operations": []
     },
     {
       "task_key": "KRONOS_SMALL:BTC:M5:HNone:3d61aa01889835c5",
@@ -3084,6 +3228,6 @@
       "operations": []
     }
   ],
-  "count": 72,
+  "count": 74,
   "note": "jeden wiersz = jedno zadanie = jeden eksport = jedna paczka; grupy runnera to istniejące zadania z własnymi rejestrami"
 }

@@ -1,6 +1,6 @@
 {
  "version": "PMW-QUANT-INV-1",
- "generated_at": "2026-11-24T10:29:06+00:00",
+ "generated_at": "2026-11-28T11:22:04+00:00",
  "instrument": "XAUUSD",
  "runtime": "OFFLINE (bez działającego bota – stany reguł i usług NOT_EVALUATED)",
  "entries": [
@@ -12,6 +12,9 @@
    "name": "Jakość i świeżość danych (bridge, zegar, spread)",
    "category": "RULE_OR_MEASUREMENT",
    "files": [
+    "backend/masterquo/sh/context.py",
+    "backend/masterquo/data/quality.py",
+    "backend/masterquo/quant/snapshot.py",
     "backend/masterquo/mt5/bridge.py"
    ],
    "input": null,
@@ -47,6 +50,7 @@
     "sh.models.REGISTRY"
    ],
    "notes": null,
+   "feature_via": null,
    "live_output": "NOT_EVALUATED"
   },
   {
@@ -91,6 +95,7 @@
     "sh.models.REGISTRY"
    ],
    "notes": null,
+   "feature_via": null,
    "live_output": "NOT_EVALUATED"
   },
   {
@@ -134,6 +139,7 @@
     "sh.models.REGISTRY"
    ],
    "notes": null,
+   "feature_via": null,
    "live_output": "NOT_EVALUATED"
   },
   {
@@ -145,7 +151,7 @@
    "category": "RULE_OR_MEASUREMENT",
    "files": [],
    "input": null,
-   "output": "TREND/RANGE/TRANSITION/HIGH_VOL",
+   "output": "TREND_UP/TREND_DOWN/RANGE/TRANSITION (+ oś zmienności osobno)",
    "unit": "state",
    "task_type": "STATE",
    "task": null,
@@ -179,6 +185,7 @@
     "sh.models.REGISTRY"
    ],
    "notes": null,
+   "feature_via": "reżim kandydata (market_regime) -> ctx:regime=* (quant/features.context_features) – nie z rekordu STATE",
    "live_output": "NOT_EVALUATED"
   },
   {
@@ -216,14 +223,15 @@
    "receivers": [
     "SH:DIRECTION_STRUCTURE/DIRECTION_STRUCTURE"
    ],
-   "quant_role": "CONTEXT_FEATURE",
+   "quant_role": "CONTEXT_STATE",
    "adapter": "quant.adapters.extended",
    "not_applicable_reason": null,
    "variants": [],
    "source_registry": [
     "sh.models.REGISTRY"
    ],
-   "notes": null,
+   "notes": "rekord STATE w migawce Quant (panel / agent / REQUIRED); quant/features.py nie buduje z niego cech – struktura nie jest wejściem MetaModelu (nowa cecha = osobna decyzja z nową wersją schematu cech)",
+   "feature_via": null,
    "live_output": "NOT_EVALUATED"
   },
   {
@@ -255,16 +263,19 @@
    "state_reason": "liczone z bieżących świec – stan tylko przy działającym bocie",
    "validation": "NOT_APPLICABLE",
    "receivers": [
-    "SH:DIRECTION_STRUCTURE/DIRECTION_STRUCTURE"
+    "sh.setup (potwierdzenie odwrócenia: CHoCH M1 smc_last_m1)",
+    "sh.context.obstacles (aktywne poziomy SMC M5 jako przeszkody przed TP)",
+    "context_ind (panel)"
    ],
    "quant_role": "CONTEXT_FEATURE",
    "adapter": null,
-   "not_applicable_reason": "stan SMC w context_ind – brak stabilnego akcesora poza panelem; cecha strukturalna z structure_v2",
+   "not_applicable_reason": "akcesor istnieje: migawka SH sh.snapshot['ctx'] w każdym cyklu SH (smc_trend_m5, smc_high_m5 / smc_low_m5, pb_last_high_m5 / pb_last_low_m5, smc_trend_m1 / smc_last_m1); brak adaptera Quant – nie jest cechą MetaModelu (PMW-PRED-2)",
    "variants": [],
    "source_registry": [
     "sh.models.REGISTRY"
    ],
    "notes": null,
+   "feature_via": null,
    "live_output": "NOT_EVALUATED"
   },
   {
@@ -272,7 +283,7 @@
    "aliases": [
     "vamd"
    ],
-   "name": "VAMD momentum",
+   "name": "VAMD momentum – profil DEFAULT (stały dla SH; kalibracja context_ind dotyczy panelu/badań)",
    "category": "RULE_OR_MEASUREMENT",
    "files": [],
    "input": null,
@@ -296,16 +307,19 @@
    "state_reason": "liczone z bieżących świec – stan tylko przy działającym bocie",
    "validation": "NOT_APPLICABLE",
    "receivers": [
-    "SH:TIMING/TIMING"
+    "sh.setup (warunek potwierdzenia CONTINUATION: znak vamd_m5)",
+    "sh.tpmodel (cechy vamd_m5 / vamd_m1)",
+    "context_ind (panel)"
    ],
    "quant_role": "CONTEXT_FEATURE",
    "adapter": null,
-   "not_applicable_reason": "VAMD liczony per wykres w context_ind (panel); bez akcesora snapshotu – nie jest modelem „Quant Ultimate Momentum Pro”",
+   "not_applicable_reason": "VAMD liczony na żywo w migawce SH (sh.context: ctx.vamd_m5 / ctx.vamd_m1) i per wykres w context_ind (panel); bez adaptera Quant (PMW-PRED-2) – nie jest modelem „Quant Ultimate Momentum Pro”",
    "variants": [],
    "source_registry": [
     "sh.models.REGISTRY"
    ],
-   "notes": null,
+   "notes": "dwie parametryzacje: SH = profil DEFAULT (zamrożony, sh/context.py), panel/SI = skalibrowany profil context_ind (profile_hash w odpowiedzi; panel pokazuje obok wartości DEFAULT używane przez SH)",
+   "feature_via": null,
    "live_output": "NOT_EVALUATED"
   },
   {
@@ -313,7 +327,7 @@
    "aliases": [
     "fractal"
    ],
-   "name": "Bounded Katz FD (trend/chop bez kierunku)",
+   "name": "Bounded Katz FD (trend/chop bez kierunku) – profil DEFAULT (stały dla SH; kalibracja context_ind dotyczy panelu/badań)",
    "category": "RULE_OR_MEASUREMENT",
    "files": [],
    "input": null,
@@ -337,16 +351,19 @@
    "state_reason": "liczone z bieżących świec – stan tylko przy działającym bocie",
    "validation": "NOT_APPLICABLE",
    "receivers": [
-    "SH:REGIME/REGIME"
+    "sh.setup (warunek potwierdzenia CONTINUATION: fd_zone_m5 ≠ CHOP)",
+    "sh.tpmodel (cechy fd_trend / fd_chop z fd_zone_m5)",
+    "context_ind (panel)"
    ],
    "quant_role": "CONTEXT_FEATURE",
    "adapter": null,
-   "not_applicable_reason": "Katz FD liczony per wykres w context_ind; bez akcesora snapshotu",
+   "not_applicable_reason": "Katz FD liczony na żywo w migawce SH (sh.context: ctx.fd_zone_m5) i per wykres w context_ind; bez adaptera Quant (PMW-PRED-2)",
    "variants": [],
    "source_registry": [
     "sh.models.REGISTRY"
    ],
-   "notes": null,
+   "notes": "dwie parametryzacje: SH = profil DEFAULT (zamrożony, sh/context.py), panel/SI = skalibrowany profil context_ind (profile_hash w odpowiedzi; panel pokazuje obok wartości DEFAULT używane przez SH)",
+   "feature_via": null,
    "live_output": "NOT_EVALUATED"
   },
   {
@@ -354,7 +371,7 @@
    "aliases": [
     "atr_vol"
    ],
-   "name": "Zmienność ATR(14) M1/M5 + StopDistance",
+   "name": "Zmienność ATR(14) M1/M5 (sh/context, Wilder)",
    "category": "RULE_OR_MEASUREMENT",
    "files": [],
    "input": null,
@@ -391,6 +408,7 @@
     "sh.models.REGISTRY"
    ],
    "notes": null,
+   "feature_via": "ATR kandydata (features.atr_m5) -> ctx:risk_atr, fcp:*:d_atr / band_atr (quant/features.py) – nie z rekordu STATE",
    "live_output": "NOT_EVALUATED"
   },
   {
@@ -432,6 +450,7 @@
     "sh.models.REGISTRY"
    ],
    "notes": null,
+   "feature_via": null,
    "live_output": "NOT_EVALUATED"
   },
   {
@@ -467,12 +486,13 @@
    ],
    "quant_role": "CONTEXT_FEATURE",
    "adapter": null,
-   "not_applicable_reason": "poziomy płynności (strefy) – w mapie stref; cecha odległości dostępna przez quant.snapshot",
+   "not_applicable_reason": "poziomy płynności (boksy sesji / sweep – analytics.session_engine, heatmapa likwidacji – analytics.liquidation) w polityce OBSERVE analytics.liquidity_context (panel, kontekst silnika, agent); brak adaptera Quant i brak cechy MetaModelu",
    "variants": [],
    "source_registry": [
     "sh.models.REGISTRY"
    ],
    "notes": null,
+   "feature_via": null,
    "live_output": "NOT_EVALUATED"
   },
   {
@@ -514,6 +534,7 @@
     "sh.models.REGISTRY"
    ],
    "notes": null,
+   "feature_via": null,
    "live_output": "NOT_EVALUATED"
   },
   {
@@ -555,6 +576,7 @@
     "sh.models.REGISTRY"
    ],
    "notes": null,
+   "feature_via": null,
    "live_output": "NOT_EVALUATED"
   },
   {
@@ -586,7 +608,7 @@
    "code_state": "IMPLEMENTED",
    "runtime_state": "NOT_TRAINED",
    "state_reason": "SCALPING: brak modelu zdarzenia – uruchom trening sh_models (panel Trening / runner); HEDGING: brak modelu zdarzenia – uruchom trening sh_models (panel Trening / runner)",
-   "validation": "NOT_APPLICABLE",
+   "validation": "NOT_VALIDATED",
    "receivers": [
     "SH:TARGET_PROB/TARGET_PROB"
    ],
@@ -598,6 +620,7 @@
     "sh.models.REGISTRY"
    ],
    "notes": null,
+   "feature_via": null,
    "live_output": "NOT_EVALUATED"
   },
   {
@@ -631,7 +654,7 @@
    "code_state": "IMPLEMENTED",
    "runtime_state": "NOT_TRAINED",
    "state_reason": "brak rejestru registry.json (zadanie treningu nie zostało uruchomione na danych)",
-   "validation": "NOT_APPLICABLE",
+   "validation": "NOT_VALIDATED",
    "receivers": [
     "SH:DIRECTION_STRUCTURE/TIMING"
    ],
@@ -643,6 +666,7 @@
     "sh.models.REGISTRY"
    ],
    "notes": null,
+   "feature_via": null,
    "live_output": "NOT_EVALUATED"
   },
   {
@@ -674,7 +698,7 @@
    "code_state": "IMPLEMENTED",
    "runtime_state": "NOT_TRAINED",
    "state_reason": "brak rejestru registry.json (zadanie treningu nie zostało uruchomione na danych)",
-   "validation": "NOT_APPLICABLE",
+   "validation": "NOT_VALIDATED",
    "receivers": [
     "SH:SUPERVISION/SUPERVISION"
    ],
@@ -686,6 +710,7 @@
     "sh.models.REGISTRY"
    ],
    "notes": null,
+   "feature_via": null,
    "live_output": "NOT_EVALUATED"
   },
   {
@@ -723,7 +748,7 @@
    "code_state": "IMPLEMENTED",
    "runtime_state": "NOT_TRAINED",
    "state_reason": "brak rejestru registry.json (zadanie treningu nie zostało uruchomione na danych)",
-   "validation": "NOT_APPLICABLE",
+   "validation": "NOT_VALIDATED",
    "receivers": [
     "SH:TIMING/DIRECTION_STRUCTURE"
    ],
@@ -735,6 +760,7 @@
     "sh.models.REGISTRY"
    ],
    "notes": null,
+   "feature_via": null,
    "live_output": "NOT_EVALUATED"
   },
   {
@@ -766,7 +792,7 @@
    "code_state": "IMPLEMENTED",
    "runtime_state": "UNAVAILABLE",
    "state_reason": "instrument inny niż aktywny w bocie",
-   "validation": "NOT_APPLICABLE",
+   "validation": "NOT_VALIDATED",
    "receivers": [
     "SH:SUPERVISION/SUPERVISION"
    ],
@@ -778,6 +804,7 @@
     "sh.models.REGISTRY"
    ],
    "notes": null,
+   "feature_via": null,
    "live_output": "NOT_EVALUATED"
   },
   {
@@ -807,7 +834,7 @@
    "receivers": [],
    "quant_role": "NONE",
    "adapter": null,
-   "not_applicable_reason": "wiersz grupowy – rozwinięty na rzeczywiste rodziny: lab:DUMMY, lab:RULE, lab:LOGREG, lab:TREE, lab:MINIROCKET, lab:XGB, lab:RESNET1D, lab:SEW_SNN",
+   "not_applicable_reason": "wiersz grupowy – rozwinięty na rzeczywiste rodziny: lab:DUMMY, lab:RULE, lab:LOGREG, lab:TREE, lab:MINIROCKET, lab:XGB, lab:RESNET1D, lab:SEW_SNN, lab:LOGREG_PCA, lab:LOGREG_GMM_AUG, lab:LOGREG_NEUTRALIZED",
    "variants": [
     "lab:DUMMY",
     "lab:RULE",
@@ -816,12 +843,16 @@
     "lab:MINIROCKET",
     "lab:XGB",
     "lab:RESNET1D",
-    "lab:SEW_SNN"
+    "lab:SEW_SNN",
+    "lab:LOGREG_PCA",
+    "lab:LOGREG_GMM_AUG",
+    "lab:LOGREG_NEUTRALIZED"
    ],
    "source_registry": [
     "sh.models.REGISTRY"
    ],
    "notes": null,
+   "feature_via": null,
    "live_output": "NOT_EVALUATED"
   },
   {
@@ -853,7 +884,7 @@
    "code_state": "IMPLEMENTED",
    "runtime_state": "NOT_TRAINED",
    "state_reason": "brak rejestru registry.json (zadanie treningu nie zostało uruchomione na danych)",
-   "validation": "NOT_APPLICABLE",
+   "validation": "NOT_VALIDATED",
    "receivers": [
     "SH:SUPERVISION/SUPERVISION"
    ],
@@ -865,6 +896,7 @@
     "sh.models.REGISTRY"
    ],
    "notes": null,
+   "feature_via": null,
    "live_output": "NOT_EVALUATED"
   },
   {
@@ -875,6 +907,8 @@
    "name": "Scalp ML XGBoost (net R cyklu)",
    "category": "MODEL_TRAINED",
    "files": [
+    "backend/masterquo/ml/scalp_task.py",
+    "backend/masterquo/ml/service.py",
     "backend/masterquo/scalp/service.py"
    ],
    "input": null,
@@ -886,8 +920,8 @@
    "timeframes": [],
    "data_required": null,
    "features": null,
-   "owner_train": "ml_scalp",
-   "owner_infer": null,
+   "owner_train": "ml/scalp_task.py (training ml_scalp)",
+   "owner_infer": "ml.service.MLService.on_scalp_candidate (scalp.service)",
    "env": ".venv",
    "artifact": null,
    "dependencies": [
@@ -896,7 +930,7 @@
    "code_state": "IMPLEMENTED",
    "runtime_state": "NOT_TRAINED",
    "state_reason": "brak rejestru registry.json (zadanie treningu nie zostało uruchomione na danych)",
-   "validation": "NOT_APPLICABLE",
+   "validation": "NOT_VALIDATED",
    "receivers": [
     "SH:SUPERVISION/SUPERVISION"
    ],
@@ -908,6 +942,7 @@
     "sh.models.REGISTRY"
    ],
    "notes": null,
+   "feature_via": null,
    "live_output": "NOT_EVALUATED"
   },
   {
@@ -939,7 +974,7 @@
    "code_state": "IMPLEMENTED",
    "runtime_state": "NOT_TRAINED",
    "state_reason": "brak rejestru registry.json (zadanie treningu nie zostało uruchomione na danych)",
-   "validation": "NOT_APPLICABLE",
+   "validation": "NOT_VALIDATED",
    "receivers": [
     "SH:SUPERVISION/SUPERVISION"
    ],
@@ -951,6 +986,7 @@
     "sh.models.REGISTRY"
    ],
    "notes": null,
+   "feature_via": null,
    "live_output": "NOT_EVALUATED"
   },
   {
@@ -992,6 +1028,7 @@
     "sh.models.REGISTRY"
    ],
    "notes": null,
+   "feature_via": null,
    "live_output": "NOT_EVALUATED"
   },
   {
@@ -999,13 +1036,13 @@
    "aliases": [
     "flow_reaction"
    ],
-   "name": "Flow context – model reakcji M1 + Markov3",
+   "name": "Flow context – model reakcji M1 (FLOW_CONTEXT_MOVE_M1_V1)",
    "category": "MODEL_TRAINED",
    "files": [
     "backend/masterquo/lab/flow_context/"
    ],
    "input": null,
-   "output": "P(DOWN/FLAT/UP) M1; stany Markowa",
+   "output": "P(DOWN/FLAT/UP) M1",
    "unit": "probability",
    "task_type": "CLASS_PROBABILITIES",
    "task": null,
@@ -1024,14 +1061,14 @@
    ],
    "code_state": "IMPLEMENTED",
    "runtime_state": "NOT_TRAINED",
-   "state_reason": "brak rejestru registry.json (zadanie treningu nie zostało uruchomione na danych)",
-   "validation": "NOT_APPLICABLE",
+   "state_reason": "brak runów modelu reakcji (zadanie flow_context nie było uruchomione na danych)",
+   "validation": "NOT_VALIDATED",
    "receivers": [
     "SH:TIMING/TIMING"
    ],
    "quant_role": "BASE_FORECAST",
    "adapter": null,
-   "not_applicable_reason": "model reakcji M1 liczony per wykres w flow_context (panel) – bez akcesora snapshotu poza panelem",
+   "not_applicable_reason": "NOT_CONNECTED: model reakcji FLOW_CONTEXT_MOVE_M1_V1 trenowany (LOGREG / XGB), bez ścieżki inferencji na żywo – FlowSections liczy tylko Heikin / S-R / StopDistance i Markov3 (flow:markov3); replay tylko z CLI (F-17)",
    "variants": [
     "flow:LOGREG",
     "flow:XGB"
@@ -1040,6 +1077,7 @@
     "sh.models.REGISTRY"
    ],
    "notes": null,
+   "feature_via": null,
    "live_output": "NOT_EVALUATED"
   },
   {
@@ -1074,7 +1112,7 @@
    "code_state": "IMPLEMENTED",
    "runtime_state": "NOT_CONNECTED",
    "state_reason": "0 runów; model bez ścieżki inferencji na żywo (F-17) – tylko badania",
-   "validation": "NOT_APPLICABLE",
+   "validation": "NOT_VALIDATED",
    "receivers": [
     "SH:TIMING/DIRECTION_STRUCTURE"
    ],
@@ -1086,6 +1124,7 @@
     "sh.models.REGISTRY"
    ],
    "notes": null,
+   "feature_via": null,
    "live_output": "NOT_EVALUATED"
   },
   {
@@ -1098,11 +1137,12 @@
    "category": "RULE_OR_MEASUREMENT",
    "files": [
     "backend/masterquo/mm/align_mean.py",
+    "mql5/MasterModels/Include/PMW/PMW_AlignMeanCore.mqh",
     "mql5/MasterModels/Indicators/PMW_AlignMean.mq5"
    ],
    "input": "closed OHLC (any TF)",
    "output": "odległość od średniej (kontekst)",
-   "unit": "atr",
+   "unit": "mixed",
    "task_type": "STATE",
    "task": null,
    "horizon": null,
@@ -1125,7 +1165,7 @@
     "mm.orchestrator:align_mean",
     "mm.service (panel)"
    ],
-   "quant_role": "CONTEXT_FEATURE",
+   "quant_role": "CONTEXT_STATE",
    "adapter": "quant.adapters.extended",
    "not_applicable_reason": null,
    "variants": [],
@@ -1133,7 +1173,8 @@
     "mm.inventory.MODULES",
     "sh.models.REGISTRY"
    ],
-   "notes": null,
+   "notes": "odległości od średniej per TF (<TF>_dist_points / _dist_pct / _dist_atr: punkty, %, ATR) – rekord STATE bez cech MetaModelu",
+   "feature_via": null,
    "live_output": "NOT_EVALUATED"
   },
   {
@@ -1186,6 +1227,7 @@
     "sh.models.REGISTRY"
    ],
    "notes": null,
+   "feature_via": null,
    "live_output": "NOT_EVALUATED"
   },
   {
@@ -1238,6 +1280,7 @@
     "sh.models.REGISTRY"
    ],
    "notes": null,
+   "feature_via": null,
    "live_output": "NOT_EVALUATED"
   },
   {
@@ -1278,7 +1321,7 @@
     "mm.orchestrator:multi_indicator",
     "mm.service"
    ],
-   "quant_role": "CONTEXT_FEATURE",
+   "quant_role": "CONTEXT_STATE",
    "adapter": "quant.adapters.extended",
    "not_applicable_reason": null,
    "variants": [],
@@ -1287,6 +1330,7 @@
     "sh.models.REGISTRY"
    ],
    "notes": null,
+   "feature_via": null,
    "live_output": "NOT_EVALUATED"
   },
   {
@@ -1328,7 +1372,7 @@
     "mm.orchestrator:smc_fvg",
     "mm.service"
    ],
-   "quant_role": "CONTEXT_FEATURE",
+   "quant_role": "CONTEXT_STATE",
    "adapter": "quant.adapters.extended",
    "not_applicable_reason": null,
    "variants": [],
@@ -1337,6 +1381,7 @@
     "sh.models.REGISTRY"
    ],
    "notes": null,
+   "feature_via": null,
    "live_output": "NOT_EVALUATED"
   },
   {
@@ -1376,7 +1421,7 @@
    "code_state": "IMPLEMENTED",
    "runtime_state": "NOT_EVALUATED",
    "state_reason": "liczone z bieżących świec – stan tylko przy działającym bocie",
-   "validation": "NOT_APPLICABLE",
+   "validation": "NOT_VALIDATED",
    "receivers": [
     "SH:OBSERVATION/OBSERVATION",
     "mm.orchestrator:gpr",
@@ -1391,6 +1436,7 @@
     "sh.models.REGISTRY"
    ],
    "notes": null,
+   "feature_via": null,
    "live_output": "NOT_EVALUATED"
   },
   {
@@ -1408,7 +1454,7 @@
    ],
    "input": "feature registry FS (M5)",
    "output": "klasa + margines (nie prawdopodobieństwo)",
-   "unit": "score_0_100",
+   "unit": "ratio",
    "task_type": "SCORE",
    "task": null,
    "horizon": null,
@@ -1427,11 +1473,11 @@
    "code_state": "IMPLEMENTED",
    "runtime_state": "NOT_TRAINED",
    "state_reason": "brak artefaktu – zadanie treningu master_models nie było uruchomione",
-   "validation": "NOT_APPLICABLE",
+   "validation": "NOT_VALIDATED",
    "receivers": [
     "SH:OBSERVATION/OBSERVATION",
     "mm.orchestrator:hdc",
-    "mm.service"
+    "mm.service (tylko wskaźnik artefaktu, bez inferencji)"
    ],
    "quant_role": "BASE_FORECAST",
    "adapter": null,
@@ -1441,7 +1487,8 @@
     "mm.inventory.MODULES",
     "sh.models.REGISTRY"
    ],
-   "notes": null,
+   "notes": "margines podobieństwa: różnica podobieństw (1 − 2H/D) dwóch najlepszych klas, zakres 0..2 – nie skala 0–100, nie prawdopodobieństwo",
+   "feature_via": null,
    "live_output": "NOT_EVALUATED"
   },
   {
@@ -1482,10 +1529,11 @@
    "code_state": "IMPLEMENTED",
    "runtime_state": "NOT_TRAINED",
    "state_reason": "brak artefaktu – zadanie treningu master_models nie było uruchomione",
-   "validation": "NOT_APPLICABLE",
+   "validation": "NOT_VALIDATED",
    "receivers": [
     "SH:OBSERVATION/OBSERVATION",
-    "mm.orchestrator:event_engine"
+    "mm.orchestrator:event_engine",
+    "quant.adapters.EventGRU (inferencja SHADOW aktywnego artefaktu)"
    ],
    "quant_role": "BASE_FORECAST",
    "adapter": "quant.adapters.extended",
@@ -1496,6 +1544,7 @@
     "sh.models.REGISTRY"
    ],
    "notes": null,
+   "feature_via": null,
    "live_output": "NOT_EVALUATED"
   },
   {
@@ -1531,7 +1580,7 @@
    "code_state": "IMPLEMENTED",
    "runtime_state": "NOT_TRAINED",
    "state_reason": "brak artefaktu – zadanie treningu master_models nie było uruchomione",
-   "validation": "NOT_APPLICABLE",
+   "validation": "NOT_VALIDATED",
    "receivers": [
     "SH:OBSERVATION/OBSERVATION",
     "mm.orchestrator:ste_flownet"
@@ -1545,12 +1594,13 @@
     "sh.models.REGISTRY"
    ],
    "notes": null,
+   "feature_via": null,
    "live_output": "NOT_EVALUATED"
   },
   {
    "id": "group:th_direction",
    "aliases": [],
-   "name": "Centrum treningu: kierunek po kosztach (LOGREG/HGB/XGB, aktywne paczki)",
+   "name": "Centrum treningu: kierunek po kosztach (LOGREG/HGB/XGB/RF/SVM + bazowy, aktywne paczki)",
    "category": "GROUP",
    "files": [],
    "input": null,
@@ -1587,6 +1637,7 @@
     "sh.models.REGISTRY"
    ],
    "notes": null,
+   "feature_via": null,
    "live_output": "NOT_EVALUATED"
   },
   {
@@ -1610,8 +1661,10 @@
    "horizon": null,
    "timeframes": [
     "M1",
+    "M3",
     "M5",
     "M15",
+    "M30",
     "H1"
    ],
    "data_required": null,
@@ -1626,7 +1679,7 @@
    "code_state": "IMPLEMENTED",
    "runtime_state": "UNAVAILABLE",
    "state_reason": "stan Kronos: osobny kontekst w ocenie setupu (su.kronos) i panel Kronos AI Forecast",
-   "validation": "NOT_APPLICABLE",
+   "validation": "NOT_VALIDATED",
    "receivers": [
     "SH:OBSERVATION/OBSERVATION"
    ],
@@ -1637,7 +1690,8 @@
    "source_registry": [
     "sh.models.REGISTRY"
    ],
-   "notes": "pojedyncza ścieżka nie jest prawdopodobieństwem; pretrained ≠ dostrojony do brokera",
+   "notes": "pojedyncza ścieżka nie jest prawdopodobieństwem; pretrained ≠ dostrojony do brokera; interwały = dozwolone w ustawieniach Kronos (domyślnie włączone M5, M15)",
+   "feature_via": null,
    "live_output": "NOT_EVALUATED"
   },
   {
@@ -1679,6 +1733,7 @@
     "sh.models.REGISTRY"
    ],
    "notes": null,
+   "feature_via": null,
    "live_output": "NOT_EVALUATED"
   },
   {
@@ -1701,8 +1756,12 @@
    "task": "TSFM_CLOSE_H*",
    "horizon": null,
    "timeframes": [
+    "M1",
+    "M3",
     "M5",
-    "M15"
+    "M15",
+    "M30",
+    "H1"
    ],
    "data_required": null,
    "features": null,
@@ -1715,8 +1774,8 @@
    ],
    "code_state": "IMPLEMENTED",
    "runtime_state": "UNAVAILABLE",
-   "state_reason": "serwis Chronos-2/Granite TTM niedostępny",
-   "validation": "NOT_APPLICABLE",
+   "state_reason": "serwis Chronos-2/Granite TTM/TiRex-2 niedostępny",
+   "validation": "NOT_VALIDATED",
    "receivers": [
     "SH:OBSERVATION/OBSERVATION"
    ],
@@ -1727,7 +1786,8 @@
    "source_registry": [
     "sh.models.REGISTRY"
    ],
-   "notes": "amazon/chronos-2 (120M); kwantyle modelu, punkt = mediana; nieskalibrowane na danych brokera",
+   "notes": "amazon/chronos-2 (120M); kwantyle modelu, punkt = mediana; nieskalibrowane na danych brokera; interwały = dozwolone w ustawieniach TSFM (domyślnie włączone M5, M15)",
+   "feature_via": null,
    "live_output": "NOT_EVALUATED"
   },
   {
@@ -1750,8 +1810,12 @@
    "task": "TSFM_CLOSE_H*",
    "horizon": null,
    "timeframes": [
+    "M1",
+    "M3",
     "M5",
-    "M15"
+    "M15",
+    "M30",
+    "H1"
    ],
    "data_required": null,
    "features": null,
@@ -1764,8 +1828,8 @@
    ],
    "code_state": "IMPLEMENTED",
    "runtime_state": "UNAVAILABLE",
-   "state_reason": "serwis Chronos-2/Granite TTM niedostępny",
-   "validation": "NOT_APPLICABLE",
+   "state_reason": "serwis Chronos-2/Granite TTM/TiRex-2 niedostępny",
+   "validation": "NOT_VALIDATED",
    "receivers": [
     "SH:OBSERVATION/OBSERVATION"
    ],
@@ -1776,7 +1840,58 @@
    "source_registry": [
     "sh.models.REGISTRY"
    ],
-   "notes": "ibm-granite/granite-timeseries-ttm-r2 (TTM R2 512-96, 0,8M); prognoza punktowa (bez kwantyli); nieskalibrowana; 1.40 zamiast FinCast (FinCast: RETIRED, historia zachowana)",
+   "notes": "ibm-granite/granite-timeseries-ttm-r2 (TTM R2 512-96, 0,8M); prognoza punktowa (bez kwantyli); nieskalibrowana; 1.40 zamiast FinCast (FinCast: RETIRED, historia zachowana); interwały = dozwolone w ustawieniach TSFM (domyślnie włączone M5, M15)",
+   "feature_via": null,
+   "live_output": "NOT_EVALUATED"
+  },
+  {
+   "id": "tsfm:tirex2",
+   "aliases": [
+    "TIREX2",
+    "TiRex-2",
+    "tirex2"
+   ],
+   "name": "TiRex-2 (NX-AI, przetrenowany) – kwantyle close",
+   "category": "MODEL_PRETRAINED",
+   "files": [
+    "backend/masterquo/tsfm/",
+    "backend/tsfm_runtime/"
+   ],
+   "input": null,
+   "output": "kwantyle ceny close na H świec (mediana jako punkt; nieskalibrowane)",
+   "unit": "price",
+   "task_type": "REGRESSION",
+   "task": "TSFM_CLOSE_H*",
+   "horizon": null,
+   "timeframes": [
+    "M5",
+    "M15"
+   ],
+   "data_required": null,
+   "features": null,
+   "owner_train": null,
+   "owner_infer": null,
+   "env": ".venv_tirex2",
+   "artifact": null,
+   "dependencies": [
+    "grupa korelacji TSFM_PRICE"
+   ],
+   "code_state": "IMPLEMENTED",
+   "runtime_state": "UNAVAILABLE",
+   "state_reason": "serwis Chronos-2/Granite TTM/TiRex-2 niedostępny",
+   "validation": "NOT_VALIDATED",
+   "receivers": [
+    "SH:OBSERVATION/OBSERVATION"
+   ],
+   "quant_role": "BASE_FORECAST",
+   "adapter": "modelhub.adapters.all_predictions",
+   "not_applicable_reason": null,
+   "variants": [],
+   "source_registry": [
+    "sh.models.REGISTRY"
+   ],
+   "notes": "rekordy z model_id tsfm:tirex2 (TsfmService, jak Chronos-2 / Granite TTM); kwantyle; nieskalibrowane na danych brokera",
+   "feature_via": null,
    "live_output": "NOT_EVALUATED"
   },
   {
@@ -1807,11 +1922,11 @@
    "owner_train": "trainhub.jobs.TrainingCenter",
    "owner_infer": "trainhub.inference.TrainhubInference",
    "env": ".venv",
-   "artifact": "<data>/trainhub/<instrument>/<model_key>/<version>",
+   "artifact": "<data>/trainhub/models/<instrument>/<model_key>/<version>",
    "dependencies": [],
    "code_state": "IMPLEMENTED",
    "runtime_state": "NOT_TRAINED",
-   "state_reason": "wersji: 0, brak aktywnej paczki",
+   "state_reason": "brak paczki – trening w Centrum treningu",
    "validation": "NOT_VALIDATED",
    "receivers": [],
    "quant_role": "TOOL",
@@ -1823,6 +1938,7 @@
     "trainhub.learn.MODELS"
    ],
    "notes": "baseline częstości klas – punkt odniesienia",
+   "feature_via": null,
    "live_output": "NOT_EVALUATED"
   },
   {
@@ -1853,11 +1969,11 @@
    "owner_train": "trainhub.jobs.TrainingCenter",
    "owner_infer": "trainhub.inference.TrainhubInference",
    "env": ".venv",
-   "artifact": "<data>/trainhub/<instrument>/<model_key>/<version>",
+   "artifact": "<data>/trainhub/models/<instrument>/<model_key>/<version>",
    "dependencies": [],
    "code_state": "IMPLEMENTED",
    "runtime_state": "NOT_TRAINED",
-   "state_reason": "wersji: 0, brak aktywnej paczki",
+   "state_reason": "brak paczki – trening w Centrum treningu",
    "validation": "NOT_VALIDATED",
    "receivers": [],
    "quant_role": "BASE_FORECAST",
@@ -1869,6 +1985,7 @@
     "trainhub.learn.MODELS"
    ],
    "notes": null,
+   "feature_via": null,
    "live_output": "NOT_EVALUATED"
   },
   {
@@ -1899,11 +2016,11 @@
    "owner_train": "trainhub.jobs.TrainingCenter",
    "owner_infer": "trainhub.inference.TrainhubInference",
    "env": ".venv",
-   "artifact": "<data>/trainhub/<instrument>/<model_key>/<version>",
+   "artifact": "<data>/trainhub/models/<instrument>/<model_key>/<version>",
    "dependencies": [],
    "code_state": "IMPLEMENTED",
    "runtime_state": "NOT_TRAINED",
-   "state_reason": "wersji: 0, brak aktywnej paczki",
+   "state_reason": "brak paczki – trening w Centrum treningu",
    "validation": "NOT_VALIDATED",
    "receivers": [],
    "quant_role": "BASE_FORECAST",
@@ -1915,6 +2032,7 @@
     "trainhub.learn.MODELS"
    ],
    "notes": null,
+   "feature_via": null,
    "live_output": "NOT_EVALUATED"
   },
   {
@@ -1946,11 +2064,11 @@
    "owner_train": "trainhub.jobs.TrainingCenter",
    "owner_infer": "trainhub.inference.TrainhubInference",
    "env": ".venv",
-   "artifact": "<data>/trainhub/<instrument>/<model_key>/<version>",
+   "artifact": "<data>/trainhub/models/<instrument>/<model_key>/<version>",
    "dependencies": [],
    "code_state": "IMPLEMENTED",
    "runtime_state": "NOT_TRAINED",
-   "state_reason": "wersji: 0, brak aktywnej paczki",
+   "state_reason": "brak paczki – trening w Centrum treningu",
    "validation": "NOT_VALIDATED",
    "receivers": [],
    "quant_role": "BASE_FORECAST",
@@ -1963,6 +2081,7 @@
     "trainhub.learn.MODELS"
    ],
    "notes": "alias rodziny family:TH_XGB – jeden artefakt, jeden trening, jeden głos",
+   "feature_via": null,
    "live_output": "NOT_EVALUATED"
   },
   {
@@ -1994,11 +2113,11 @@
    "owner_train": "trainhub.jobs.TrainingCenter",
    "owner_infer": "trainhub.inference.TrainhubInference",
    "env": ".venv",
-   "artifact": "<data>/trainhub/<instrument>/<model_key>/<version>",
+   "artifact": "<data>/trainhub/models/<instrument>/<model_key>/<version>",
    "dependencies": [],
    "code_state": "IMPLEMENTED",
    "runtime_state": "NOT_TRAINED",
-   "state_reason": "wersji: 0, brak aktywnej paczki",
+   "state_reason": "brak paczki – trening w Centrum treningu",
    "validation": "NOT_VALIDATED",
    "receivers": [],
    "quant_role": "BASE_FORECAST",
@@ -2011,6 +2130,7 @@
     "trainhub.learn.MODELS"
    ],
    "notes": "alias rodziny family:TH_RF – jeden artefakt, jeden trening, jeden głos",
+   "feature_via": null,
    "live_output": "NOT_EVALUATED"
   },
   {
@@ -2042,11 +2162,11 @@
    "owner_train": "trainhub.jobs.TrainingCenter",
    "owner_infer": "trainhub.inference.TrainhubInference",
    "env": ".venv",
-   "artifact": "<data>/trainhub/<instrument>/<model_key>/<version>",
+   "artifact": "<data>/trainhub/models/<instrument>/<model_key>/<version>",
    "dependencies": [],
    "code_state": "IMPLEMENTED",
    "runtime_state": "NOT_TRAINED",
-   "state_reason": "wersji: 0, brak aktywnej paczki",
+   "state_reason": "brak paczki – trening w Centrum treningu",
    "validation": "NOT_VALIDATED",
    "receivers": [],
    "quant_role": "BASE_FORECAST",
@@ -2059,6 +2179,7 @@
     "trainhub.learn.MODELS"
    ],
    "notes": "alias rodziny family:TH_SVM – jeden artefakt, jeden trening, jeden głos",
+   "feature_via": null,
    "live_output": "NOT_EVALUATED"
   },
   {
@@ -2085,7 +2206,7 @@
    "owner_train": "modelhub.families.service (proces obok)",
    "owner_infer": "modelhub.families.service",
    "env": ".venv",
-   "artifact": "<data>/families/TS_ARIMA/<instrument>/runs/<run_id>",
+   "artifact": "<data>/model_families/TS_ARIMA/<instrument>/<run_id>",
    "dependencies": [],
    "code_state": "IMPLEMENTED",
    "runtime_state": "NOT_EVALUATED",
@@ -2093,8 +2214,8 @@
    "validation": "NOT_VALIDATED",
    "receivers": [
     "SH_CONTEXT:expected_move",
-    "PANEL:model_status",
-    "AGENT:context"
+    "DECISION:coordinator (REQUIRED / ASSIST – kierunek UP/FLAT/DOWN)",
+    "PANEL:model_status"
    ],
    "quant_role": "BASE_FORECAST",
    "adapter": "modelhub.families.service.predictions",
@@ -2104,6 +2225,7 @@
     "modelhub.families.registry"
    ],
    "notes": null,
+   "feature_via": null,
    "live_output": "NOT_EVALUATED"
   },
   {
@@ -2130,7 +2252,7 @@
    "owner_train": "modelhub.families.service (proces obok)",
    "owner_infer": "modelhub.families.service",
    "env": ".venv",
-   "artifact": "<data>/families/TS_SARIMAX/<instrument>/runs/<run_id>",
+   "artifact": "<data>/model_families/TS_SARIMAX/<instrument>/<run_id>",
    "dependencies": [],
    "code_state": "IMPLEMENTED",
    "runtime_state": "NOT_EVALUATED",
@@ -2138,8 +2260,8 @@
    "validation": "NOT_VALIDATED",
    "receivers": [
     "SH_CONTEXT:expected_move_h1",
-    "PANEL:model_status",
-    "AGENT:context"
+    "DECISION:coordinator (REQUIRED / ASSIST – kierunek UP/FLAT/DOWN)",
+    "PANEL:model_status"
    ],
    "quant_role": "BASE_FORECAST",
    "adapter": "modelhub.families.service.predictions",
@@ -2149,6 +2271,7 @@
     "modelhub.families.registry"
    ],
    "notes": null,
+   "feature_via": null,
    "live_output": "NOT_EVALUATED"
   },
   {
@@ -2175,14 +2298,13 @@
    "owner_train": "modelhub.families.service (proces obok)",
    "owner_infer": "modelhub.families.service",
    "env": ".venv",
-   "artifact": "<data>/families/VOL_GARCH/<instrument>/runs/<run_id>",
+   "artifact": "<data>/model_families/VOL_GARCH/<instrument>/<run_id>",
    "dependencies": [],
    "code_state": "IMPLEMENTED",
    "runtime_state": "NOT_EVALUATED",
    "state_reason": null,
    "validation": "NOT_VALIDATED",
    "receivers": [
-    "RISK:volatility_scenario",
     "SH_CONTEXT:volatility",
     "PANEL:model_status"
    ],
@@ -2194,6 +2316,7 @@
     "modelhub.families.registry"
    ],
    "notes": null,
+   "feature_via": null,
    "live_output": "NOT_EVALUATED"
   },
   {
@@ -2218,7 +2341,7 @@
    "owner_train": "modelhub.families.service (proces obok)",
    "owner_infer": "modelhub.families.service",
    "env": ".venv",
-   "artifact": "<data>/families/MICROSTRUCTURE/<instrument>/runs/<run_id>",
+   "artifact": "<data>/model_families/MICROSTRUCTURE/<instrument>/<run_id>",
    "dependencies": [],
    "code_state": "IMPLEMENTED",
    "runtime_state": "NOT_EVALUATED",
@@ -2226,7 +2349,6 @@
    "validation": "NOT_VALIDATED",
    "receivers": [
     "SH_CONTEXT:entry_quality",
-    "RISK:execution_conditions",
     "PANEL:microstructure"
    ],
    "quant_role": "CONTEXT_FEATURE",
@@ -2237,6 +2359,7 @@
     "modelhub.families.registry"
    ],
    "notes": null,
+   "feature_via": null,
    "live_output": "NOT_EVALUATED"
   },
   {
@@ -2263,16 +2386,14 @@
    "owner_train": "modelhub.families.service (proces obok)",
    "owner_infer": "modelhub.families.service",
    "env": ".venv",
-   "artifact": "<data>/families/PAIR_COINT/<instrument>/runs/<run_id>",
+   "artifact": "<data>/model_families/PAIR_COINT/<instrument>/<run_id>",
    "dependencies": [],
    "code_state": "IMPLEMENTED",
    "runtime_state": "NOT_EVALUATED",
    "state_reason": null,
    "validation": "NOT_VALIDATED",
    "receivers": [
-    "PANEL:pair_relation",
-    "AGENT:context",
-    "PORTFOLIO:basket_proposal (via risk/gateway)"
+    "PANEL:pair_relation"
    ],
    "quant_role": "CONTEXT_FEATURE",
    "adapter": "modelhub.families.service.predictions",
@@ -2282,6 +2403,7 @@
     "modelhub.families.registry"
    ],
    "notes": null,
+   "feature_via": null,
    "live_output": "NOT_EVALUATED"
   },
   {
@@ -2308,15 +2430,14 @@
    "owner_train": "modelhub.families.service (proces obok)",
    "owner_infer": "modelhub.families.service",
    "env": ".venv",
-   "artifact": "<data>/families/STATARB/<instrument>/runs/<run_id>",
+   "artifact": "<data>/model_families/STATARB/<instrument>/<run_id>",
    "dependencies": [],
    "code_state": "IMPLEMENTED",
    "runtime_state": "NOT_EVALUATED",
    "state_reason": null,
    "validation": "NOT_VALIDATED",
    "receivers": [
-    "PANEL:basket",
-    "PORTFOLIO:basket_proposal (via risk/gateway)"
+    "PANEL:basket"
    ],
    "quant_role": "CONTEXT_FEATURE",
    "adapter": "modelhub.families.service.predictions",
@@ -2326,6 +2447,7 @@
     "modelhub.families.registry"
    ],
    "notes": null,
+   "feature_via": null,
    "live_output": "NOT_EVALUATED"
   },
   {
@@ -2352,7 +2474,7 @@
    "owner_train": "modelhub.families.service (proces obok)",
    "owner_infer": "modelhub.families.service",
    "env": ".venv",
-   "artifact": "<data>/families/KALMAN_LS/<instrument>/runs/<run_id>",
+   "artifact": "<data>/model_families/KALMAN_LS/<instrument>/<run_id>",
    "dependencies": [],
    "code_state": "IMPLEMENTED",
    "runtime_state": "NOT_EVALUATED",
@@ -2360,7 +2482,6 @@
    "validation": "NOT_VALIDATED",
    "receivers": [
     "SH_CONTEXT:trend_state",
-    "STRATEGY:regime_context",
     "PANEL:model_status"
    ],
    "quant_role": "CONTEXT_FEATURE",
@@ -2371,6 +2492,7 @@
     "modelhub.families.registry"
    ],
    "notes": null,
+   "feature_via": null,
    "live_output": "NOT_EVALUATED"
   },
   {
@@ -2397,7 +2519,7 @@
    "owner_train": "modelhub.families.service (proces obok)",
    "owner_infer": "modelhub.families.service",
    "env": ".venv",
-   "artifact": "<data>/families/BREAKOUT/<instrument>/runs/<run_id>",
+   "artifact": "<data>/model_families/BREAKOUT/<instrument>/<run_id>",
    "dependencies": [],
    "code_state": "IMPLEMENTED",
    "runtime_state": "NOT_EVALUATED",
@@ -2405,7 +2527,6 @@
    "validation": "NOT_VALIDATED",
    "receivers": [
     "SH_CONTEXT:breakout_state",
-    "STRATEGY:S05/S12 BREAKOUT_RETEST context",
     "PANEL:model_status"
    ],
    "quant_role": "CONTEXT_FEATURE",
@@ -2416,6 +2537,7 @@
     "modelhub.families.registry"
    ],
    "notes": null,
+   "feature_via": null,
    "live_output": "NOT_EVALUATED"
   },
   {
@@ -2442,7 +2564,7 @@
    "owner_train": "modelhub.families.service (proces obok)",
    "owner_infer": "modelhub.families.service",
    "env": ".venv_deep",
-   "artifact": "<data>/families/SEQ_LSTM/<instrument>/runs/<run_id>",
+   "artifact": "<data>/model_families/SEQ_LSTM/<instrument>/<run_id>",
    "dependencies": [],
    "code_state": "IMPLEMENTED",
    "runtime_state": "MISSING_DEPENDENCY",
@@ -2461,6 +2583,7 @@
     "modelhub.families.registry"
    ],
    "notes": null,
+   "feature_via": null,
    "live_output": "NOT_EVALUATED"
   },
   {
@@ -2487,7 +2610,7 @@
    "owner_train": "modelhub.families.service (proces obok)",
    "owner_infer": "modelhub.families.service",
    "env": ".venv_deep",
-   "artifact": "<data>/families/SEQ_GRU/<instrument>/runs/<run_id>",
+   "artifact": "<data>/model_families/SEQ_GRU/<instrument>/<run_id>",
    "dependencies": [],
    "code_state": "IMPLEMENTED",
    "runtime_state": "MISSING_DEPENDENCY",
@@ -2506,6 +2629,7 @@
     "modelhub.families.registry"
    ],
    "notes": null,
+   "feature_via": null,
    "live_output": "NOT_EVALUATED"
   },
   {
@@ -2532,14 +2656,13 @@
    "owner_train": "modelhub.families.service (proces obok)",
    "owner_infer": "modelhub.families.service",
    "env": ".venv_deep",
-   "artifact": "<data>/families/RL_PPO/<instrument>/runs/<run_id>",
+   "artifact": "<data>/model_families/RL_PPO/<instrument>/<run_id>",
    "dependencies": [],
    "code_state": "IMPLEMENTED",
    "runtime_state": "MISSING_DEPENDENCY",
    "state_reason": "brak środowiska .venv_deep (instalacja: 34_DEEP_INSTALUJ.bat)",
    "validation": "NOT_VALIDATED",
    "receivers": [
-    "RISK:exposure_proposal (OBSERVE)",
     "PANEL:model_status"
    ],
    "quant_role": "NOT_A_VOTE",
@@ -2550,6 +2673,7 @@
     "modelhub.families.registry"
    ],
    "notes": "akcja RL ≠ p(win)",
+   "feature_via": null,
    "live_output": "NOT_EVALUATED"
   },
   {
@@ -2557,7 +2681,7 @@
    "aliases": [
     "NLP_SENTIMENT"
    ],
-   "name": "Sentyment tekstu – TF-IDF + regresja logistyczna (+ opcjonalny lokalny transformer)",
+   "name": "Sentyment tekstu – TF-IDF + regresja logistyczna",
    "category": "MODEL_TRAINED",
    "files": [
     "backend/masterquo/modelhub/families/nlp.py"
@@ -2574,16 +2698,14 @@
    "owner_train": "modelhub.families.service (proces obok)",
    "owner_infer": "modelhub.families.service",
    "env": ".venv",
-   "artifact": "<data>/families/NLP_SENTIMENT/<instrument>/runs/<run_id>",
+   "artifact": "<data>/model_families/NLP_SENTIMENT/<instrument>/<run_id>",
    "dependencies": [],
    "code_state": "IMPLEMENTED",
    "runtime_state": "NOT_EVALUATED",
    "state_reason": null,
    "validation": "NOT_VALIDATED",
    "receivers": [
-    "AGENT:news_context",
-    "PANEL:news_sentiment",
-    "RISK:information_context (OBSERVE)"
+    "PANEL:news_sentiment"
    ],
    "quant_role": "CONTEXT_FEATURE",
    "adapter": "modelhub.families.service.predictions",
@@ -2593,6 +2715,7 @@
     "modelhub.families.registry"
    ],
    "notes": "sentyment ≠ kierunek XAUUSD bez wyuczonego związku",
+   "feature_via": null,
    "live_output": "NOT_EVALUATED"
   },
   {
@@ -2634,6 +2757,7 @@
     "sh.models.REGISTRY (lab)"
    ],
    "notes": "score innego zdarzenia niż TP setupu – cecha pod własną nazwą",
+   "feature_via": null,
    "live_output": "NOT_EVALUATED"
   },
   {
@@ -2675,6 +2799,7 @@
     "sh.models.REGISTRY (lab)"
    ],
    "notes": "score innego zdarzenia niż TP setupu – cecha pod własną nazwą",
+   "feature_via": null,
    "live_output": "NOT_EVALUATED"
   },
   {
@@ -2716,6 +2841,7 @@
     "sh.models.REGISTRY (lab)"
    ],
    "notes": "score innego zdarzenia niż TP setupu – cecha pod własną nazwą",
+   "feature_via": null,
    "live_output": "NOT_EVALUATED"
   },
   {
@@ -2757,6 +2883,7 @@
     "sh.models.REGISTRY (lab)"
    ],
    "notes": "score innego zdarzenia niż TP setupu – cecha pod własną nazwą",
+   "feature_via": null,
    "live_output": "NOT_EVALUATED"
   },
   {
@@ -2798,6 +2925,7 @@
     "sh.models.REGISTRY (lab)"
    ],
    "notes": "score innego zdarzenia niż TP setupu – cecha pod własną nazwą",
+   "feature_via": null,
    "live_output": "NOT_EVALUATED"
   },
   {
@@ -2839,6 +2967,7 @@
     "sh.models.REGISTRY (lab)"
    ],
    "notes": "score innego zdarzenia niż TP setupu – cecha pod własną nazwą",
+   "feature_via": null,
    "live_output": "NOT_EVALUATED"
   },
   {
@@ -2880,6 +3009,7 @@
     "sh.models.REGISTRY (lab)"
    ],
    "notes": "score innego zdarzenia niż TP setupu – cecha pod własną nazwą",
+   "feature_via": null,
    "live_output": "NOT_EVALUATED"
   },
   {
@@ -2921,6 +3051,7 @@
     "sh.models.REGISTRY (lab)"
    ],
    "notes": "score innego zdarzenia niż TP setupu – cecha pod własną nazwą",
+   "feature_via": null,
    "live_output": "NOT_EVALUATED"
   },
   {
@@ -2929,35 +3060,40 @@
    "name": "Eksperyment lab LOGREG_PCA",
    "category": "RESEARCH",
    "files": [
-    "backend/masterquo/lab/protocol.py"
+    "backend/masterquo/lab/protocol.py",
+    "backend/masterquo/lab/service.py"
    ],
    "input": null,
    "output": null,
-   "unit": null,
-   "task_type": null,
-   "task": null,
+   "unit": "ratio",
+   "task_type": "SCORE",
+   "task": "TRIPLE_BARRIER_1.5ATR_LONG (score nieskalibrowany)",
    "horizon": null,
-   "timeframes": [],
+   "timeframes": [
+    "M5"
+   ],
    "data_required": null,
    "features": null,
-   "owner_train": null,
-   "owner_infer": null,
+   "owner_train": "lab (training: lab)",
+   "owner_infer": "lab.service",
    "env": ".venv",
-   "artifact": null,
+   "artifact": "<data>/lab/models/<asset>/",
    "dependencies": [],
    "code_state": "IMPLEMENTED",
    "runtime_state": "NOT_EVALUATED",
    "state_reason": null,
    "validation": "NOT_VALIDATED",
    "receivers": [],
-   "quant_role": "TOOL",
-   "adapter": null,
-   "not_applicable_reason": "eksperyment badawczy (PCA / GMM / neutralizacja) – wariant LOGREG, bez ścieżki na żywo",
+   "quant_role": "BASE_FORECAST",
+   "adapter": "quant.adapters.extended",
+   "not_applicable_reason": null,
    "variants": [],
    "source_registry": [
-    "lab.protocol.EXPERIMENTS"
+    "lab.protocol.EXPERIMENTS",
+    "sh.models.REGISTRY (lab)"
    ],
-   "notes": null,
+   "notes": "eksperyment badawczy (PCA / GMM / neutralizacja) – wariant LOGREG, score innego zdarzenia niż TP setupu; artefakt w trybie ALL (training lab-offline, profil PEŁNY TRENING) albo gdy wygra selekcję; t_activate przypina rolę research -> rekord lab:<X> w Quant",
+   "feature_via": null,
    "live_output": "NOT_EVALUATED"
   },
   {
@@ -2966,35 +3102,40 @@
    "name": "Eksperyment lab LOGREG_GMM_AUG",
    "category": "RESEARCH",
    "files": [
-    "backend/masterquo/lab/protocol.py"
+    "backend/masterquo/lab/protocol.py",
+    "backend/masterquo/lab/service.py"
    ],
    "input": null,
    "output": null,
-   "unit": null,
-   "task_type": null,
-   "task": null,
+   "unit": "ratio",
+   "task_type": "SCORE",
+   "task": "TRIPLE_BARRIER_1.5ATR_LONG (score nieskalibrowany)",
    "horizon": null,
-   "timeframes": [],
+   "timeframes": [
+    "M5"
+   ],
    "data_required": null,
    "features": null,
-   "owner_train": null,
-   "owner_infer": null,
+   "owner_train": "lab (training: lab)",
+   "owner_infer": "lab.service",
    "env": ".venv",
-   "artifact": null,
+   "artifact": "<data>/lab/models/<asset>/",
    "dependencies": [],
    "code_state": "IMPLEMENTED",
    "runtime_state": "NOT_EVALUATED",
    "state_reason": null,
    "validation": "NOT_VALIDATED",
    "receivers": [],
-   "quant_role": "TOOL",
-   "adapter": null,
-   "not_applicable_reason": "eksperyment badawczy (PCA / GMM / neutralizacja) – wariant LOGREG, bez ścieżki na żywo",
+   "quant_role": "BASE_FORECAST",
+   "adapter": "quant.adapters.extended",
+   "not_applicable_reason": null,
    "variants": [],
    "source_registry": [
-    "lab.protocol.EXPERIMENTS"
+    "lab.protocol.EXPERIMENTS",
+    "sh.models.REGISTRY (lab)"
    ],
-   "notes": null,
+   "notes": "eksperyment badawczy (PCA / GMM / neutralizacja) – wariant LOGREG, score innego zdarzenia niż TP setupu; artefakt w trybie ALL (training lab-offline, profil PEŁNY TRENING) albo gdy wygra selekcję; t_activate przypina rolę research -> rekord lab:<X> w Quant",
+   "feature_via": null,
    "live_output": "NOT_EVALUATED"
   },
   {
@@ -3003,35 +3144,40 @@
    "name": "Eksperyment lab LOGREG_NEUTRALIZED",
    "category": "RESEARCH",
    "files": [
-    "backend/masterquo/lab/protocol.py"
+    "backend/masterquo/lab/protocol.py",
+    "backend/masterquo/lab/service.py"
    ],
    "input": null,
    "output": null,
-   "unit": null,
-   "task_type": null,
-   "task": null,
+   "unit": "ratio",
+   "task_type": "SCORE",
+   "task": "TRIPLE_BARRIER_1.5ATR_LONG (score nieskalibrowany)",
    "horizon": null,
-   "timeframes": [],
+   "timeframes": [
+    "M5"
+   ],
    "data_required": null,
    "features": null,
-   "owner_train": null,
-   "owner_infer": null,
+   "owner_train": "lab (training: lab)",
+   "owner_infer": "lab.service",
    "env": ".venv",
-   "artifact": null,
+   "artifact": "<data>/lab/models/<asset>/",
    "dependencies": [],
    "code_state": "IMPLEMENTED",
    "runtime_state": "NOT_EVALUATED",
    "state_reason": null,
    "validation": "NOT_VALIDATED",
    "receivers": [],
-   "quant_role": "TOOL",
-   "adapter": null,
-   "not_applicable_reason": "eksperyment badawczy (PCA / GMM / neutralizacja) – wariant LOGREG, bez ścieżki na żywo",
+   "quant_role": "BASE_FORECAST",
+   "adapter": "quant.adapters.extended",
+   "not_applicable_reason": null,
    "variants": [],
    "source_registry": [
-    "lab.protocol.EXPERIMENTS"
+    "lab.protocol.EXPERIMENTS",
+    "sh.models.REGISTRY (lab)"
    ],
-   "notes": null,
+   "notes": "eksperyment badawczy (PCA / GMM / neutralizacja) – wariant LOGREG, score innego zdarzenia niż TP setupu; artefakt w trybie ALL (training lab-offline, profil PEŁNY TRENING) albo gdy wygra selekcję; t_activate przypina rolę research -> rekord lab:<X> w Quant",
+   "feature_via": null,
    "live_output": "NOT_EVALUATED"
   },
   {
@@ -3063,16 +3209,21 @@
    "runtime_state": "NOT_EVALUATED",
    "state_reason": null,
    "validation": "NOT_VALIDATED",
-   "receivers": [],
+   "receivers": [
+    "scalp.dashboard (migawka MTF, prognoza SHADOW)",
+    "agent.tools get_structure_intelligence",
+    "archiwum si_forecasts / si_outcomes"
+   ],
    "quant_role": "BASE_FORECAST",
    "adapter": null,
-   "not_applicable_reason": "wynik liczony w raporcie SI na żądanie panelu; brak publikowanej predykcji na żywo – stan z rejestru",
+   "not_applicable_reason": "prognoza SHADOW STRUCTURE_MOVE_M1_V1 liczona na żywo przy każdej zamkniętej M1 (scalp.service -> scalp.dashboard (MTF) -> lab.si_service.forecast) tylko dla rodziny wskazanej w rejestrze SI shadow[STRUCTURE_MOVE_M1_V1]; archiwum si_forecasts / si_outcomes, migawka MTF i agent (get_structure_intelligence); bez adaptera Quant (PMW-PRED-2)",
    "variants": [],
    "source_registry": [
     "lab.structure_nets.FAMILIES",
     "sh.models.REGISTRY (si_move)"
    ],
    "notes": null,
+   "feature_via": null,
    "live_output": "NOT_EVALUATED"
   },
   {
@@ -3104,16 +3255,21 @@
    "runtime_state": "NOT_EVALUATED",
    "state_reason": null,
    "validation": "NOT_VALIDATED",
-   "receivers": [],
+   "receivers": [
+    "scalp.dashboard (migawka MTF, prognoza SHADOW)",
+    "agent.tools get_structure_intelligence",
+    "archiwum si_forecasts / si_outcomes"
+   ],
    "quant_role": "BASE_FORECAST",
    "adapter": null,
-   "not_applicable_reason": "wynik liczony w raporcie SI na żądanie panelu; brak publikowanej predykcji na żywo – stan z rejestru",
+   "not_applicable_reason": "prognoza SHADOW STRUCTURE_MOVE_M1_V1 liczona na żywo przy każdej zamkniętej M1 (scalp.service -> scalp.dashboard (MTF) -> lab.si_service.forecast) tylko dla rodziny wskazanej w rejestrze SI shadow[STRUCTURE_MOVE_M1_V1]; archiwum si_forecasts / si_outcomes, migawka MTF i agent (get_structure_intelligence); bez adaptera Quant (PMW-PRED-2)",
    "variants": [],
    "source_registry": [
     "lab.structure_nets.FAMILIES",
     "sh.models.REGISTRY (si_move)"
    ],
    "notes": null,
+   "feature_via": null,
    "live_output": "NOT_EVALUATED"
   },
   {
@@ -3145,16 +3301,21 @@
    "runtime_state": "NOT_EVALUATED",
    "state_reason": null,
    "validation": "NOT_VALIDATED",
-   "receivers": [],
+   "receivers": [
+    "scalp.dashboard (migawka MTF, prognoza SHADOW)",
+    "agent.tools get_structure_intelligence",
+    "archiwum si_forecasts / si_outcomes"
+   ],
    "quant_role": "BASE_FORECAST",
    "adapter": null,
-   "not_applicable_reason": "wynik liczony w raporcie SI na żądanie panelu; brak publikowanej predykcji na żywo – stan z rejestru",
+   "not_applicable_reason": "prognoza SHADOW STRUCTURE_MOVE_M1_V1 liczona na żywo przy każdej zamkniętej M1 (scalp.service -> scalp.dashboard (MTF) -> lab.si_service.forecast) tylko dla rodziny wskazanej w rejestrze SI shadow[STRUCTURE_MOVE_M1_V1]; archiwum si_forecasts / si_outcomes, migawka MTF i agent (get_structure_intelligence); bez adaptera Quant (PMW-PRED-2)",
    "variants": [],
    "source_registry": [
     "lab.structure_nets.FAMILIES",
     "sh.models.REGISTRY (si_move)"
    ],
    "notes": null,
+   "feature_via": null,
    "live_output": "NOT_EVALUATED"
   },
   {
@@ -3186,16 +3347,21 @@
    "runtime_state": "NOT_EVALUATED",
    "state_reason": null,
    "validation": "NOT_VALIDATED",
-   "receivers": [],
+   "receivers": [
+    "scalp.dashboard (migawka MTF, prognoza SHADOW)",
+    "agent.tools get_structure_intelligence",
+    "archiwum si_forecasts / si_outcomes"
+   ],
    "quant_role": "BASE_FORECAST",
    "adapter": null,
-   "not_applicable_reason": "wynik liczony w raporcie SI na żądanie panelu; brak publikowanej predykcji na żywo – stan z rejestru",
+   "not_applicable_reason": "prognoza SHADOW STRUCTURE_MOVE_M1_V1 liczona na żywo przy każdej zamkniętej M1 (scalp.service -> scalp.dashboard (MTF) -> lab.si_service.forecast) tylko dla rodziny wskazanej w rejestrze SI shadow[STRUCTURE_MOVE_M1_V1]; archiwum si_forecasts / si_outcomes, migawka MTF i agent (get_structure_intelligence); bez adaptera Quant (PMW-PRED-2)",
    "variants": [],
    "source_registry": [
     "lab.si_families.FAMILIES",
     "sh.models.REGISTRY (si_move)"
    ],
    "notes": null,
+   "feature_via": null,
    "live_output": "NOT_EVALUATED"
   },
   {
@@ -3227,16 +3393,21 @@
    "runtime_state": "NOT_EVALUATED",
    "state_reason": null,
    "validation": "NOT_VALIDATED",
-   "receivers": [],
+   "receivers": [
+    "scalp.dashboard (migawka MTF, prognoza SHADOW)",
+    "agent.tools get_structure_intelligence",
+    "archiwum si_forecasts / si_outcomes"
+   ],
    "quant_role": "BASE_FORECAST",
    "adapter": null,
-   "not_applicable_reason": "wynik liczony w raporcie SI na żądanie panelu; brak publikowanej predykcji na żywo – stan z rejestru",
+   "not_applicable_reason": "prognoza SHADOW STRUCTURE_MOVE_M1_V1 liczona na żywo przy każdej zamkniętej M1 (scalp.service -> scalp.dashboard (MTF) -> lab.si_service.forecast) tylko dla rodziny wskazanej w rejestrze SI shadow[STRUCTURE_MOVE_M1_V1]; archiwum si_forecasts / si_outcomes, migawka MTF i agent (get_structure_intelligence); bez adaptera Quant (PMW-PRED-2)",
    "variants": [],
    "source_registry": [
     "lab.si_families.FAMILIES",
     "sh.models.REGISTRY (si_move)"
    ],
    "notes": null,
+   "feature_via": null,
    "live_output": "NOT_EVALUATED"
   },
   {
@@ -3276,6 +3447,7 @@
     "mm.inventory.MODULES"
    ],
    "notes": null,
+   "feature_via": null,
    "live_output": "NOT_EVALUATED"
   },
   {
@@ -3311,6 +3483,7 @@
     "mm.inventory.MODULES"
    ],
    "notes": null,
+   "feature_via": null,
    "live_output": "NOT_EVALUATED"
   },
   {
@@ -3338,7 +3511,7 @@
    "code_state": "IMPLEMENTED",
    "runtime_state": "NOT_EVALUATED",
    "state_reason": null,
-   "validation": "NOT_APPLICABLE",
+   "validation": "NOT_VALIDATED",
    "receivers": [
     "mm.event_engine.train"
    ],
@@ -3350,6 +3523,7 @@
     "mm.inventory.MODULES"
    ],
    "notes": null,
+   "feature_via": null,
    "live_output": "NOT_EVALUATED"
   },
   {
@@ -3385,6 +3559,7 @@
     "mm.inventory.MODULES"
    ],
    "notes": null,
+   "feature_via": null,
    "live_output": "NOT_EVALUATED"
   },
   {
@@ -3420,6 +3595,7 @@
     "mm.inventory.MODULES"
    ],
    "notes": null,
+   "feature_via": null,
    "live_output": "NOT_EVALUATED"
   },
   {
@@ -3457,6 +3633,7 @@
     "mm.inventory.MODULES"
    ],
    "notes": null,
+   "feature_via": null,
    "live_output": "NOT_EVALUATED"
   },
   {
@@ -3494,6 +3671,7 @@
     "mm.inventory.MODULES"
    ],
    "notes": null,
+   "feature_via": null,
    "live_output": "NOT_EVALUATED"
   },
   {
@@ -3535,6 +3713,7 @@
     "mm.inventory.MODULES"
    ],
    "notes": null,
+   "feature_via": null,
    "live_output": "NOT_EVALUATED"
   },
   {
@@ -3578,6 +3757,7 @@
     "mm.inventory.MODULES"
    ],
    "notes": null,
+   "feature_via": null,
    "live_output": "NOT_EVALUATED"
   },
   {
@@ -3615,6 +3795,7 @@
     "mm.inventory.MODULES"
    ],
    "notes": null,
+   "feature_via": null,
    "live_output": "NOT_EVALUATED"
   },
   {
@@ -3655,6 +3836,7 @@
     "mm.inventory.MODULES"
    ],
    "notes": null,
+   "feature_via": null,
    "live_output": "NOT_EVALUATED"
   },
   {
@@ -3692,6 +3874,7 @@
     "runtime.py"
    ],
    "notes": "MODEL_SIMULATED – wynik symulacji, nie prawdopodobieństwo skalibrowane na zdarzeniach",
+   "feature_via": null,
    "live_output": "NOT_EVALUATED"
   },
   {
@@ -3720,15 +3903,19 @@
    "runtime_state": "NOT_EVALUATED",
    "state_reason": null,
    "validation": "NOT_APPLICABLE",
-   "receivers": [],
-   "quant_role": "CONTEXT_FEATURE",
+   "receivers": [
+    "evaluation.service (zone_context kandydata)",
+    "migawka Quant (rekord STATE)"
+   ],
+   "quant_role": "CONTEXT_STATE",
    "adapter": "quant.adapters.extended",
    "not_applicable_reason": null,
    "variants": [],
    "source_registry": [
     "runtime.py"
    ],
-   "notes": null,
+   "notes": "rekord STATE (ZONE_MAP_SUMMARY) w migawce Quant bez cech MetaModelu – quant/features.py nie mapuje stref; cechy zone_* trafiają do kandydata i ledgera oceny (evaluation.zone_context)",
+   "feature_via": null,
    "live_output": "NOT_EVALUATED"
   },
   {
@@ -3758,20 +3945,21 @@
    "state_reason": null,
    "validation": "NOT_APPLICABLE",
    "receivers": [],
-   "quant_role": "CONTEXT_FEATURE",
+   "quant_role": "NOT_A_VOTE",
    "adapter": null,
-   "not_applicable_reason": "liczone na żądanie panelu (job) – brak cyklu niezależnego od panelu",
+   "not_applicable_reason": "wizualizacja panelu Strefy rynkowe – liczone na żądanie (job) / w panelu, brak cyklu niezależnego od panelu; bez adaptera Quant i konsumenta cech",
    "variants": [],
    "source_registry": [
     "runtime.py"
    ],
    "notes": null,
+   "feature_via": null,
    "live_output": "NOT_EVALUATED"
   },
   {
    "id": "analysis:indicators",
    "aliases": [],
-   "name": "Wskaźniki PMW-IND-1 (EMA/VWAP/RSI/MACD/BB, mikrostruktura, DXY)",
+   "name": "Wskaźniki PMW-IND-1 (AVWAP sesja/zdarzenie/manualny, semiwariancja, percentyl spreadu, cechy profilu sesji, mikrostruktura arkusza/OFI, relacja DXY)",
    "category": "ANALYSIS",
    "files": [
     "backend/masterquo/indicators/"
@@ -3795,7 +3983,7 @@
    "state_reason": null,
    "validation": "NOT_APPLICABLE",
    "receivers": [],
-   "quant_role": "CONTEXT_FEATURE",
+   "quant_role": "CONTEXT_STATE",
    "adapter": "quant.adapters.extended",
    "not_applicable_reason": null,
    "variants": [],
@@ -3803,6 +3991,7 @@
     "runtime.py"
    ],
    "notes": null,
+   "feature_via": null,
    "live_output": "NOT_EVALUATED"
   },
   {
@@ -3811,7 +4000,8 @@
    "name": "Session Volume Profile (PMW-SVP-1)",
    "category": "ANALYSIS",
    "files": [
-    "backend/masterquo/svp/"
+    "backend/masterquo/svp/",
+    "backend/masterquo/sh/pack/features.py"
    ],
    "input": null,
    "output": null,
@@ -3831,15 +4021,19 @@
    "runtime_state": "NOT_EVALUATED",
    "state_reason": null,
    "validation": "NOT_APPLICABLE",
-   "receivers": [],
-   "quant_role": "CONTEXT_FEATURE",
+   "receivers": [
+    "SH pack PMW_HG08 / PMW_SC10 (sh/pack/detectors.value_area_rejection – profil poprzedniej sesji)",
+    "panel SVP (profile użytkownika)"
+   ],
+   "quant_role": "GATE_EXISTING",
    "adapter": null,
-   "not_applicable_reason": "profile użytkownika (tick volume = aktywność feedu, nie wolumen obrotu) – kontekst panelu",
+   "not_applicable_reason": "profil poprzedniej sesji (svp.engine.compute na zamkniętych M5, tick volume = aktywność feedu, nie wolumen obrotu) jest warunkiem wejścia wariantów pakietu SH PMW_HG08 / PMW_SC10 (value_area_rejection: brak profilu = NO_DATA, bez setupu); profile użytkownika – panel; Quant nie dubluje bramki",
    "variants": [],
    "source_registry": [
     "runtime.py"
    ],
    "notes": null,
+   "feature_via": null,
    "live_output": "NOT_EVALUATED"
   },
   {
@@ -3877,15 +4071,17 @@
     "runtime.py"
    ],
    "notes": null,
+   "feature_via": null,
    "live_output": "NOT_EVALUATED"
   },
   {
    "id": "analysis:walls",
    "aliases": [],
-   "name": "Opcje / walls / IV (opcjonalne źródło)",
+   "name": "Walls D1 (σ: import IV → IV ręczna → HV_PROXY domyślnie)",
    "category": "ANALYSIS",
    "files": [
-    "backend/masterquo/analysis/"
+    "backend/masterquo/analysis/walls.py",
+    "backend/masterquo/analysis/iv_import.py"
    ],
    "input": null,
    "output": null,
@@ -3905,15 +4101,19 @@
    "runtime_state": "NOT_EVALUATED",
    "state_reason": null,
    "validation": "NOT_APPLICABLE",
-   "receivers": [],
-   "quant_role": "CONTEXT_FEATURE",
+   "receivers": [
+    "strategies.s12_walls_range (ścieżka A, S12)",
+    "panel / API ścian zmienności"
+   ],
+   "quant_role": "GATE_EXISTING",
    "adapter": null,
-   "not_applicable_reason": "wymaga importu IV (import-iv); brak źródła = stan danych, nie zero",
+   "not_applicable_reason": "bez importu IV źródłem σ jest zmienność historyczna D1 (HV_PROXY, close-to-close), nie rynek opcji; IV_SOURCED niezaimplementowane (NOT_CONFIGURED); brak źródła = UNAVAILABLE, nie zero; poziomy ścian są wejściem strategii S12 (ścieżka A) – Quant ich nie dubluje",
    "variants": [],
    "source_registry": [
     "runtime.py"
    ],
    "notes": null,
+   "feature_via": null,
    "live_output": "NOT_EVALUATED"
   },
   {
@@ -3951,6 +4151,7 @@
     "runtime.py"
    ],
    "notes": null,
+   "feature_via": null,
    "live_output": "NOT_EVALUATED"
   },
   {
@@ -3988,6 +4189,7 @@
     "runtime.py"
    ],
    "notes": null,
+   "feature_via": null,
    "live_output": "NOT_EVALUATED"
   },
   {
@@ -4023,48 +4225,7 @@
     "lab/traceability.py (wzmianka)"
    ],
    "notes": null,
-   "live_output": "NOT_EVALUATED"
-  },
-  {
-   "id": "tsfm:tirex2",
-   "aliases": [
-    "TIREX2",
-    "TiRex-2",
-    "tirex2"
-   ],
-   "name": "TiRex-2 (TSFM, prognoza ceny M5/M15)",
-   "category": "MODEL_PRETRAINED",
-   "files": [
-    "backend/masterquo/tsfm/",
-    "backend/tsfm_runtime/"
-   ],
-   "input": null,
-   "output": null,
-   "unit": null,
-   "task_type": null,
-   "task": null,
-   "horizon": null,
-   "timeframes": [],
-   "data_required": null,
-   "features": null,
-   "owner_train": null,
-   "owner_infer": null,
-   "env": ".venv_tirex2",
-   "artifact": null,
-   "dependencies": [],
-   "code_state": "IMPLEMENTED",
-   "runtime_state": "NOT_EVALUATED",
-   "state_reason": null,
-   "validation": "NOT_VALIDATED",
-   "receivers": [],
-   "quant_role": "BASE_FORECAST",
-   "adapter": "modelhub.adapters.all_predictions",
-   "not_applicable_reason": null,
-   "variants": [],
-   "source_registry": [
-    "quant.ids.EXTRA_PRODUCERS (1.46)"
-   ],
-   "notes": "rekordy z model_id tsfm:tirex2 (TsfmService, jak Chronos-2 / Granite TTM)",
+   "feature_via": null,
    "live_output": "NOT_EVALUATED"
   },
   {
@@ -4103,6 +4264,7 @@
     "quant.ids.EXTRA_PRODUCERS (1.46)"
    ],
    "notes": null,
+   "feature_via": null,
    "live_output": "NOT_EVALUATED"
   },
   {
@@ -4140,6 +4302,7 @@
     "quant.ids.EXTRA_PRODUCERS (1.46)"
    ],
    "notes": null,
+   "feature_via": null,
    "live_output": "NOT_EVALUATED"
   },
   {
@@ -4171,12 +4334,13 @@
    "receivers": [],
    "quant_role": "BASE_FORECAST",
    "adapter": null,
-   "not_applicable_reason": "rodzina bazowa SI – raport SI na żądanie, bez publikowanej predykcji",
+   "not_applicable_reason": "rodzina bazowa SI – prognoza SHADOW STRUCTURE_MOVE_M1_V1 liczona na żywo przy każdej zamkniętej M1 (scalp.service -> scalp.dashboard (MTF) -> lab.si_service.forecast) tylko dla rodziny wskazanej w rejestrze SI shadow[STRUCTURE_MOVE_M1_V1]; archiwum si_forecasts / si_outcomes, migawka MTF i agent (get_structure_intelligence); bez adaptera Quant (PMW-PRED-2)",
    "variants": [],
    "source_registry": [
     "quant.ids.EXTRA_PRODUCERS (1.46)"
    ],
    "notes": null,
+   "feature_via": null,
    "live_output": "NOT_EVALUATED"
   },
   {
@@ -4208,12 +4372,13 @@
    "receivers": [],
    "quant_role": "BASE_FORECAST",
    "adapter": null,
-   "not_applicable_reason": "rodzina bazowa SI – raport SI na żądanie, bez publikowanej predykcji",
+   "not_applicable_reason": "rodzina bazowa SI – prognoza SHADOW STRUCTURE_MOVE_M1_V1 liczona na żywo przy każdej zamkniętej M1 (scalp.service -> scalp.dashboard (MTF) -> lab.si_service.forecast) tylko dla rodziny wskazanej w rejestrze SI shadow[STRUCTURE_MOVE_M1_V1]; archiwum si_forecasts / si_outcomes, migawka MTF i agent (get_structure_intelligence); bez adaptera Quant (PMW-PRED-2)",
    "variants": [],
    "source_registry": [
     "quant.ids.EXTRA_PRODUCERS (1.46)"
    ],
    "notes": null,
+   "feature_via": null,
    "live_output": "NOT_EVALUATED"
   },
   {
@@ -4251,6 +4416,7 @@
     "quant.ids.EXTRA_PRODUCERS (1.46)"
    ],
    "notes": null,
+   "feature_via": null,
    "live_output": "NOT_EVALUATED"
   },
   {
@@ -4288,6 +4454,7 @@
     "quant.ids.EXTRA_PRODUCERS (1.46)"
    ],
    "notes": null,
+   "feature_via": null,
    "live_output": "NOT_EVALUATED"
   },
   {
@@ -4325,6 +4492,7 @@
     "quant.ids.EXTRA_PRODUCERS (1.46)"
    ],
    "notes": null,
+   "feature_via": null,
    "live_output": "NOT_EVALUATED"
   },
   {
@@ -4362,6 +4530,7 @@
     "quant.ids.EXTRA_PRODUCERS (1.46)"
    ],
    "notes": null,
+   "feature_via": null,
    "live_output": "NOT_EVALUATED"
   },
   {
@@ -4399,6 +4568,7 @@
     "quant.ids.EXTRA_PRODUCERS (1.46)"
    ],
    "notes": null,
+   "feature_via": null,
    "live_output": "NOT_EVALUATED"
   },
   {
@@ -4436,6 +4606,7 @@
     "quant.ids.EXTRA_PRODUCERS (1.46)"
    ],
    "notes": "rekordy z jawnym canonical_id research:graph50:<cel>",
+   "feature_via": null,
    "live_output": "NOT_EVALUATED"
   },
   {
@@ -4473,6 +4644,7 @@
     "quant.ids.EXTRA_PRODUCERS (1.46)"
    ],
    "notes": null,
+   "feature_via": null,
    "live_output": "NOT_EVALUATED"
   },
   {
@@ -4510,6 +4682,7 @@
     "quant.ids.EXTRA_PRODUCERS (1.46)"
    ],
    "notes": "wymaga środowiska z torch 2.14.1",
+   "feature_via": null,
    "live_output": "NOT_EVALUATED"
   },
   {
@@ -4547,6 +4720,7 @@
     "quant.ids.EXTRA_PRODUCERS (1.46)"
    ],
    "notes": null,
+   "feature_via": null,
    "live_output": "NOT_EVALUATED"
   },
   {
@@ -4584,6 +4758,7 @@
     "quant.ids.EXTRA_PRODUCERS (1.46)"
    ],
    "notes": null,
+   "feature_via": null,
    "live_output": "NOT_EVALUATED"
   },
   {
@@ -4621,6 +4796,7 @@
     "quant.ids.EXTRA_PRODUCERS (1.46)"
    ],
    "notes": null,
+   "feature_via": null,
    "live_output": "NOT_EVALUATED"
   },
   {
@@ -4659,6 +4835,7 @@
     "quant.ids.EXTRA_PRODUCERS (1.46)"
    ],
    "notes": null,
+   "feature_via": null,
    "live_output": "NOT_EVALUATED"
   },
   {
@@ -4696,6 +4873,7 @@
     "quant.ids.EXTRA_PRODUCERS (1.46)"
    ],
    "notes": null,
+   "feature_via": null,
    "live_output": "NOT_EVALUATED"
   },
   {
@@ -4733,6 +4911,7 @@
     "quant.ids.EXTRA_PRODUCERS (1.46)"
    ],
    "notes": null,
+   "feature_via": null,
    "live_output": "NOT_EVALUATED"
   },
   {
@@ -4770,6 +4949,7 @@
     "quant.ids.EXTRA_PRODUCERS (1.46)"
    ],
    "notes": null,
+   "feature_via": null,
    "live_output": "NOT_EVALUATED"
   },
   {
@@ -4807,6 +4987,7 @@
     "quant.ids.EXTRA_PRODUCERS (1.46)"
    ],
    "notes": null,
+   "feature_via": null,
    "live_output": "NOT_EVALUATED"
   },
   {
@@ -4844,6 +5025,7 @@
     "quant.ids.EXTRA_PRODUCERS (1.46)"
    ],
    "notes": null,
+   "feature_via": null,
    "live_output": "NOT_EVALUATED"
   },
   {
@@ -4881,6 +5063,7 @@
     "quant.ids.EXTRA_PRODUCERS (1.46)"
    ],
    "notes": null,
+   "feature_via": null,
    "live_output": "NOT_EVALUATED"
   },
   {
@@ -4918,6 +5101,7 @@
     "quant.ids.EXTRA_PRODUCERS (1.46)"
    ],
    "notes": null,
+   "feature_via": null,
    "live_output": "NOT_EVALUATED"
   },
   {
@@ -4955,6 +5139,7 @@
     "quant.ids.EXTRA_PRODUCERS (1.46)"
    ],
    "notes": null,
+   "feature_via": null,
    "live_output": "NOT_EVALUATED"
   },
   {
@@ -4992,6 +5177,7 @@
     "quant.ids.EXTRA_PRODUCERS (1.46)"
    ],
    "notes": null,
+   "feature_via": null,
    "live_output": "NOT_EVALUATED"
   },
   {
@@ -5029,6 +5215,7 @@
     "quant.ids.EXTRA_PRODUCERS (1.46)"
    ],
    "notes": null,
+   "feature_via": null,
    "live_output": "NOT_EVALUATED"
   },
   {
@@ -5066,6 +5253,7 @@
     "quant.ids.EXTRA_PRODUCERS (1.46)"
    ],
    "notes": null,
+   "feature_via": null,
    "live_output": "NOT_EVALUATED"
   },
   {
@@ -5103,6 +5291,7 @@
     "quant.ids.EXTRA_PRODUCERS (1.46)"
    ],
    "notes": null,
+   "feature_via": null,
    "live_output": "NOT_EVALUATED"
   },
   {
@@ -5140,6 +5329,7 @@
     "quant.ids.EXTRA_PRODUCERS (1.46)"
    ],
    "notes": null,
+   "feature_via": null,
    "live_output": "NOT_EVALUATED"
   },
   {
@@ -5177,6 +5367,7 @@
     "quant.ids.EXTRA_PRODUCERS (1.46)"
    ],
    "notes": null,
+   "feature_via": null,
    "live_output": "NOT_EVALUATED"
   },
   {
@@ -5214,6 +5405,7 @@
     "quant.ids.EXTRA_PRODUCERS (1.46)"
    ],
    "notes": null,
+   "feature_via": null,
    "live_output": "NOT_EVALUATED"
   },
   {
@@ -5251,6 +5443,7 @@
     "quant.ids.EXTRA_PRODUCERS (1.46)"
    ],
    "notes": null,
+   "feature_via": null,
    "live_output": "NOT_EVALUATED"
   },
   {
@@ -5288,6 +5481,7 @@
     "quant.ids.EXTRA_PRODUCERS (1.46)"
    ],
    "notes": null,
+   "feature_via": null,
    "live_output": "NOT_EVALUATED"
   },
   {
@@ -5325,6 +5519,7 @@
     "quant.ids.EXTRA_PRODUCERS (1.46)"
    ],
    "notes": null,
+   "feature_via": null,
    "live_output": "NOT_EVALUATED"
   }
  ],
@@ -5364,8 +5559,8 @@
   },
   "adapters": {
    "implemented": 118,
-   "with_adapter": 55,
-   "not_applicable_justified": 63,
+   "with_adapter": 58,
+   "not_applicable_justified": 60,
    "missing": []
   },
   "operational": {
@@ -5375,16 +5570,16 @@
    "by_runtime_state": {
     "MISSING_DEPENDENCY": 3,
     "NOT_CONNECTED": 1,
-    "NOT_EVALUATED": 92,
+    "NOT_EVALUATED": 91,
     "NOT_TRAINED": 17,
     "SHADOW_ONLY": 1,
-    "UNAVAILABLE": 4
+    "UNAVAILABLE": 5
    },
    "probe_ok_with_adapter": 0,
    "note": "liczone z opublikowanej generacji Quant Core (ważny, świeży wynik READY); offline – nieoceniane"
   },
   "analytical": {
-   "requiring_validation": 43,
+   "requiring_validation": 61,
    "validated_for_role": 0,
    "ids": [],
    "note": "pełne pokrycie katalogu nie oznacza gotowości modeli"

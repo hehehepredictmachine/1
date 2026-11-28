@@ -9,8 +9,9 @@
 | Interwał / horyzonty | M5 / brak (pomiar stanu) |
 | Środowisko | DEEP (torch, gymnasium, stable_baselines3) |
 | Dane | BARS, M5, ≥ 3000 świec |
-| Odbiorcy | RISK:exposure_proposal (OBSERVE), PANEL:model_status |
-| Role | OFF = nie liczy; SHADOW = liczy i zapisuje, rola OBSERVE (bez wpływu); ASSIST = tylko po walidacji APPROVED na danych REAL – może wyłącznie wstrzymać wejście (SH: READY→WAIT, ACTIVE: węzeł MODELS); REQUIRED = `config.decision.required_models` – brak / nieświeża / przeciwna prognoza blokuje nowe wejście. Żadna rola nie tworzy wejścia ani nie podnosi WAIT. |
+| Odbiorcy | PANEL:model_status |
+| Odbiorcy planowani | RISK:exposure_proposal (OBSERVE) – niepodłączeni w 1.46 (brak odbiorcy w kodzie) |
+| Role | OFF = nie liczy; SHADOW = liczy i zapisuje, rola OBSERVE (bez wpływu); ASSIST = niedostępna – typ wyniku `RL_ACTION` nie ma odbiorcy roli ASSIST (odmowa ASSIST_NO_RECEIVER); wynik działa tylko jako obserwacja; REQUIRED = `config.decision.required_models` – brak / nieświeża / przeciwna prognoza blokuje nowe wejście. Żadna rola nie tworzy wejścia ani nie podnosi WAIT. |
 
 ## Walidacja
 

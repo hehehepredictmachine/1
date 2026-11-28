@@ -6,11 +6,11 @@
 |---|---|
 | Rodzaj | TRAINED (trening) |
 | Zadanie | DIRECTION_H – typ PMW-PRED-2 `CLASS_PROBABILITIES`, jednostka `probability` |
-| Interwał / horyzonty | M5 / 6 |
+| Interwał / horyzonty | M1, M5, M15, M30 / h świec (per paczka) |
 | Środowisko | MAIN (bez dodatkowych bibliotek) |
 | Dane | BARS, M5 |
 | Odbiorcy | MODELHUB:trainhub_inference -> all_predictions, SH_CONTEXT:direction_distribution, PANEL:training_center |
-| Role | OFF = nie liczy; SHADOW = liczy i zapisuje, rola OBSERVE (bez wpływu); ASSIST = tylko po walidacji APPROVED na danych REAL – może wyłącznie wstrzymać wejście (SH: READY→WAIT, ACTIVE: węzeł MODELS); REQUIRED = `config.decision.required_models` – brak / nieświeża / przeciwna prognoza blokuje nowe wejście. Żadna rola nie tworzy wejścia ani nie podnosi WAIT. |
+| Role | OFF = nie liczy; SHADOW = liczy i zapisuje, rola OBSERVE (bez wpływu); ASSIST = niedostępna – typ wyniku `CLASS_PROBABILITIES` nie ma odbiorcy roli ASSIST (odmowa ASSIST_NO_RECEIVER); wynik działa tylko jako obserwacja; REQUIRED = `config.decision.required_models` – brak / nieświeża / przeciwna prognoza blokuje nowe wejście. Żadna rola nie tworzy wejścia ani nie podnosi WAIT. |
 
 ## Walidacja
 

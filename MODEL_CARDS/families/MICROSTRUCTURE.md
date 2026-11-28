@@ -9,8 +9,9 @@
 | Interwał / horyzonty | – / brak (pomiar stanu) |
 | Środowisko | MAIN (sklearn) |
 | Dane | L2_BOOK, IndicatorService.book_snapshots (market_book_get) |
-| Odbiorcy | SH_CONTEXT:entry_quality, RISK:execution_conditions, PANEL:microstructure |
-| Role | OFF = nie liczy; SHADOW = liczy i zapisuje, rola OBSERVE (bez wpływu); ASSIST = tylko po walidacji APPROVED na danych REAL – może wyłącznie wstrzymać wejście (SH: READY→WAIT, ACTIVE: węzeł MODELS); REQUIRED = `config.decision.required_models` – brak / nieświeża / przeciwna prognoza blokuje nowe wejście. Żadna rola nie tworzy wejścia ani nie podnosi WAIT. |
+| Odbiorcy | SH_CONTEXT:entry_quality, PANEL:microstructure |
+| Odbiorcy planowani | RISK:execution_conditions – niepodłączeni w 1.46 (brak odbiorcy w kodzie) |
+| Role | OFF = nie liczy; SHADOW = liczy i zapisuje, rola OBSERVE (bez wpływu); ASSIST = niedostępna – typ wyniku `MICROSTRUCTURE` nie ma odbiorcy roli ASSIST (odmowa ASSIST_NO_RECEIVER); wynik działa tylko jako obserwacja; REQUIRED = `config.decision.required_models` – brak / nieświeża / przeciwna prognoza blokuje nowe wejście. Żadna rola nie tworzy wejścia ani nie podnosi WAIT. |
 
 ## Walidacja
 

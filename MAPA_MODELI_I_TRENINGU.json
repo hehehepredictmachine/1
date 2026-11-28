@@ -1,48 +1,364 @@
 {
- "schema": "mq-model-map-1",
+ "schema": "mq-model-map-2",
+ "source": "quant/inventory.build() (PMW-QUANT-INV-1) + opisy tools/model_map.ELEMENTS",
  "elements": [
   {
-   "id": "FORECAST_GOLD_CANDLES",
-   "name": "Prognozy świec (gold_candles) – regresja logistyczna wieloklasowa + kalibracja + kwantyle GBR",
-   "implementation": "backend/gold_candles/model.py, gold_candles_runtime/plan_train.py",
-   "task": "rozkład kierunku zamknięcia DOWN/FLAT/UP (próg ±0.20×ATR) + kwantyle q10/q50/q90",
-   "data_source": "eksport MT5 M5 + M30 dokładnego symbolu (czas serwera → UTC, zmierzony offset / NY_CLOSE)",
-   "tf": "M5 (+ kontekst M30 dołączany od available_at)",
-   "horizon": "1/3/6 świec M5 = 5/15/30 min",
-   "side": "nie dotyczy (rozkład)",
-   "features": "gold_candles/features.py (wzorce świec, ATR, pozycja w siatce grid_step z profilu instrumentu, kontekst M30)",
-   "label": "klasa zmiany ceny zamknięcia po h świecach względem ATR",
-   "trainer": "gold_candles_runtime.plan_train (.venv_candles; plan zamrożony, fit/kalibracja/holdout chronologicznie)",
-   "loader": "gold_candles_runtime.worker → gold_candles.model.forecast (bot: ForecastService, proces per instrument)",
-   "artifact": "XAUUSD: data/forecast/runs/<run>/forecast_model.json; BTC: data/instruments/BTC/forecast/runs/…; rejestr registry.json per instrument",
-   "instruments": [
-    "XAUUSD",
-    "BTC"
-   ],
-   "status": "ZAIMPLEMENTOWANE_I_ZINTEGROWANE (XAUUSD: grid 5.0; BTC: grid 500 – hipoteza badawcza); parity loadera; brak testu na realnym MT5 w tym środowisku"
-  },
-  {
-   "id": "DOUBLE_RETEST_V2",
-   "name": "Maszyna stanów Double Retest v2",
-   "implementation": "masterquo/forecast/double_retest.py",
-   "task": "reguła setupu (bez trenowania)",
-   "data_source": "bary bota",
-   "tf": "M5/M30",
+   "id": "rule:data_quality",
+   "name": "Jakość i świeżość danych (bridge, zegar, spread)",
+   "implementation": "backend/masterquo/sh/context.py, backend/masterquo/data/quality.py, backend/masterquo/quant/snapshot.py, backend/masterquo/mt5/bridge.py",
+   "task": "STATE / state",
+   "data_source": "notowanie MT5, zegar, spread",
+   "tf": "—",
    "horizon": "—",
-   "side": "oba",
+   "side": "—",
    "features": "—",
    "label": "—",
-   "trainer": "brak (reguła)",
-   "loader": "ForecastService",
+   "trainer": "—",
+   "loader": "—",
+   "artifact": "—",
+   "instruments": [],
+   "status": "kod: IMPLEMENTED; walidacja: NOT_APPLICABLE; rola w Quant Core: GATE_EXISTING",
+   "aliases": [
+    "data_quality"
+   ],
+   "legacy_ids": [],
+   "category": "RULE_OR_MEASUREMENT",
+   "registry_source": [
+    "sh.models.REGISTRY"
+   ]
+  },
+  {
+   "id": "rule:risk_engine",
+   "name": "Wspólny silnik ryzyka SH (limity, margin, spread, ekspozycja)",
+   "implementation": "backend/masterquo/sh/risk.py, backend/masterquo/risk/portfolio.py",
+   "task": "STATE / state",
+   "data_source": "—",
+   "tf": "—",
+   "horizon": "—",
+   "side": "—",
+   "features": "—",
+   "label": "—",
+   "trainer": "—",
+   "loader": "—",
+   "artifact": "—",
+   "instruments": [],
+   "status": "kod: IMPLEMENTED; walidacja: NOT_APPLICABLE; rola w Quant Core: GATE_EXISTING (bramka ryzyka liczona w ścieżce wykonania (RiskBook / risk/portfolio.py) – Quant jej nie dubluje)",
+   "aliases": [
+    "risk_engine"
+   ],
+   "legacy_ids": [],
+   "category": "RULE_OR_MEASUREMENT",
+   "registry_source": [
+    "sh.models.REGISTRY"
+   ]
+  },
+  {
+   "id": "rule:news",
+   "name": "Kalendarz makro (blokada wysokiego wpływu)",
+   "implementation": "backend/masterquo/news/",
+   "task": "STATE / state",
+   "data_source": "kalendarz makro (czas pierwszego odbioru)",
+   "tf": "—",
+   "horizon": "—",
+   "side": "—",
+   "features": "—",
+   "label": "—",
+   "trainer": "—",
+   "loader": "—",
+   "artifact": "—",
+   "instruments": [],
+   "status": "kod: IMPLEMENTED; walidacja: NOT_APPLICABLE; rola w Quant Core: GATE_EXISTING",
+   "aliases": [
+    "news"
+   ],
+   "legacy_ids": [],
+   "category": "RULE_OR_MEASUREMENT",
+   "registry_source": [
+    "sh.models.REGISTRY"
+   ]
+  },
+  {
+   "id": "rule:regime_v2",
+   "name": "Reżim rynku MQ_REGIME_MULTI_V2 (market_v2)",
+   "implementation": "—",
+   "task": "STATE / state",
+   "data_source": "—",
+   "tf": "M5, M15, H1",
+   "horizon": "—",
+   "side": "—",
+   "features": "—",
+   "label": "—",
+   "trainer": "—",
+   "loader": "—",
+   "artifact": "—",
+   "instruments": [],
+   "status": "kod: IMPLEMENTED; walidacja: NOT_APPLICABLE; rola w Quant Core: CONTEXT_FEATURE",
+   "aliases": [
+    "regime_v2"
+   ],
+   "legacy_ids": [],
+   "category": "RULE_OR_MEASUREMENT",
+   "registry_source": [
+    "sh.models.REGISTRY"
+   ]
+  },
+  {
+   "id": "rule:structure_v2",
+   "name": "Struktura rynku structure_v2 (M5/M15/H1, BOS/CHoCH)",
+   "implementation": "—",
+   "task": "STATE / state",
+   "data_source": "—",
+   "tf": "M5, M15, H1",
+   "horizon": "—",
+   "side": "—",
+   "features": "—",
+   "label": "—",
+   "trainer": "—",
+   "loader": "—",
+   "artifact": "—",
+   "instruments": [],
+   "status": "kod: IMPLEMENTED; walidacja: NOT_APPLICABLE; rola w Quant Core: CONTEXT_STATE (rekord STATE w migawce Quant (panel / agent / REQUIRED); quant/features.py nie buduje z niego cech – struktura nie jest wejściem MetaModelu (nowa cecha = osobna decyzja z nową wersją schematu cech))",
+   "aliases": [
+    "structure_v2"
+   ],
+   "legacy_ids": [],
+   "category": "RULE_OR_MEASUREMENT",
+   "registry_source": [
+    "sh.models.REGISTRY"
+   ]
+  },
+  {
+   "id": "rule:smc_pullback",
+   "name": "Pullback + SMC (BoS/CHoCH/IDM) – context_ind",
+   "implementation": "—",
+   "task": "—",
+   "data_source": "—",
+   "tf": "—",
+   "horizon": "—",
+   "side": "—",
+   "features": "—",
+   "label": "—",
+   "trainer": "—",
+   "loader": "—",
+   "artifact": "—",
+   "instruments": [],
+   "status": "kod: IMPLEMENTED; walidacja: NOT_APPLICABLE; rola w Quant Core: CONTEXT_FEATURE (akcesor istnieje: migawka SH sh.snapshot['ctx'] w każdym cyklu SH (smc_trend_m5, smc_high_m5 / smc_low_m5, pb_last_high_m5 / pb_last_low_m5, smc_trend_m1 / smc_last_m1); brak adaptera Quant – nie jest cechą MetaModelu (PMW-PRED-2))",
+   "aliases": [
+    "smc_pullback"
+   ],
+   "legacy_ids": [],
+   "category": "RULE_OR_MEASUREMENT",
+   "registry_source": [
+    "sh.models.REGISTRY"
+   ]
+  },
+  {
+   "id": "rule:vamd",
+   "name": "VAMD momentum – profil DEFAULT (stały dla SH; kalibracja context_ind dotyczy panelu/badań)",
+   "implementation": "—",
+   "task": "—",
+   "data_source": "—",
+   "tf": "—",
+   "horizon": "—",
+   "side": "—",
+   "features": "—",
+   "label": "—",
+   "trainer": "—",
+   "loader": "—",
+   "artifact": "—",
+   "instruments": [],
+   "status": "kod: IMPLEMENTED; walidacja: NOT_APPLICABLE; rola w Quant Core: CONTEXT_FEATURE (VAMD liczony na żywo w migawce SH (sh.context: ctx.vamd_m5 / ctx.vamd_m1) i per wykres w context_ind (panel); bez adaptera Quant (PMW-PRED-2) – nie jest modelem „Quant Ultimate Momentum Pro”)",
+   "aliases": [
+    "vamd"
+   ],
+   "legacy_ids": [],
+   "category": "RULE_OR_MEASUREMENT",
+   "registry_source": [
+    "sh.models.REGISTRY"
+   ]
+  },
+  {
+   "id": "rule:fractal",
+   "name": "Bounded Katz FD (trend/chop bez kierunku) – profil DEFAULT (stały dla SH; kalibracja context_ind dotyczy panelu/badań)",
+   "implementation": "—",
+   "task": "—",
+   "data_source": "—",
+   "tf": "—",
+   "horizon": "—",
+   "side": "—",
+   "features": "—",
+   "label": "—",
+   "trainer": "—",
+   "loader": "—",
+   "artifact": "—",
+   "instruments": [],
+   "status": "kod: IMPLEMENTED; walidacja: NOT_APPLICABLE; rola w Quant Core: CONTEXT_FEATURE (Katz FD liczony na żywo w migawce SH (sh.context: ctx.fd_zone_m5) i per wykres w context_ind; bez adaptera Quant (PMW-PRED-2))",
+   "aliases": [
+    "fractal"
+   ],
+   "legacy_ids": [],
+   "category": "RULE_OR_MEASUREMENT",
+   "registry_source": [
+    "sh.models.REGISTRY"
+   ]
+  },
+  {
+   "id": "rule:atr_vol",
+   "name": "Zmienność ATR(14) M1/M5 (sh/context, Wilder)",
+   "implementation": "—",
+   "task": "STATE / price",
+   "data_source": "—",
+   "tf": "M1, M5",
+   "horizon": "—",
+   "side": "—",
+   "features": "—",
+   "label": "—",
+   "trainer": "—",
+   "loader": "—",
+   "artifact": "—",
+   "instruments": [],
+   "status": "kod: IMPLEMENTED; walidacja: NOT_APPLICABLE; rola w Quant Core: CONTEXT_FEATURE",
+   "aliases": [
+    "atr_vol"
+   ],
+   "legacy_ids": [],
+   "category": "RULE_OR_MEASUREMENT",
+   "registry_source": [
+    "sh.models.REGISTRY"
+   ]
+  },
+  {
+   "id": "rule:candles_patterns",
+   "name": "Świece i formacje (candles, chart_patterns, sci2)",
+   "implementation": "—",
+   "task": "—",
+   "data_source": "—",
+   "tf": "—",
+   "horizon": "—",
+   "side": "—",
+   "features": "—",
+   "label": "—",
+   "trainer": "—",
+   "loader": "—",
+   "artifact": "—",
+   "instruments": [],
+   "status": "kod: IMPLEMENTED; walidacja: NOT_APPLICABLE; rola w Quant Core: CONTEXT_FEATURE (formacje opisowe (role świec) – kontekst panelu, bez liczbowego wyjścia)",
+   "aliases": [
+    "candles_patterns"
+   ],
+   "legacy_ids": [],
+   "category": "RULE_OR_MEASUREMENT",
+   "registry_source": [
+    "sh.models.REGISTRY"
+   ]
+  },
+  {
+   "id": "rule:liquidity",
+   "name": "Płynność: sesje (sweep boxes) + heatmapa likwidacji",
+   "implementation": "—",
+   "task": "—",
+   "data_source": "—",
+   "tf": "—",
+   "horizon": "—",
+   "side": "—",
+   "features": "—",
+   "label": "—",
+   "trainer": "—",
+   "loader": "—",
+   "artifact": "—",
+   "instruments": [],
+   "status": "kod: IMPLEMENTED; walidacja: NOT_APPLICABLE; rola w Quant Core: CONTEXT_FEATURE (poziomy płynności (boksy sesji / sweep – analytics.session_engine, heatmapa likwidacji – analytics.liquidation) w polityce OBSERVE analytics.liquidity_context (panel, kontekst silnika, agent); brak adaptera Quant i brak cechy MetaModelu)",
+   "aliases": [
+    "liquidity"
+   ],
+   "legacy_ids": [],
+   "category": "RULE_OR_MEASUREMENT",
+   "registry_source": [
+    "sh.models.REGISTRY"
+   ]
+  },
+  {
+   "id": "rule:flow_sr",
+   "name": "Heikin Flow + kanały S/R (flow_context)",
+   "implementation": "—",
+   "task": "—",
+   "data_source": "—",
+   "tf": "—",
+   "horizon": "—",
+   "side": "—",
+   "features": "—",
+   "label": "—",
+   "trainer": "—",
+   "loader": "—",
+   "artifact": "—",
+   "instruments": [],
+   "status": "kod: IMPLEMENTED; walidacja: NOT_APPLICABLE; rola w Quant Core: CONTEXT_FEATURE (pasma S/R flow_context per wykres – bez akcesora snapshotu)",
+   "aliases": [
+    "flow_sr"
+   ],
+   "legacy_ids": [],
+   "category": "RULE_OR_MEASUREMENT",
+   "registry_source": [
+    "sh.models.REGISTRY"
+   ]
+  },
+  {
+   "id": "rule:decomposition",
+   "name": "Wskaźniki, FFT/VMD/EMD, BB/MA, Double Bottom",
+   "implementation": "masterquo/analytics/*, indicators/series.py",
+   "task": "obliczenia – nie są sieciami i nie mają przycisku „trenuj”",
+   "data_source": "bary bota",
+   "tf": "różne",
+   "horizon": "—",
+   "side": "—",
+   "features": "—",
+   "label": "—",
+   "trainer": "brak",
+   "loader": "AnalyticsService",
    "artifact": "—",
    "instruments": [
     "XAUUSD",
     "BTC"
    ],
-   "status": "REGUŁA – nie jest modelem do trenowania"
+   "status": "kod: IMPLEMENTED; walidacja: NOT_APPLICABLE; rola w Quant Core: CONTEXT_FEATURE (obserwacja cyklu (FFT/EMD/VMD) – brak zadania predykcyjnego) | opis: OBLICZENIA",
+   "aliases": [
+    "decomposition"
+   ],
+   "legacy_ids": [
+    "INDICATORS_FFT_VMD_EMD"
+   ],
+   "category": "RULE_OR_MEASUREMENT",
+   "registry_source": [
+    "sh.models.REGISTRY"
+   ]
   },
   {
-   "id": "SCALP_A",
+   "id": "sh:tp_model",
+   "name": "SH: P(TP2 przed SL w horyzoncie) – model zdarzenia strategii",
+   "implementation": "backend/masterquo/sh/tpmodel.py",
+   "task": "EVENT_PROBABILITY / TP2_BEFORE_SL_H / probability",
+   "data_source": "—",
+   "tf": "—",
+   "horizon": "—",
+   "side": "—",
+   "features": "—",
+   "label": "—",
+   "trainer": "training (sh_models)",
+   "loader": "sh.service",
+   "artifact": "—",
+   "instruments": [],
+   "status": "kod: IMPLEMENTED; walidacja: NOT_VALIDATED; rola w Quant Core: SETUP_EVENT",
+   "aliases": [
+    "sh_tp_model"
+   ],
+   "legacy_ids": [],
+   "category": "MODEL_TRAINED",
+   "registry_source": [
+    "sh.models.REGISTRY"
+   ]
+  },
+  {
+   "id": "scalp:A_direction",
    "name": "Scalp A – kierunek 1/3/5 min (BASELINE, LR, HGB, MLP 64-32, kwantyle HGB)",
    "implementation": "gold_candles_runtime/scalp_train.py, scalp_features.py, scalp_infer.py",
    "task": "klasa DOWN/FLAT/UP po kosztach (tau = max(0.2×ATR, koszt))",
@@ -59,15 +375,25 @@
     "XAUUSD",
     "BTC"
    ],
-   "status": "ZAIMPLEMENTOWANE_I_ZINTEGROWANE; profil BTC = kopia reguł XAUUSD (wszystkie progi względne) jako hipoteza"
+   "status": "kod: IMPLEMENTED; walidacja: NOT_VALIDATED; rola w Quant Core: BASE_FORECAST | opis: ZAIMPLEMENTOWANE_I_ZINTEGROWANE; profil BTC = kopia reguł XAUUSD (wszystkie progi względne) jako hipoteza",
+   "aliases": [
+    "scalp_A"
+   ],
+   "legacy_ids": [
+    "SCALP_A"
+   ],
+   "category": "MODEL_TRAINED",
+   "registry_source": [
+    "sh.models.REGISTRY"
+   ]
   },
   {
-   "id": "SCALP_B",
+   "id": "scalp:B_setup_quality",
    "name": "Scalp B – jakość setupu P(TP1 przed SL) (LR, HGB)",
    "implementation": "gold_candles_runtime/scalp_train.py train_setup_model",
    "task": "P(TP1 przed SL) cyklu Range→Sweep→Retest",
    "data_source": "cykle z replayu profilu scalp na eksporcie",
-   "tf": "M1/M5",
+   "tf": "M1",
    "horizon": "do 30 min (max_hold)",
    "side": "BUY i SELL (cecha kierunku)",
    "features": "cechy cyklu z replayu",
@@ -79,10 +405,2787 @@
     "XAUUSD",
     "BTC"
    ],
-   "status": "ZAIMPLEMENTOWANE; zwykle BRAK_PRZESLANEK przy małej liczbie cykli"
+   "status": "kod: IMPLEMENTED; walidacja: NOT_VALIDATED; rola w Quant Core: SETUP_EVENT (P(TP1 przed SL) INNEGO setupu (Range→Sweep→Retest) – liczony tylko dla planu scalp; brak modelu z replayu na danych rzeczywistych) | opis: ZAIMPLEMENTOWANE; zwykle BRAK_PRZESLANEK przy małej liczbie cykli",
+   "aliases": [
+    "scalp_B"
+   ],
+   "legacy_ids": [
+    "SCALP_B"
+   ],
+   "category": "MODEL_TRAINED",
+   "registry_source": [
+    "sh.models.REGISTRY"
+   ]
   },
   {
-   "id": "SCALP_C",
+   "id": "forecast:gold_candles",
+   "name": "Prognozy świec (gold_candles) – regresja logistyczna wieloklasowa + kalibracja + kwantyle GBR",
+   "implementation": "backend/gold_candles/model.py, gold_candles_runtime/plan_train.py",
+   "task": "rozkład kierunku zamknięcia DOWN/FLAT/UP (próg ±0.20×ATR) + kwantyle q10/q50/q90",
+   "data_source": "eksport MT5 M5 + M30 dokładnego symbolu (czas serwera → UTC, zmierzony offset / NY_CLOSE)",
+   "tf": "M5",
+   "horizon": "1/3/6 świec M5 (5/15/30 min)",
+   "side": "nie dotyczy (rozkład)",
+   "features": "gold_candles/features.py (wzorce świec, ATR, pozycja w siatce grid_step z profilu instrumentu, kontekst M30)",
+   "label": "klasa zmiany ceny zamknięcia po h świecach względem ATR",
+   "trainer": "gold_candles_runtime.plan_train (.venv_candles; plan zamrożony, fit/kalibracja/holdout chronologicznie)",
+   "loader": "gold_candles_runtime.worker → gold_candles.model.forecast (bot: ForecastService, proces per instrument)",
+   "artifact": "XAUUSD: data/forecast/runs/<run>/forecast_model.json; BTC: data/instruments/BTC/forecast/runs/…; rejestr registry.json per instrument",
+   "instruments": [
+    "XAUUSD",
+    "BTC"
+   ],
+   "status": "kod: IMPLEMENTED; walidacja: NOT_VALIDATED; rola w Quant Core: BASE_FORECAST | opis: ZAIMPLEMENTOWANE_I_ZINTEGROWANE (XAUUSD: grid 5.0; BTC: grid 500 – hipoteza badawcza); parity loadera; brak testu na realnym MT5 w tym środowisku",
+   "aliases": [
+    "gold_candles",
+    "gold_candles_15m",
+    "gold_candles_30m",
+    "gold_candles_5m",
+    "gold_forecast"
+   ],
+   "legacy_ids": [
+    "FORECAST_GOLD_CANDLES"
+   ],
+   "category": "MODEL_TRAINED",
+   "registry_source": [
+    "sh.models.REGISTRY"
+   ]
+  },
+  {
+   "id": "ml:legacy_s01_s12",
+   "name": "Legacy ML – Decision Tree / Legacy ML – XGBoost (CPU)",
+   "implementation": "masterquo/ml/{features,labels,models,trainer,registry,service,router,offline}.py",
+   "task": "P(setup S01–S12 osiąga cel netto przed SL) dla potwierdzonej wersji setupu",
+   "data_source": "setupy silnika na żywo (HIGH) + backfill z eksportu (APPROX, tylko gdy zadanie o to prosi)",
+   "tf": "TF setupu",
+   "horizon": "do wyjścia setupu",
+   "side": "oba (cecha kierunku)",
+   "features": "MQ-FEAT-1.3.0 (ml/features.py; 1.0.0 + cechy stref PMW-ZONE-FEAT-1, semantyka stref SEM-2; modele <= 1.2.0 dostają blok SEM-1)",
+   "label": "MQ-LABEL-1.1.0 (koszty: spread+poślizg+prowizja)",
+   "trainer": "ml/trainer.py (bloki fit/tune/calibrate/test, embargo 120 min); offline: training ml-offline",
+   "loader": "ml/registry.py Bundle → MLService.predict (bot, baza aktywnego instrumentu)",
+   "artifact": "XAUUSD: data/ml/models + masterquo.sqlite; BTC: data/instruments/BTC/ml/{models,ml.sqlite}",
+   "instruments": [
+    "XAUUSD",
+    "BTC"
+   ],
+   "status": "kod: IMPLEMENTED; walidacja: NOT_VALIDATED; rola w Quant Core: SETUP_EVENT | opis: ZINTEGROWANE per instrument; model z próbek APPROX = RESEARCH_APPROX (nigdy champion automatycznie)",
+   "aliases": [
+    "legacy_ml"
+   ],
+   "legacy_ids": [
+    "LEGACY_ML_DT",
+    "LEGACY_ML_XGB"
+   ],
+   "category": "MODEL_TRAINED",
+   "registry_source": [
+    "sh.models.REGISTRY"
+   ]
+  },
+  {
+   "id": "extind:indicator_context",
+   "name": "Kontekst wskaźników SAR + IQ (reakcja)",
+   "implementation": "backend/masterquo/extind/",
+   "task": "SCORE / probability",
+   "data_source": "—",
+   "tf": "—",
+   "horizon": "—",
+   "side": "—",
+   "features": "—",
+   "label": "—",
+   "trainer": "indicator_context",
+   "loader": "—",
+   "artifact": "—",
+   "instruments": [],
+   "status": "kod: IMPLEMENTED; walidacja: NOT_VALIDATED; rola w Quant Core: SETUP_EVENT (score polityki scalp (TP1 przed SL innego planu) – liczony per plan w scalp.indicator_context)",
+   "aliases": [
+    "indicator_context"
+   ],
+   "legacy_ids": [],
+   "category": "MODEL_TRAINED",
+   "registry_source": [
+    "sh.models.REGISTRY"
+   ]
+  },
+  {
+   "id": "ml_scalp:xgb_net_r",
+   "name": "Scalp ML – XGBoost P(net_R > 0) + E[net_R] cyklu scalp (SCALP_NET_PROFIT_MARKET_V1, rodzina SCALP_MARKET)",
+   "implementation": "masterquo/ml/scalp_task.py (zbiór, trening, selekcja, paczka), ml/service.py on_scalp_candidate (inferencja), scalp/service.py (wywołanie per kandydat)",
+   "task": "klasyfikator P(net_R pełnego cyklu > 0) + regresor E[net_R], osobno per (instrument, profile_hash, strona)",
+   "data_source": "kandydaci ScalpMachine z replayu eksportu (profil instrumentu, wejście MARKET z wykonalnym fill)",
+   "tf": "M1 (wyzwalacz scalp; kontekst profilu)",
+   "horizon": "pełny cykl scalp (TP1/TP2, BE, wyjście czasowe – scalp/replay.py)",
+   "side": "BUY i SELL – osobne modele",
+   "features": "SCALP-NET-FEAT-1.0.0 (scalp/strategy.py NET_FEATURES; brak = NaN, bez 0.0 za brak)",
+   "label": "y = 1 gdy net_R > 0 po kosztach (Bid/Ask, prowizja, poślizg); net_R – regresja",
+   "trainer": "ml/scalp_task.py (XGBoost CPU hist, 4 foldy walk-forward FIT/TUNE/CALIBRATION/POLICY, Platt, polityka p_min × ev_min, holdout 20% raz)",
+   "loader": "ml/scalp_task.selected_bundle → MLService.on_scalp_candidate (predykcja zapisana przed publikacją)",
+   "artifact": "data/ml_scalp/<INST>/runs/<run> (fixture_runs dla danych syntetycznych) + registry.json; role OBSERVE / SHADOW_GATE",
+   "instruments": [
+    "XAUUSD",
+    "BTC"
+   ],
+   "status": "kod: IMPLEMENTED; walidacja: NOT_VALIDATED; rola w Quant Core: SETUP_EVENT (P(net R>0) innego cyklu scalp – liczony per plan w scalp.ml_scalp) | opis: ZAIMPLEMENTOWANE_I_ZINTEGROWANE (OBSERVE / SHADOW_GATE – polityka hipotetyczna wyświetlana w panelu, nie wysyła zleceń)",
+   "aliases": [
+    "ml_scalp"
+   ],
+   "legacy_ids": [
+    "ML_SCALP_NET_R"
+   ],
+   "category": "MODEL_TRAINED",
+   "registry_source": [
+    "sh.models.REGISTRY"
+   ]
+  },
+  {
+   "id": "nss:tcn",
+   "name": "Neural Scalp System (TCN)",
+   "implementation": "backend/masterquo/lab/nss_service.py",
+   "task": "CLASS_PROBABILITIES / probability",
+   "data_source": "—",
+   "tf": "—",
+   "horizon": "—",
+   "side": "—",
+   "features": "—",
+   "label": "—",
+   "trainer": "neural_scalp",
+   "loader": "—",
+   "artifact": "—",
+   "instruments": [],
+   "status": "kod: IMPLEMENTED; walidacja: NOT_VALIDATED; rola w Quant Core: SETUP_EVENT (P(TP1_FIRST/SL_FIRST/TIMEOUT) innego setupu – liczony per plan w scalp.neural)",
+   "aliases": [
+    "nss"
+   ],
+   "legacy_ids": [],
+   "category": "MODEL_TRAINED",
+   "registry_source": [
+    "sh.models.REGISTRY"
+   ]
+  },
+  {
+   "id": "flow:reaction_m1",
+   "name": "Flow context – model reakcji M1 (FLOW_CONTEXT_MOVE_M1_V1)",
+   "implementation": "backend/masterquo/lab/flow_context/",
+   "task": "CLASS_PROBABILITIES / probability",
+   "data_source": "—",
+   "tf": "M1",
+   "horizon": "—",
+   "side": "—",
+   "features": "—",
+   "label": "—",
+   "trainer": "flow_context",
+   "loader": "—",
+   "artifact": "—",
+   "instruments": [],
+   "status": "kod: IMPLEMENTED; walidacja: NOT_VALIDATED; rola w Quant Core: BASE_FORECAST (NOT_CONNECTED: model reakcji FLOW_CONTEXT_MOVE_M1_V1 trenowany (LOGREG / XGB), bez ścieżki inferencji na żywo – FlowSections liczy tylko Heikin / S-R / StopDistance i Markov3 (flow:markov3); replay tylko z CLI (F-17))",
+   "aliases": [
+    "flow_reaction"
+   ],
+   "legacy_ids": [],
+   "category": "MODEL_TRAINED",
+   "registry_source": [
+    "sh.models.REGISTRY"
+   ]
+  },
+  {
+   "id": "context_ind:context_move_m5",
+   "name": "Context indicators – CONTEXT_MOVE_M5_V1",
+   "implementation": "backend/masterquo/lab/context_ind/",
+   "task": "CLASS_PROBABILITIES / probability",
+   "data_source": "—",
+   "tf": "M5",
+   "horizon": "—",
+   "side": "—",
+   "features": "—",
+   "label": "—",
+   "trainer": "context_indicators",
+   "loader": "—",
+   "artifact": "—",
+   "instruments": [],
+   "status": "kod: IMPLEMENTED; walidacja: NOT_VALIDATED; rola w Quant Core: BASE_FORECAST (NOT_CONNECTED: model badawczy bez ścieżki inferencji na żywo (F-17))",
+   "aliases": [
+    "CONTEXT_MOVE_M5_V1",
+    "context_move"
+   ],
+   "legacy_ids": [],
+   "category": "MODEL_TRAINED",
+   "registry_source": [
+    "sh.models.REGISTRY"
+   ]
+  },
+  {
+   "id": "mm:align_mean",
+   "name": "Align Mean (wspólna średnia, odległość w ATR)",
+   "implementation": "backend/masterquo/mm/align_mean.py, mql5/MasterModels/Include/PMW/PMW_AlignMeanCore.mqh, mql5/MasterModels/Indicators/PMW_AlignMean.mq5",
+   "task": "STATE / mixed",
+   "data_source": "—",
+   "tf": "—",
+   "horizon": "—",
+   "side": "—",
+   "features": "—",
+   "label": "—",
+   "trainer": "NOT_APPLICABLE",
+   "loader": "—",
+   "artifact": "—",
+   "instruments": [],
+   "status": "kod: IMPLEMENTED; walidacja: NOT_APPLICABLE; rola w Quant Core: CONTEXT_STATE (odległości od średniej per TF (<TF>_dist_points / _dist_pct / _dist_atr: punkty, %, ATR) – rekord STATE bez cech MetaModelu)",
+   "aliases": [
+    "align_mean",
+    "mm_align_mean"
+   ],
+   "legacy_ids": [],
+   "category": "RULE_OR_MEASUREMENT",
+   "registry_source": [
+    "mm.inventory.MODULES",
+    "sh.models.REGISTRY"
+   ]
+  },
+  {
+   "id": "mm:kalman_cross",
+   "name": "Kalman crossover fast/slow (zamknięte świece)",
+   "implementation": "backend/masterquo/mm/kalman.py, mql5/MasterModels/Experts/PMW_KalmanShadowEA.mq5, mql5/MasterModels/Include/PMW/PMW_Kalman.mqh, mql5/MasterModels/Indicators/PMW_KalmanCross.mq5",
+   "task": "FILTER_STATE / state",
+   "data_source": "—",
+   "tf": "M5",
+   "horizon": "—",
+   "side": "—",
+   "features": "—",
+   "label": "—",
+   "trainer": "NOT_APPLICABLE (state estimation; Q/R calibration = separate BUZOA job)",
+   "loader": "—",
+   "artifact": "—",
+   "instruments": [],
+   "status": "kod: IMPLEMENTED; walidacja: NOT_APPLICABLE; rola w Quant Core: CONTEXT_FEATURE",
+   "aliases": [
+    "kalman",
+    "mm_kalman"
+   ],
+   "legacy_ids": [],
+   "category": "RULE_OR_MEASUREMENT",
+   "registry_source": [
+    "mm.inventory.MODULES",
+    "sh.models.REGISTRY"
+   ]
+  },
+  {
+   "id": "mm:breakout_zones",
+   "name": "Breakout zones + robust volatility",
+   "implementation": "backend/masterquo/mm/breakout_zones.py, backend/masterquo/mm/robust_vol.py, mql5/MasterModels/Include/PMW/PMW_BreakoutCore.mqh, mql5/MasterModels/Indicators/PMW_BreakoutZones.mq5",
+   "task": "FILTER_STATE / state",
+   "data_source": "—",
+   "tf": "M5",
+   "horizon": "—",
+   "side": "—",
+   "features": "—",
+   "label": "—",
+   "trainer": "NOT_APPLICABLE",
+   "loader": "—",
+   "artifact": "—",
+   "instruments": [],
+   "status": "kod: IMPLEMENTED; walidacja: NOT_APPLICABLE; rola w Quant Core: CONTEXT_FEATURE",
+   "aliases": [
+    "breakout_zones",
+    "mm_breakout"
+   ],
+   "legacy_ids": [],
+   "category": "RULE_OR_MEASUREMENT",
+   "registry_source": [
+    "mm.inventory.MODULES",
+    "sh.models.REGISTRY"
+   ]
+  },
+  {
+   "id": "mm:multi_indicator",
+   "name": "Multi-Indicator Strategy (RSI/SAR/HA/Stoch/CCI/W%R/Power)",
+   "implementation": "backend/masterquo/mm/multi_indicator.py",
+   "task": "STATE / state",
+   "data_source": "—",
+   "tf": "M5",
+   "horizon": "—",
+   "side": "—",
+   "features": "—",
+   "label": "—",
+   "trainer": "NOT_APPLICABLE",
+   "loader": "—",
+   "artifact": "—",
+   "instruments": [],
+   "status": "kod: IMPLEMENTED; walidacja: NOT_APPLICABLE; rola w Quant Core: CONTEXT_STATE",
+   "aliases": [
+    "mm_multi_indicator",
+    "multi_indicator"
+   ],
+   "legacy_ids": [],
+   "category": "RULE_OR_MEASUREMENT",
+   "registry_source": [
+    "mm.inventory.MODULES",
+    "sh.models.REGISTRY"
+   ]
+  },
+  {
+   "id": "mm:smc_fvg",
+   "name": "SMC BoS/IDM/FVG continuation (głębokość cofnięcia 73% – parametr, nie skuteczność)",
+   "implementation": "backend/masterquo/lab/context_ind/smc.py (reused), backend/masterquo/mm/smc_fvg.py",
+   "task": "STATE / state",
+   "data_source": "—",
+   "tf": "M5",
+   "horizon": "—",
+   "side": "—",
+   "features": "—",
+   "label": "—",
+   "trainer": "NOT_APPLICABLE",
+   "loader": "—",
+   "artifact": "—",
+   "instruments": [],
+   "status": "kod: IMPLEMENTED; walidacja: NOT_APPLICABLE; rola w Quant Core: CONTEXT_STATE",
+   "aliases": [
+    "mm_smc_fvg",
+    "smc_fvg"
+   ],
+   "legacy_ids": [],
+   "category": "RULE_OR_MEASUREMENT",
+   "registry_source": [
+    "mm.inventory.MODULES",
+    "sh.models.REGISTRY"
+   ]
+  },
+  {
+   "id": "mm:gpr_logret",
+   "name": "GPR Matérn 3/2 – prognoza log-zwrotu z niepewnością",
+   "implementation": "backend/masterquo/mm/gpr.py, mql5/MasterModels/Experts/PMW_GPR_ShadowEA.mq5, mql5/MasterModels/Include/PMW/PMW_GPR.mqh, mql5/MasterModels/Indicators/PMW_GPR_Forecast.mq5",
+   "task": "REGRESSION / LOG_RETURN_H3_M5 / log_return",
+   "data_source": "—",
+   "tf": "M5",
+   "horizon": "3 świece M5",
+   "side": "—",
+   "features": "—",
+   "label": "—",
+   "trainer": "master_models",
+   "loader": "—",
+   "artifact": "—",
+   "instruments": [],
+   "status": "kod: IMPLEMENTED; walidacja: NOT_VALIDATED; rola w Quant Core: BASE_FORECAST",
+   "aliases": [
+    "gpr",
+    "gpr_logret",
+    "gpr_logret:LIVE",
+    "mm_gpr"
+   ],
+   "legacy_ids": [],
+   "category": "MODEL_TRAINED",
+   "registry_source": [
+    "mm.inventory.MODULES",
+    "sh.models.REGISTRY"
+   ]
+  },
+  {
+   "id": "mm:hdc_dir3",
+   "name": "HDC – hiperwektory binarne (DOWN/FLAT/UP)",
+   "implementation": "backend/masterquo/mm/hdc.py, mql5/MasterModels/Include/PMW/PMW_HDC.mqh",
+   "task": "SCORE / ratio",
+   "data_source": "—",
+   "tf": "M5",
+   "horizon": "—",
+   "side": "—",
+   "features": "—",
+   "label": "—",
+   "trainer": "master_models",
+   "loader": "—",
+   "artifact": "—",
+   "instruments": [],
+   "status": "kod: IMPLEMENTED; walidacja: NOT_VALIDATED; rola w Quant Core: BASE_FORECAST (margines HDC (nie prawdopodobieństwo); brak ścieżki na żywo bez artefaktu VALIDATED_SHADOW)",
+   "aliases": [
+    "hdc",
+    "hdc_dir3",
+    "mm_hdc"
+   ],
+   "legacy_ids": [],
+   "category": "MODEL_TRAINED",
+   "registry_source": [
+    "mm.inventory.MODULES",
+    "sh.models.REGISTRY"
+   ]
+  },
+  {
+   "id": "mm:event_engine_dir3",
+   "name": "Event engine GRU + state stack + korelacja (+STFS)",
+   "implementation": "backend/masterquo/mm/event_engine.py, backend/masterquo/mm/events.py, backend/masterquo/mm/kernels/state_stack.cl, mql5/MasterModels/Include/PMW/PMW_StateStack.mqh",
+   "task": "CLASS_PROBABILITIES / EVENT_UNITS_DIR3 / probability",
+   "data_source": "—",
+   "tf": "EVENT",
+   "horizon": "2 jednostki zdarzeń (16 zdarzeń/jednostka)",
+   "side": "—",
+   "features": "—",
+   "label": "—",
+   "trainer": "master_models",
+   "loader": "—",
+   "artifact": "—",
+   "instruments": [],
+   "status": "kod: IMPLEMENTED; walidacja: NOT_VALIDATED; rola w Quant Core: BASE_FORECAST",
+   "aliases": [
+    "SEQ_GRU_EVENT",
+    "event_engine",
+    "event_engine_dir3",
+    "family:SEQ_GRU_EVENT",
+    "mm_event_engine"
+   ],
+   "legacy_ids": [],
+   "category": "MODEL_TRAINED",
+   "registry_source": [
+    "mm.inventory.MODULES",
+    "sh.models.REGISTRY"
+   ]
+  },
+  {
+   "id": "mm:ste_flownet_ret",
+   "name": "STE-FlowNet (adaptacja finansowa) – log-zwrot h zdarzeń",
+   "implementation": "backend/masterquo/mm/ste_flownet.py",
+   "task": "REGRESSION / log_return",
+   "data_source": "—",
+   "tf": "EVENT",
+   "horizon": "—",
+   "side": "—",
+   "features": "—",
+   "label": "—",
+   "trainer": "master_models",
+   "loader": "—",
+   "artifact": "—",
+   "instruments": [],
+   "status": "kod: IMPLEMENTED; walidacja: NOT_VALIDATED; rola w Quant Core: BASE_FORECAST (brak ścieżki na żywo (tylko artefakt badawczy); log-zwrot h zdarzeń)",
+   "aliases": [
+    "mm_ste_flownet",
+    "ste_flownet",
+    "ste_flownet_ret"
+   ],
+   "legacy_ids": [],
+   "category": "MODEL_TRAINED",
+   "registry_source": [
+    "mm.inventory.MODULES",
+    "sh.models.REGISTRY"
+   ]
+  },
+  {
+   "id": "kronos:Kronos-small",
+   "name": "Kronos-small (NeoQuasar, przetrenowany, 24,7M) – prognoza świec OHLC",
+   "implementation": "backend/masterquo/kronos/, backend/kronos_runtime/",
+   "task": "REGRESSION / KRONOS_CLOSE_PATH_H* / price",
+   "data_source": "—",
+   "tf": "M1, M3, M5, M15, M30, H1",
+   "horizon": "—",
+   "side": "—",
+   "features": "—",
+   "label": "—",
+   "trainer": "—",
+   "loader": "—",
+   "artifact": "—",
+   "instruments": [],
+   "status": "kod: IMPLEMENTED; walidacja: NOT_VALIDATED; rola w Quant Core: BASE_FORECAST (pojedyncza ścieżka nie jest prawdopodobieństwem; pretrained ≠ dostrojony do brokera; interwały = dozwolone w ustawieniach Kronos (domyślnie włączone M5, M15))",
+   "aliases": [
+    "KRONOS_SMALL",
+    "Kronos-small",
+    "kronos"
+   ],
+   "legacy_ids": [],
+   "category": "MODEL_PRETRAINED",
+   "registry_source": [
+    "sh.models.REGISTRY"
+   ]
+  },
+  {
+   "id": "agent:claude",
+   "name": "Agent Claude (weto, opis)",
+   "implementation": "—",
+   "task": "STATE / state",
+   "data_source": "—",
+   "tf": "—",
+   "horizon": "—",
+   "side": "—",
+   "features": "—",
+   "label": "—",
+   "trainer": "—",
+   "loader": "—",
+   "artifact": "—",
+   "instruments": [],
+   "status": "kod: IMPLEMENTED; walidacja: NOT_APPLICABLE; rola w Quant Core: NOT_A_VOTE (opis / weto tekstowe agenta – bez p(win); poza meta-modelem)",
+   "aliases": [
+    "agent"
+   ],
+   "legacy_ids": [],
+   "category": "AGENT",
+   "registry_source": [
+    "sh.models.REGISTRY"
+   ]
+  },
+  {
+   "id": "tsfm:chronos2",
+   "name": "Chronos-2 (amazon/chronos-2, 120M, przetrenowany) – kwantyle close",
+   "implementation": "backend/masterquo/tsfm/, backend/tsfm_runtime/",
+   "task": "REGRESSION / TSFM_CLOSE_H* / price",
+   "data_source": "—",
+   "tf": "M1, M3, M5, M15, M30, H1",
+   "horizon": "—",
+   "side": "—",
+   "features": "—",
+   "label": "—",
+   "trainer": "—",
+   "loader": "—",
+   "artifact": "—",
+   "instruments": [],
+   "status": "kod: IMPLEMENTED; walidacja: NOT_VALIDATED; rola w Quant Core: BASE_FORECAST (amazon/chronos-2 (120M); kwantyle modelu, punkt = mediana; nieskalibrowane na danych brokera; interwały = dozwolone w ustawieniach TSFM (domyślnie włączone M5, M15))",
+   "aliases": [
+    "CHRONOS2",
+    "Chronos-2",
+    "chronos2"
+   ],
+   "legacy_ids": [],
+   "category": "MODEL_PRETRAINED",
+   "registry_source": [
+    "sh.models.REGISTRY"
+   ]
+  },
+  {
+   "id": "tsfm:granite_ttm",
+   "name": "Granite TTM (IBM granite-timeseries-ttm-r2, 0,8M, przetrenowany) – prognoza punktowa close",
+   "implementation": "backend/masterquo/tsfm/, backend/tsfm_runtime/",
+   "task": "REGRESSION / TSFM_CLOSE_H* / price",
+   "data_source": "—",
+   "tf": "M1, M3, M5, M15, M30, H1",
+   "horizon": "—",
+   "side": "—",
+   "features": "—",
+   "label": "—",
+   "trainer": "tsfm.granite_train",
+   "loader": "—",
+   "artifact": "—",
+   "instruments": [],
+   "status": "kod: IMPLEMENTED; walidacja: NOT_VALIDATED; rola w Quant Core: BASE_FORECAST (ibm-granite/granite-timeseries-ttm-r2 (TTM R2 512-96, 0,8M); prognoza punktowa (bez kwantyli); nieskalibrowana; 1.40 zamiast FinCast (FinCast: RETIRED, historia zachowana); interwały = dozwolone w ustawieniach TSFM (domyślnie włączone M5, M15))",
+   "aliases": [
+    "GRANITE_TTM",
+    "Granite TTM",
+    "granite_ttm"
+   ],
+   "legacy_ids": [],
+   "category": "MODEL_PRETRAINED",
+   "registry_source": [
+    "sh.models.REGISTRY"
+   ]
+  },
+  {
+   "id": "tsfm:tirex2",
+   "name": "TiRex-2 (NX-AI, przetrenowany) – kwantyle close",
+   "implementation": "backend/masterquo/tsfm/, backend/tsfm_runtime/",
+   "task": "REGRESSION / TSFM_CLOSE_H* / price",
+   "data_source": "—",
+   "tf": "M5, M15",
+   "horizon": "—",
+   "side": "—",
+   "features": "—",
+   "label": "—",
+   "trainer": "—",
+   "loader": "—",
+   "artifact": "—",
+   "instruments": [],
+   "status": "kod: IMPLEMENTED; walidacja: NOT_VALIDATED; rola w Quant Core: BASE_FORECAST (rekordy z model_id tsfm:tirex2 (TsfmService, jak Chronos-2 / Granite TTM); kwantyle; nieskalibrowane na danych brokera)",
+   "aliases": [
+    "TIREX2",
+    "TiRex-2",
+    "tirex2"
+   ],
+   "legacy_ids": [],
+   "category": "MODEL_PRETRAINED",
+   "registry_source": [
+    "sh.models.REGISTRY"
+   ]
+  },
+  {
+   "id": "trainhub:TH_BASELINE",
+   "name": "Centrum treningu – Bazowy – częstości klas: kierunek ruchu po kosztach",
+   "implementation": "masterquo/trainhub/learn.py, features.py (wspólne cechy trening/inferencja), dataset.py, registry.py, inference.py",
+   "task": "klasa DOWN/FLAT/UP zmiany zamknięcia po H świecach względem progu max(k×ATR14, koszt świecy)",
+   "data_source": "magazyn świec data/marketdata/<INST> (eksport MT5 przyrostowy/historyczny, Parquet + CSV + manifest z sumami)",
+   "tf": "M1, M5, M15, M30",
+   "horizon": "h świec (per paczka)",
+   "side": "oba (klasy)",
+   "features": "PMW-TH-FEAT-1 (zwroty, ATR, świeca, zmienność, RSI, EMA, z-score, aktywność ticków, spread, czas, cechy wyższych TF)",
+   "label": "PMW-TH-LABEL-1 (koszty: spread ze świecy + prowizja z historii transakcji albo założenie + poślizg-założenie); okna przez lukę sesji odrzucone",
+   "trainer": "Centrum treningu / `python -m masterquo trainhub train|full --instrument XAUUSD|BTC` (domyślny zestaw bez --models: TH_BASELINE, TH_LOGREG, TH_HGB) albo `--profile smoke|research|full` (purged walk-forward + embargo, nietknięty holdout 20%, kalibracja temperaturą na dev, proces osobny)",
+   "loader": "TrainhubInference (tylko AKTYWNA paczka po teście zgodności i predykcji; inaczej stan INCOMPATIBLE/ERROR bez wartości)",
+   "artifact": "data/trainhub/models/<INST>/<MODEL>_<TF>_H<h>/<wersja>/ (model.joblib, cechy, config, metryki, manifest danych, zależności, REPRODUCE.md, sha256)",
+   "instruments": [
+    "XAUUSD",
+    "BTC"
+   ],
+   "status": "kod: IMPLEMENTED; walidacja: NOT_VALIDATED; rola w Quant Core: TOOL (baseline częstości klas – punkt odniesienia) | opis: ZAIMPLEMENTOWANE_I_ZINTEGROWANE (OBSERVATION – nie głosuje w strategiach); trening sprawdzony tylko na symulatorze (SYNTHETIC_TEST) – brak oceny na danych rzeczywistych",
+   "aliases": [
+    "TH_BASELINE"
+   ],
+   "legacy_ids": [
+    "TH_BASELINE"
+   ],
+   "category": "MODEL_TRAINED",
+   "registry_source": [
+    "sh.models.REGISTRY (th_direction)",
+    "trainhub.learn.MODELS"
+   ]
+  },
+  {
+   "id": "trainhub:TH_LOGREG",
+   "name": "Centrum treningu – Regresja logistyczna (wieloklasowa): kierunek ruchu po kosztach",
+   "implementation": "masterquo/trainhub/learn.py, features.py (wspólne cechy trening/inferencja), dataset.py, registry.py, inference.py",
+   "task": "klasa DOWN/FLAT/UP zmiany zamknięcia po H świecach względem progu max(k×ATR14, koszt świecy)",
+   "data_source": "magazyn świec data/marketdata/<INST> (eksport MT5 przyrostowy/historyczny, Parquet + CSV + manifest z sumami)",
+   "tf": "M1, M5, M15, M30",
+   "horizon": "h świec (per paczka)",
+   "side": "oba (klasy)",
+   "features": "PMW-TH-FEAT-1 (zwroty, ATR, świeca, zmienność, RSI, EMA, z-score, aktywność ticków, spread, czas, cechy wyższych TF)",
+   "label": "PMW-TH-LABEL-1 (koszty: spread ze świecy + prowizja z historii transakcji albo założenie + poślizg-założenie); okna przez lukę sesji odrzucone",
+   "trainer": "Centrum treningu / `python -m masterquo trainhub train|full --instrument XAUUSD|BTC` (domyślny zestaw bez --models: TH_BASELINE, TH_LOGREG, TH_HGB) albo `--profile smoke|research|full` (purged walk-forward + embargo, nietknięty holdout 20%, kalibracja temperaturą na dev, proces osobny)",
+   "loader": "TrainhubInference (tylko AKTYWNA paczka po teście zgodności i predykcji; inaczej stan INCOMPATIBLE/ERROR bez wartości)",
+   "artifact": "data/trainhub/models/<INST>/<MODEL>_<TF>_H<h>/<wersja>/ (model.joblib, cechy, config, metryki, manifest danych, zależności, REPRODUCE.md, sha256)",
+   "instruments": [
+    "XAUUSD",
+    "BTC"
+   ],
+   "status": "kod: IMPLEMENTED; walidacja: NOT_VALIDATED; rola w Quant Core: BASE_FORECAST | opis: ZAIMPLEMENTOWANE_I_ZINTEGROWANE (OBSERVATION – nie głosuje w strategiach); trening sprawdzony tylko na symulatorze (SYNTHETIC_TEST) – brak oceny na danych rzeczywistych",
+   "aliases": [
+    "TH_LOGREG"
+   ],
+   "legacy_ids": [
+    "TH_LOGREG"
+   ],
+   "category": "MODEL_TRAINED",
+   "registry_source": [
+    "sh.models.REGISTRY (th_direction)",
+    "trainhub.learn.MODELS"
+   ]
+  },
+  {
+   "id": "trainhub:TH_HGB",
+   "name": "Centrum treningu – Gradient boosting (histogramowy): kierunek ruchu po kosztach",
+   "implementation": "masterquo/trainhub/learn.py, features.py (wspólne cechy trening/inferencja), dataset.py, registry.py, inference.py",
+   "task": "klasa DOWN/FLAT/UP zmiany zamknięcia po H świecach względem progu max(k×ATR14, koszt świecy)",
+   "data_source": "magazyn świec data/marketdata/<INST> (eksport MT5 przyrostowy/historyczny, Parquet + CSV + manifest z sumami)",
+   "tf": "M1, M5, M15, M30",
+   "horizon": "h świec (per paczka)",
+   "side": "oba (klasy)",
+   "features": "PMW-TH-FEAT-1 (zwroty, ATR, świeca, zmienność, RSI, EMA, z-score, aktywność ticków, spread, czas, cechy wyższych TF)",
+   "label": "PMW-TH-LABEL-1 (koszty: spread ze świecy + prowizja z historii transakcji albo założenie + poślizg-założenie); okna przez lukę sesji odrzucone",
+   "trainer": "Centrum treningu / `python -m masterquo trainhub train|full --instrument XAUUSD|BTC` (domyślny zestaw bez --models: TH_BASELINE, TH_LOGREG, TH_HGB) albo `--profile research|full` (purged walk-forward + embargo, nietknięty holdout 20%, kalibracja temperaturą na dev, proces osobny)",
+   "loader": "TrainhubInference (tylko AKTYWNA paczka po teście zgodności i predykcji; inaczej stan INCOMPATIBLE/ERROR bez wartości)",
+   "artifact": "data/trainhub/models/<INST>/<MODEL>_<TF>_H<h>/<wersja>/ (model.joblib, cechy, config, metryki, manifest danych, zależności, REPRODUCE.md, sha256)",
+   "instruments": [
+    "XAUUSD",
+    "BTC"
+   ],
+   "status": "kod: IMPLEMENTED; walidacja: NOT_VALIDATED; rola w Quant Core: BASE_FORECAST | opis: ZAIMPLEMENTOWANE_I_ZINTEGROWANE (OBSERVATION – nie głosuje w strategiach); trening sprawdzony tylko na symulatorze (SYNTHETIC_TEST) – brak oceny na danych rzeczywistych",
+   "aliases": [
+    "TH_HGB"
+   ],
+   "legacy_ids": [
+    "TH_HGB"
+   ],
+   "category": "MODEL_TRAINED",
+   "registry_source": [
+    "sh.models.REGISTRY (th_direction)",
+    "trainhub.learn.MODELS"
+   ]
+  },
+  {
+   "id": "trainhub:TH_XGB",
+   "name": "Centrum treningu – XGBoost (CPU): kierunek ruchu po kosztach (tylko gdy pakiet xgboost jest zainstalowany)",
+   "implementation": "masterquo/trainhub/learn.py, features.py (wspólne cechy trening/inferencja), dataset.py, registry.py, inference.py",
+   "task": "klasa DOWN/FLAT/UP zmiany zamknięcia po H świecach względem progu max(k×ATR14, koszt świecy)",
+   "data_source": "magazyn świec data/marketdata/<INST> (eksport MT5 przyrostowy/historyczny, Parquet + CSV + manifest z sumami)",
+   "tf": "M1, M5, M15, M30",
+   "horizon": "h świec (per paczka)",
+   "side": "oba (klasy)",
+   "features": "PMW-TH-FEAT-1 (zwroty, ATR, świeca, zmienność, RSI, EMA, z-score, aktywność ticków, spread, czas, cechy wyższych TF)",
+   "label": "PMW-TH-LABEL-1 (koszty: spread ze świecy + prowizja z historii transakcji albo założenie + poślizg-założenie); okna przez lukę sesji odrzucone",
+   "trainer": "Centrum treningu / `python -m masterquo trainhub train|full --instrument XAUUSD|BTC --models TH_XGB` albo `--profile research|full` – NIE w domyślnym zestawie bez --models (TH_BASELINE, TH_LOGREG, TH_HGB) (purged walk-forward + embargo, nietknięty holdout 20%, kalibracja temperaturą na dev, proces osobny)",
+   "loader": "TrainhubInference (tylko AKTYWNA paczka po teście zgodności i predykcji; inaczej stan INCOMPATIBLE/ERROR bez wartości)",
+   "artifact": "data/trainhub/models/<INST>/<MODEL>_<TF>_H<h>/<wersja>/ (model.joblib, cechy, config, metryki, manifest danych, zależności, REPRODUCE.md, sha256)",
+   "instruments": [
+    "XAUUSD",
+    "BTC"
+   ],
+   "status": "kod: IMPLEMENTED; walidacja: NOT_VALIDATED; rola w Quant Core: BASE_FORECAST (alias rodziny family:TH_XGB – jeden artefakt, jeden trening, jeden głos) | opis: ZAIMPLEMENTOWANE_I_ZINTEGROWANE (OBSERVATION – nie głosuje w strategiach); trening sprawdzony tylko na symulatorze (SYNTHETIC_TEST) – brak oceny na danych rzeczywistych",
+   "aliases": [
+    "TH_XGB",
+    "family:TH_XGB"
+   ],
+   "legacy_ids": [
+    "TH_XGB"
+   ],
+   "category": "MODEL_TRAINED",
+   "registry_source": [
+    "modelhub.families (alias)",
+    "sh.models.REGISTRY (th_direction)",
+    "trainhub.learn.MODELS"
+   ]
+  },
+  {
+   "id": "trainhub:TH_RF",
+   "name": "Centrum treningu – Random Forest: kierunek ruchu po kosztach (permutation importance liczone na HOLDOUT (raport), class_weight balanced_subsample)",
+   "implementation": "masterquo/trainhub/learn.py, features.py (wspólne cechy trening/inferencja), dataset.py, registry.py, inference.py",
+   "task": "klasa DOWN/FLAT/UP zmiany zamknięcia po H świecach względem progu max(k×ATR14, koszt świecy)",
+   "data_source": "magazyn świec data/marketdata/<INST> (eksport MT5 przyrostowy/historyczny, Parquet + CSV + manifest z sumami)",
+   "tf": "M1, M5, M15, M30",
+   "horizon": "h świec (per paczka)",
+   "side": "oba (klasy)",
+   "features": "PMW-TH-FEAT-1 (zwroty, ATR, świeca, zmienność, RSI, EMA, z-score, aktywność ticków, spread, czas, cechy wyższych TF)",
+   "label": "PMW-TH-LABEL-1 (koszty: spread ze świecy + prowizja z historii transakcji albo założenie + poślizg-założenie); okna przez lukę sesji odrzucone",
+   "trainer": "Centrum treningu / `python -m masterquo trainhub train|full --instrument XAUUSD|BTC --models TH_RF` albo `--profile smoke|research|full` – NIE w domyślnym zestawie bez --models (TH_BASELINE, TH_LOGREG, TH_HGB) (purged walk-forward + embargo, nietknięty holdout 20%, kalibracja temperaturą na dev, proces osobny)",
+   "loader": "TrainhubInference (tylko AKTYWNA paczka po teście zgodności i predykcji; inaczej stan INCOMPATIBLE/ERROR bez wartości)",
+   "artifact": "data/trainhub/models/<INST>/<MODEL>_<TF>_H<h>/<wersja>/ (model.joblib, cechy, config, metryki, manifest danych, zależności, REPRODUCE.md, sha256)",
+   "instruments": [
+    "XAUUSD",
+    "BTC"
+   ],
+   "status": "kod: IMPLEMENTED; walidacja: NOT_VALIDATED; rola w Quant Core: BASE_FORECAST (alias rodziny family:TH_RF – jeden artefakt, jeden trening, jeden głos) | opis: ZAIMPLEMENTOWANE_I_ZINTEGROWANE (OBSERVATION – nie głosuje w strategiach); trening sprawdzony tylko na symulatorze (SYNTHETIC_TEST) – brak oceny na danych rzeczywistych",
+   "aliases": [
+    "TH_RF",
+    "family:TH_RF"
+   ],
+   "legacy_ids": [
+    "TH_RF"
+   ],
+   "category": "MODEL_TRAINED",
+   "registry_source": [
+    "modelhub.families (alias)",
+    "sh.models.REGISTRY (th_direction)",
+    "trainhub.learn.MODELS"
+   ]
+  },
+  {
+   "id": "trainhub:TH_SVM",
+   "name": "Centrum treningu – SVM (skalowanie + kalibracja chronologiczna): kierunek ruchu po kosztach (jądro RBF tylko do 6000 wierszy, powyżej liniowe)",
+   "implementation": "masterquo/trainhub/learn.py, features.py (wspólne cechy trening/inferencja), dataset.py, registry.py, inference.py",
+   "task": "klasa DOWN/FLAT/UP zmiany zamknięcia po H świecach względem progu max(k×ATR14, koszt świecy)",
+   "data_source": "magazyn świec data/marketdata/<INST> (eksport MT5 przyrostowy/historyczny, Parquet + CSV + manifest z sumami)",
+   "tf": "M1, M5, M15, M30",
+   "horizon": "h świec (per paczka)",
+   "side": "oba (klasy)",
+   "features": "PMW-TH-FEAT-1 (zwroty, ATR, świeca, zmienność, RSI, EMA, z-score, aktywność ticków, spread, czas, cechy wyższych TF)",
+   "label": "PMW-TH-LABEL-1 (koszty: spread ze świecy + prowizja z historii transakcji albo założenie + poślizg-założenie); okna przez lukę sesji odrzucone",
+   "trainer": "Centrum treningu / `python -m masterquo trainhub train|full --instrument XAUUSD|BTC --models TH_SVM` albo `--profile smoke|research|full` – NIE w domyślnym zestawie bez --models (TH_BASELINE, TH_LOGREG, TH_HGB) (purged walk-forward + embargo, nietknięty holdout 20%, kalibracja temperaturą na dev, proces osobny)",
+   "loader": "TrainhubInference (tylko AKTYWNA paczka po teście zgodności i predykcji; inaczej stan INCOMPATIBLE/ERROR bez wartości)",
+   "artifact": "data/trainhub/models/<INST>/<MODEL>_<TF>_H<h>/<wersja>/ (model.joblib, cechy, config, metryki, manifest danych, zależności, REPRODUCE.md, sha256)",
+   "instruments": [
+    "XAUUSD",
+    "BTC"
+   ],
+   "status": "kod: IMPLEMENTED; walidacja: NOT_VALIDATED; rola w Quant Core: BASE_FORECAST (alias rodziny family:TH_SVM – jeden artefakt, jeden trening, jeden głos) | opis: ZAIMPLEMENTOWANE_I_ZINTEGROWANE (OBSERVATION – nie głosuje w strategiach); trening sprawdzony tylko na symulatorze (SYNTHETIC_TEST) – brak oceny na danych rzeczywistych",
+   "aliases": [
+    "TH_SVM",
+    "family:TH_SVM"
+   ],
+   "legacy_ids": [
+    "TH_SVM"
+   ],
+   "category": "MODEL_TRAINED",
+   "registry_source": [
+    "modelhub.families (alias)",
+    "sh.models.REGISTRY (th_direction)",
+    "trainhub.learn.MODELS"
+   ]
+  },
+  {
+   "id": "family:TS_ARIMA",
+   "name": "ARIMA (statsmodels) – prognoza log-zwrotu",
+   "implementation": "backend/masterquo/modelhub/families/arima.py",
+   "task": "REGRESSION / LOG_RETURN_H / log_return",
+   "data_source": "—",
+   "tf": "M5",
+   "horizon": "[1, 3, 5] świec M5",
+   "side": "—",
+   "features": "—",
+   "label": "—",
+   "trainer": "modelhub.families.service (proces obok)",
+   "loader": "modelhub.families.service",
+   "artifact": "<data>/model_families/TS_ARIMA/<instrument>/<run_id>",
+   "instruments": [],
+   "status": "kod: IMPLEMENTED; walidacja: NOT_VALIDATED; rola w Quant Core: BASE_FORECAST",
+   "aliases": [
+    "TS_ARIMA"
+   ],
+   "legacy_ids": [],
+   "category": "MODEL_TRAINED",
+   "registry_source": [
+    "modelhub.families.registry"
+   ]
+  },
+  {
+   "id": "family:TS_SARIMAX",
+   "name": "SARIMAX (statsmodels) – zwroty H1 z kalendarzem sesji jako exog",
+   "implementation": "backend/masterquo/modelhub/families/arima.py",
+   "task": "REGRESSION / LOG_RETURN_H / log_return",
+   "data_source": "—",
+   "tf": "H1",
+   "horizon": "[1, 3, 5] świec H1",
+   "side": "—",
+   "features": "—",
+   "label": "—",
+   "trainer": "modelhub.families.service (proces obok)",
+   "loader": "modelhub.families.service",
+   "artifact": "<data>/model_families/TS_SARIMAX/<instrument>/<run_id>",
+   "instruments": [],
+   "status": "kod: IMPLEMENTED; walidacja: NOT_VALIDATED; rola w Quant Core: BASE_FORECAST",
+   "aliases": [
+    "TS_SARIMAX"
+   ],
+   "legacy_ids": [],
+   "category": "MODEL_TRAINED",
+   "registry_source": [
+    "modelhub.families.registry"
+   ]
+  },
+  {
+   "id": "family:VOL_GARCH",
+   "name": "GARCH(1,1) (arch) – zmienność warunkowa",
+   "implementation": "backend/masterquo/modelhub/families/garch.py",
+   "task": "VOLATILITY / SIGMA_LOG_RETURN_H / sigma_return",
+   "data_source": "—",
+   "tf": "M5",
+   "horizon": "[1, 6, 12] świec M5",
+   "side": "—",
+   "features": "—",
+   "label": "—",
+   "trainer": "modelhub.families.service (proces obok)",
+   "loader": "modelhub.families.service",
+   "artifact": "<data>/model_families/VOL_GARCH/<instrument>/<run_id>",
+   "instruments": [],
+   "status": "kod: IMPLEMENTED; walidacja: NOT_VALIDATED; rola w Quant Core: BASE_FORECAST",
+   "aliases": [
+    "VOL_GARCH"
+   ],
+   "legacy_ids": [],
+   "category": "MODEL_TRAINED",
+   "registry_source": [
+    "modelhub.families.registry"
+   ]
+  },
+  {
+   "id": "family:MICROSTRUCTURE",
+   "name": "Mikrostruktura – arkusz brokera (imbalance, OFI, microprice) + klasyfikator reakcji",
+   "implementation": "backend/masterquo/modelhub/families/micro.py",
+   "task": "MICROSTRUCTURE / BOOK_STATE_AND_REACTION_10S / mixed",
+   "data_source": "—",
+   "tf": "—",
+   "horizon": "brak (pomiar stanu)",
+   "side": "—",
+   "features": "—",
+   "label": "—",
+   "trainer": "modelhub.families.service (proces obok)",
+   "loader": "modelhub.families.service",
+   "artifact": "<data>/model_families/MICROSTRUCTURE/<instrument>/<run_id>",
+   "instruments": [],
+   "status": "kod: IMPLEMENTED; walidacja: NOT_VALIDATED; rola w Quant Core: CONTEXT_FEATURE",
+   "aliases": [
+    "MICROSTRUCTURE"
+   ],
+   "legacy_ids": [],
+   "category": "MEASUREMENT",
+   "registry_source": [
+    "modelhub.families.registry"
+   ]
+  },
+  {
+   "id": "family:PAIR_COINT",
+   "name": "Kointegracja pary + z-score (Engle-Granger)",
+   "implementation": "backend/masterquo/modelhub/families/pairs.py",
+   "task": "PAIR_RELATION / PAIR_SPREAD_Z / z_score",
+   "data_source": "—",
+   "tf": "H1",
+   "horizon": "[1] świec H1",
+   "side": "—",
+   "features": "—",
+   "label": "—",
+   "trainer": "modelhub.families.service (proces obok)",
+   "loader": "modelhub.families.service",
+   "artifact": "<data>/model_families/PAIR_COINT/<instrument>/<run_id>",
+   "instruments": [],
+   "status": "kod: IMPLEMENTED; walidacja: NOT_VALIDATED; rola w Quant Core: CONTEXT_FEATURE",
+   "aliases": [
+    "PAIR_COINT"
+   ],
+   "legacy_ids": [],
+   "category": "MODEL_TRAINED",
+   "registry_source": [
+    "modelhub.families.registry"
+   ]
+  },
+  {
+   "id": "family:STATARB",
+   "name": "Arbitraż statystyczny – koszyk PCA + reszty (s-score)",
+   "implementation": "backend/masterquo/modelhub/families/pairs.py",
+   "task": "PAIR_RELATION / BASKET_RESIDUAL_S / z_score",
+   "data_source": "—",
+   "tf": "H1",
+   "horizon": "[1] świec H1",
+   "side": "—",
+   "features": "—",
+   "label": "—",
+   "trainer": "modelhub.families.service (proces obok)",
+   "loader": "modelhub.families.service",
+   "artifact": "<data>/model_families/STATARB/<instrument>/<run_id>",
+   "instruments": [],
+   "status": "kod: IMPLEMENTED; walidacja: NOT_VALIDATED; rola w Quant Core: CONTEXT_FEATURE",
+   "aliases": [
+    "STATARB"
+   ],
+   "legacy_ids": [],
+   "category": "MODEL_TRAINED",
+   "registry_source": [
+    "modelhub.families.registry"
+   ]
+  },
+  {
+   "id": "family:KALMAN_LS",
+   "name": "Filtr Kalmana poziom + nachylenie (rozbudowa mm_kalman)",
+   "implementation": "backend/masterquo/modelhub/families/kalman_ls.py",
+   "task": "FILTER_STATE / TREND_STATE / mixed",
+   "data_source": "—",
+   "tf": "M5",
+   "horizon": "[1] świec M5",
+   "side": "—",
+   "features": "—",
+   "label": "—",
+   "trainer": "modelhub.families.service (proces obok)",
+   "loader": "modelhub.families.service",
+   "artifact": "<data>/model_families/KALMAN_LS/<instrument>/<run_id>",
+   "instruments": [],
+   "status": "kod: IMPLEMENTED; walidacja: NOT_VALIDATED; rola w Quant Core: CONTEXT_FEATURE",
+   "aliases": [
+    "KALMAN_LS"
+   ],
+   "legacy_ids": [],
+   "category": "MODEL_ESTIMATED",
+   "registry_source": [
+    "modelhub.families.registry"
+   ]
+  },
+  {
+   "id": "family:BREAKOUT",
+   "name": "Breakout – wspólny moduł logiki wybicia (kanał, kompresja, potwierdzenie, retest)",
+   "implementation": "backend/masterquo/modelhub/families/breakout.py",
+   "task": "FILTER_STATE / BREAKOUT_STATE / mixed",
+   "data_source": "—",
+   "tf": "M5",
+   "horizon": "[1] świec M5",
+   "side": "—",
+   "features": "—",
+   "label": "—",
+   "trainer": "modelhub.families.service (proces obok)",
+   "loader": "modelhub.families.service",
+   "artifact": "<data>/model_families/BREAKOUT/<instrument>/<run_id>",
+   "instruments": [],
+   "status": "kod: IMPLEMENTED; walidacja: NOT_VALIDATED; rola w Quant Core: CONTEXT_FEATURE",
+   "aliases": [
+    "BREAKOUT"
+   ],
+   "legacy_ids": [],
+   "category": "MODEL_ESTIMATED",
+   "registry_source": [
+    "modelhub.families.registry"
+   ]
+  },
+  {
+   "id": "family:SEQ_LSTM",
+   "name": "LSTM (PyTorch, .venv_deep) – rozkład kierunku po kosztach",
+   "implementation": "backend/masterquo/modelhub/families/seq.py",
+   "task": "CLASS_PROBABILITIES / DIRECTION_H6_AFTER_COST / probability",
+   "data_source": "—",
+   "tf": "M5",
+   "horizon": "[6] świec M5",
+   "side": "—",
+   "features": "—",
+   "label": "—",
+   "trainer": "modelhub.families.service (proces obok)",
+   "loader": "modelhub.families.service",
+   "artifact": "<data>/model_families/SEQ_LSTM/<instrument>/<run_id>",
+   "instruments": [],
+   "status": "kod: IMPLEMENTED; walidacja: NOT_VALIDATED; rola w Quant Core: BASE_FORECAST",
+   "aliases": [
+    "SEQ_LSTM"
+   ],
+   "legacy_ids": [],
+   "category": "MODEL_TRAINED",
+   "registry_source": [
+    "modelhub.families.registry"
+   ]
+  },
+  {
+   "id": "family:SEQ_GRU",
+   "name": "GRU świecowy (PyTorch, .venv_deep) – rozkład kierunku po kosztach",
+   "implementation": "backend/masterquo/modelhub/families/seq.py",
+   "task": "CLASS_PROBABILITIES / DIRECTION_H6_AFTER_COST / probability",
+   "data_source": "—",
+   "tf": "M5",
+   "horizon": "[6] świec M5",
+   "side": "—",
+   "features": "—",
+   "label": "—",
+   "trainer": "modelhub.families.service (proces obok)",
+   "loader": "modelhub.families.service",
+   "artifact": "<data>/model_families/SEQ_GRU/<instrument>/<run_id>",
+   "instruments": [],
+   "status": "kod: IMPLEMENTED; walidacja: NOT_VALIDATED; rola w Quant Core: BASE_FORECAST",
+   "aliases": [
+    "SEQ_GRU"
+   ],
+   "legacy_ids": [],
+   "category": "MODEL_TRAINED",
+   "registry_source": [
+    "modelhub.families.registry"
+   ]
+  },
+  {
+   "id": "family:RL_PPO",
+   "name": "PPO (Stable-Baselines3, Gymnasium replay) – propozycja ekspozycji",
+   "implementation": "backend/masterquo/modelhub/families/rl.py",
+   "task": "RL_ACTION / TARGET_EXPOSURE / action",
+   "data_source": "—",
+   "tf": "M5",
+   "horizon": "brak (pomiar stanu)",
+   "side": "—",
+   "features": "—",
+   "label": "—",
+   "trainer": "modelhub.families.service (proces obok)",
+   "loader": "modelhub.families.service",
+   "artifact": "<data>/model_families/RL_PPO/<instrument>/<run_id>",
+   "instruments": [],
+   "status": "kod: IMPLEMENTED; walidacja: NOT_VALIDATED; rola w Quant Core: NOT_A_VOTE (akcja RL ≠ p(win))",
+   "aliases": [
+    "RL_PPO"
+   ],
+   "legacy_ids": [],
+   "category": "MODEL_TRAINED",
+   "registry_source": [
+    "modelhub.families.registry"
+   ]
+  },
+  {
+   "id": "family:NLP_SENTIMENT",
+   "name": "Sentyment tekstu – TF-IDF + regresja logistyczna",
+   "implementation": "backend/masterquo/modelhub/families/nlp.py",
+   "task": "NLP_SENTIMENT / TEXT_SENTIMENT_3 / sentiment",
+   "data_source": "—",
+   "tf": "—",
+   "horizon": "brak (pomiar stanu)",
+   "side": "—",
+   "features": "—",
+   "label": "—",
+   "trainer": "modelhub.families.service (proces obok)",
+   "loader": "modelhub.families.service",
+   "artifact": "<data>/model_families/NLP_SENTIMENT/<instrument>/<run_id>",
+   "instruments": [],
+   "status": "kod: IMPLEMENTED; walidacja: NOT_VALIDATED; rola w Quant Core: CONTEXT_FEATURE (sentyment ≠ kierunek XAUUSD bez wyuczonego związku)",
+   "aliases": [
+    "NLP_SENTIMENT"
+   ],
+   "legacy_ids": [],
+   "category": "MODEL_TRAINED",
+   "registry_source": [
+    "modelhub.families.registry"
+   ]
+  },
+  {
+   "id": "lab:DUMMY",
+   "name": "Lab DUMMY – częstość bazowa",
+   "implementation": "masterquo/lab/protocol.py fit_family('DUMMY'), lab/nets.py, lab/minirocket.py",
+   "task": "klasyfikacja binarna LONG",
+   "data_source": "eksport treningowy M5 (data/training/datasets/<INST>/<run>) albo bufor bota",
+   "tf": "M5",
+   "horizon": "12 świec (60 min)",
+   "side": "LONG (tylko długie – nie oznaczać jako oba kierunki)",
+   "features": "FS-1.0.0 (lab/features.py: zwroty, ATR, EMA gap, kinematyka, sesja; sekwencje 32×kanały dla sieci)",
+   "label": "potrójna bariera: TP 1.5×ATR przed SL 1.0×ATR w 12 świecach M5 (LBL-TB-1.0.0); SL i TP w tej samej świecy → SL (konserwatywnie)",
+   "trainer": "masterquo/lab/protocol.py LabTrainer + training lab-offline (walk-forward 4 foldy, purge/embargo 12, holdout 20% raz)",
+   "loader": "lab/protocol.py load_artifact → LabService._infer (bot), kontrola parity przy zapisie",
+   "artifact": "data/lab/models/<INST>/<model_id>/model.pkl + manifest.json (+ ACTIVE.json: aktywny per rodzina, rollback)",
+   "instruments": [
+    "XAUUSD",
+    "BTC"
+   ],
+   "status": "kod: IMPLEMENTED; walidacja: NOT_VALIDATED; rola w Quant Core: TOOL (score innego zdarzenia niż TP setupu – cecha pod własną nazwą) | opis: MODEL_KONTROLNY (nie zapisywany jako artefakt); zapisywany jest model oceniany (fit na danych rozwojowych), bez refitu na train+holdout",
+   "aliases": [],
+   "legacy_ids": [
+    "LAB_DUMMY"
+   ],
+   "category": "BASELINE",
+   "registry_source": [
+    "lab.protocol.FAMILIES",
+    "sh.models.REGISTRY (lab)"
+   ]
+  },
+  {
+   "id": "lab:RULE",
+   "name": "Lab RULE – reguła odniesienia",
+   "implementation": "masterquo/lab/protocol.py fit_family('RULE'), lab/nets.py, lab/minirocket.py",
+   "task": "klasyfikacja binarna LONG",
+   "data_source": "eksport treningowy M5 (data/training/datasets/<INST>/<run>) albo bufor bota",
+   "tf": "M5",
+   "horizon": "12 świec (60 min)",
+   "side": "LONG (tylko długie – nie oznaczać jako oba kierunki)",
+   "features": "FS-1.0.0 (lab/features.py: zwroty, ATR, EMA gap, kinematyka, sesja; sekwencje 32×kanały dla sieci)",
+   "label": "potrójna bariera: TP 1.5×ATR przed SL 1.0×ATR w 12 świecach M5 (LBL-TB-1.0.0); SL i TP w tej samej świecy → SL (konserwatywnie)",
+   "trainer": "masterquo/lab/protocol.py LabTrainer + training lab-offline (walk-forward 4 foldy, purge/embargo 12, holdout 20% raz)",
+   "loader": "lab/protocol.py load_artifact → LabService._infer (bot), kontrola parity przy zapisie",
+   "artifact": "data/lab/models/<INST>/<model_id>/model.pkl + manifest.json (+ ACTIVE.json: aktywny per rodzina, rollback)",
+   "instruments": [
+    "XAUUSD",
+    "BTC"
+   ],
+   "status": "kod: IMPLEMENTED; walidacja: NOT_VALIDATED; rola w Quant Core: TOOL (score innego zdarzenia niż TP setupu – cecha pod własną nazwą) | opis: MODEL_KONTROLNY; zapisywany jest model oceniany (fit na danych rozwojowych), bez refitu na train+holdout",
+   "aliases": [],
+   "legacy_ids": [
+    "LAB_RULE"
+   ],
+   "category": "BASELINE",
+   "registry_source": [
+    "lab.protocol.FAMILIES",
+    "sh.models.REGISTRY (lab)"
+   ]
+  },
+  {
+   "id": "lab:LOGREG",
+   "name": "Lab regresja logistyczna",
+   "implementation": "masterquo/lab/protocol.py fit_family('LOGREG'), lab/nets.py, lab/minirocket.py",
+   "task": "klasyfikacja binarna LONG",
+   "data_source": "eksport treningowy M5 (data/training/datasets/<INST>/<run>) albo bufor bota",
+   "tf": "M5",
+   "horizon": "12 świec (60 min)",
+   "side": "LONG (tylko długie – nie oznaczać jako oba kierunki)",
+   "features": "FS-1.0.0 (lab/features.py: zwroty, ATR, EMA gap, kinematyka, sesja; sekwencje 32×kanały dla sieci)",
+   "label": "potrójna bariera: TP 1.5×ATR przed SL 1.0×ATR w 12 świecach M5 (LBL-TB-1.0.0); SL i TP w tej samej świecy → SL (konserwatywnie)",
+   "trainer": "masterquo/lab/protocol.py LabTrainer + training lab-offline (walk-forward 4 foldy, purge/embargo 12, holdout 20% raz)",
+   "loader": "lab/protocol.py load_artifact → LabService._infer (bot), kontrola parity przy zapisie",
+   "artifact": "data/lab/models/<INST>/<model_id>/model.pkl + manifest.json (+ ACTIVE.json: aktywny per rodzina, rollback)",
+   "instruments": [
+    "XAUUSD",
+    "BTC"
+   ],
+   "status": "kod: IMPLEMENTED; walidacja: NOT_VALIDATED; rola w Quant Core: BASE_FORECAST (score innego zdarzenia niż TP setupu – cecha pod własną nazwą) | opis: ZAIMPLEMENTOWANE_I_ZINTEGROWANE; zapisywany jest model oceniany (fit na danych rozwojowych), bez refitu na train+holdout",
+   "aliases": [],
+   "legacy_ids": [
+    "LAB_LOGREG"
+   ],
+   "category": "MODEL_TRAINED",
+   "registry_source": [
+    "lab.protocol.FAMILIES",
+    "sh.models.REGISTRY (lab)"
+   ]
+  },
+  {
+   "id": "lab:TREE",
+   "name": "Lab drzewo decyzyjne (≠ legacy Decision Tree: inne pytanie – bariera LONG M5, nie setup S01–S12)",
+   "implementation": "masterquo/lab/protocol.py fit_family('TREE'), lab/nets.py, lab/minirocket.py",
+   "task": "klasyfikacja binarna LONG",
+   "data_source": "eksport treningowy M5 (data/training/datasets/<INST>/<run>) albo bufor bota",
+   "tf": "M5",
+   "horizon": "12 świec (60 min)",
+   "side": "LONG (tylko długie – nie oznaczać jako oba kierunki)",
+   "features": "FS-1.0.0 (lab/features.py: zwroty, ATR, EMA gap, kinematyka, sesja; sekwencje 32×kanały dla sieci)",
+   "label": "potrójna bariera: TP 1.5×ATR przed SL 1.0×ATR w 12 świecach M5 (LBL-TB-1.0.0); SL i TP w tej samej świecy → SL (konserwatywnie)",
+   "trainer": "masterquo/lab/protocol.py LabTrainer + training lab-offline (walk-forward 4 foldy, purge/embargo 12, holdout 20% raz)",
+   "loader": "lab/protocol.py load_artifact → LabService._infer (bot), kontrola parity przy zapisie",
+   "artifact": "data/lab/models/<INST>/<model_id>/model.pkl + manifest.json (+ ACTIVE.json: aktywny per rodzina, rollback)",
+   "instruments": [
+    "XAUUSD",
+    "BTC"
+   ],
+   "status": "kod: IMPLEMENTED; walidacja: NOT_VALIDATED; rola w Quant Core: BASE_FORECAST (score innego zdarzenia niż TP setupu – cecha pod własną nazwą) | opis: ZAIMPLEMENTOWANE_I_ZINTEGROWANE; zapisywany jest model oceniany (fit na danych rozwojowych), bez refitu na train+holdout",
+   "aliases": [],
+   "legacy_ids": [
+    "LAB_TREE"
+   ],
+   "category": "MODEL_TRAINED",
+   "registry_source": [
+    "lab.protocol.FAMILIES",
+    "sh.models.REGISTRY (lab)"
+   ]
+  },
+  {
+   "id": "lab:MINIROCKET",
+   "name": "Lab MiniRocket (numpy) + klasyfikator liniowy",
+   "implementation": "masterquo/lab/protocol.py fit_family('MINIROCKET'), lab/nets.py, lab/minirocket.py",
+   "task": "klasyfikacja binarna LONG",
+   "data_source": "eksport treningowy M5 (data/training/datasets/<INST>/<run>) albo bufor bota",
+   "tf": "M5",
+   "horizon": "12 świec (60 min)",
+   "side": "LONG (tylko długie – nie oznaczać jako oba kierunki)",
+   "features": "FS-1.0.0 (lab/features.py: zwroty, ATR, EMA gap, kinematyka, sesja; sekwencje 32×kanały dla sieci)",
+   "label": "potrójna bariera: TP 1.5×ATR przed SL 1.0×ATR w 12 świecach M5 (LBL-TB-1.0.0); SL i TP w tej samej świecy → SL (konserwatywnie)",
+   "trainer": "masterquo/lab/protocol.py LabTrainer + training lab-offline (walk-forward 4 foldy, purge/embargo 12, holdout 20% raz)",
+   "loader": "lab/protocol.py load_artifact → LabService._infer (bot), kontrola parity przy zapisie",
+   "artifact": "data/lab/models/<INST>/<model_id>/model.pkl + manifest.json (+ ACTIVE.json: aktywny per rodzina, rollback)",
+   "instruments": [
+    "XAUUSD",
+    "BTC"
+   ],
+   "status": "kod: IMPLEMENTED; walidacja: NOT_VALIDATED; rola w Quant Core: BASE_FORECAST (score innego zdarzenia niż TP setupu – cecha pod własną nazwą) | opis: ZAIMPLEMENTOWANE_I_ZINTEGROWANE; zapisywany jest model oceniany (fit na danych rozwojowych), bez refitu na train+holdout",
+   "aliases": [],
+   "legacy_ids": [
+    "LAB_MINIROCKET"
+   ],
+   "category": "MODEL_TRAINED",
+   "registry_source": [
+    "lab.protocol.FAMILIES",
+    "sh.models.REGISTRY (lab)"
+   ]
+  },
+  {
+   "id": "lab:XGB",
+   "name": "Lab XGBoost (CPU)",
+   "implementation": "masterquo/lab/protocol.py fit_family('XGB'), lab/nets.py, lab/minirocket.py",
+   "task": "klasyfikacja binarna LONG",
+   "data_source": "eksport treningowy M5 (data/training/datasets/<INST>/<run>) albo bufor bota",
+   "tf": "M5",
+   "horizon": "12 świec (60 min)",
+   "side": "LONG (tylko długie – nie oznaczać jako oba kierunki)",
+   "features": "FS-1.0.0 (lab/features.py: zwroty, ATR, EMA gap, kinematyka, sesja; sekwencje 32×kanały dla sieci)",
+   "label": "potrójna bariera: TP 1.5×ATR przed SL 1.0×ATR w 12 świecach M5 (LBL-TB-1.0.0); SL i TP w tej samej świecy → SL (konserwatywnie)",
+   "trainer": "masterquo/lab/protocol.py LabTrainer + training lab-offline (walk-forward 4 foldy, purge/embargo 12, holdout 20% raz)",
+   "loader": "lab/protocol.py load_artifact → LabService._infer (bot), kontrola parity przy zapisie",
+   "artifact": "data/lab/models/<INST>/<model_id>/model.pkl + manifest.json (+ ACTIVE.json: aktywny per rodzina, rollback)",
+   "instruments": [
+    "XAUUSD",
+    "BTC"
+   ],
+   "status": "kod: IMPLEMENTED; walidacja: NOT_VALIDATED; rola w Quant Core: BASE_FORECAST (score innego zdarzenia niż TP setupu – cecha pod własną nazwą) | opis: ZAIMPLEMENTOWANE_I_ZINTEGROWANE; zapisywany jest model oceniany (fit na danych rozwojowych), bez refitu na train+holdout",
+   "aliases": [],
+   "legacy_ids": [
+    "LAB_XGB"
+   ],
+   "category": "MODEL_TRAINED",
+   "registry_source": [
+    "lab.protocol.FAMILIES",
+    "sh.models.REGISTRY (lab)"
+   ]
+  },
+  {
+   "id": "lab:RESNET1D",
+   "name": "Lab ResNet1D (numpy)",
+   "implementation": "masterquo/lab/protocol.py fit_family('RESNET1D'), lab/nets.py, lab/minirocket.py",
+   "task": "klasyfikacja binarna LONG",
+   "data_source": "eksport treningowy M5 (data/training/datasets/<INST>/<run>) albo bufor bota",
+   "tf": "M5",
+   "horizon": "12 świec (60 min)",
+   "side": "LONG (tylko długie – nie oznaczać jako oba kierunki)",
+   "features": "FS-1.0.0 (lab/features.py: zwroty, ATR, EMA gap, kinematyka, sesja; sekwencje 32×kanały dla sieci)",
+   "label": "potrójna bariera: TP 1.5×ATR przed SL 1.0×ATR w 12 świecach M5 (LBL-TB-1.0.0); SL i TP w tej samej świecy → SL (konserwatywnie)",
+   "trainer": "masterquo/lab/protocol.py LabTrainer + training lab-offline (walk-forward 4 foldy, purge/embargo 12, holdout 20% raz)",
+   "loader": "lab/protocol.py load_artifact → LabService._infer (bot), kontrola parity przy zapisie",
+   "artifact": "data/lab/models/<INST>/<model_id>/model.pkl + manifest.json (+ ACTIVE.json: aktywny per rodzina, rollback)",
+   "instruments": [
+    "XAUUSD",
+    "BTC"
+   ],
+   "status": "kod: IMPLEMENTED; walidacja: NOT_VALIDATED; rola w Quant Core: BASE_FORECAST (score innego zdarzenia niż TP setupu – cecha pod własną nazwą) | opis: ZAIMPLEMENTOWANE_I_ZINTEGROWANE; zapisywany jest model oceniany (fit na danych rozwojowych), bez refitu na train+holdout",
+   "aliases": [],
+   "legacy_ids": [
+    "LAB_RESNET1D"
+   ],
+   "category": "MODEL_TRAINED",
+   "registry_source": [
+    "lab.protocol.FAMILIES",
+    "sh.models.REGISTRY (lab)"
+   ]
+  },
+  {
+   "id": "lab:SEW_SNN",
+   "name": "Lab SEW-SNN (sieć impulsowa, numpy)",
+   "implementation": "masterquo/lab/protocol.py fit_family('SEW_SNN'), lab/nets.py, lab/minirocket.py",
+   "task": "klasyfikacja binarna LONG",
+   "data_source": "eksport treningowy M5 (data/training/datasets/<INST>/<run>) albo bufor bota",
+   "tf": "M5",
+   "horizon": "12 świec (60 min)",
+   "side": "LONG (tylko długie – nie oznaczać jako oba kierunki)",
+   "features": "FS-1.0.0 (lab/features.py: zwroty, ATR, EMA gap, kinematyka, sesja; sekwencje 32×kanały dla sieci)",
+   "label": "potrójna bariera: TP 1.5×ATR przed SL 1.0×ATR w 12 świecach M5 (LBL-TB-1.0.0); SL i TP w tej samej świecy → SL (konserwatywnie)",
+   "trainer": "masterquo/lab/protocol.py LabTrainer + training lab-offline (walk-forward 4 foldy, purge/embargo 12, holdout 20% raz)",
+   "loader": "lab/protocol.py load_artifact → LabService._infer (bot), kontrola parity przy zapisie",
+   "artifact": "data/lab/models/<INST>/<model_id>/model.pkl + manifest.json (+ ACTIVE.json: aktywny per rodzina, rollback)",
+   "instruments": [
+    "XAUUSD",
+    "BTC"
+   ],
+   "status": "kod: IMPLEMENTED; walidacja: NOT_VALIDATED; rola w Quant Core: BASE_FORECAST (score innego zdarzenia niż TP setupu – cecha pod własną nazwą) | opis: ZAIMPLEMENTOWANE_I_ZINTEGROWANE; zapisywany jest model oceniany (fit na danych rozwojowych), bez refitu na train+holdout",
+   "aliases": [],
+   "legacy_ids": [
+    "LAB_SEW_SNN"
+   ],
+   "category": "MODEL_TRAINED",
+   "registry_source": [
+    "lab.protocol.FAMILIES",
+    "sh.models.REGISTRY (lab)"
+   ]
+  },
+  {
+   "id": "lab:LOGREG_PCA",
+   "name": "Eksperyment: LOGREG na PCA",
+   "implementation": "masterquo/lab/protocol.py fit_family('LOGREG_PCA'), lab/nets.py, lab/minirocket.py",
+   "task": "klasyfikacja binarna LONG",
+   "data_source": "eksport treningowy M5 (data/training/datasets/<INST>/<run>) albo bufor bota",
+   "tf": "M5",
+   "horizon": "12 świec (60 min)",
+   "side": "LONG (tylko długie – nie oznaczać jako oba kierunki)",
+   "features": "FS-1.0.0 (lab/features.py: zwroty, ATR, EMA gap, kinematyka, sesja; sekwencje 32×kanały dla sieci)",
+   "label": "potrójna bariera: TP 1.5×ATR przed SL 1.0×ATR w 12 świecach M5 (LBL-TB-1.0.0); SL i TP w tej samej świecy → SL (konserwatywnie)",
+   "trainer": "masterquo/lab/protocol.py LabTrainer + training lab-offline (walk-forward 4 foldy, purge/embargo 12, holdout 20% raz)",
+   "loader": "lab/protocol.py load_artifact → LabService._infer (bot), kontrola parity przy zapisie",
+   "artifact": "data/lab/models/<INST>/<model_id>/model.pkl + manifest.json (+ ACTIVE.json: aktywny per rodzina, rollback)",
+   "instruments": [
+    "XAUUSD",
+    "BTC"
+   ],
+   "status": "kod: IMPLEMENTED; walidacja: NOT_VALIDATED; rola w Quant Core: BASE_FORECAST (eksperyment badawczy (PCA / GMM / neutralizacja) – wariant LOGREG, score innego zdarzenia niż TP setupu; artefakt w trybie ALL (training lab-offline, profil PEŁNY TRENING) albo gdy wygra selekcję; t_activate przypina rolę research -> rekord lab:<X> w Quant) | opis: EKSPERYMENT; zapisywany jest model oceniany (fit na danych rozwojowych), bez refitu na train+holdout",
+   "aliases": [],
+   "legacy_ids": [
+    "LAB_LOGREG_PCA"
+   ],
+   "category": "RESEARCH",
+   "registry_source": [
+    "lab.protocol.EXPERIMENTS",
+    "sh.models.REGISTRY (lab)"
+   ]
+  },
+  {
+   "id": "lab:LOGREG_GMM_AUG",
+   "name": "Eksperyment: LOGREG z cechami reżimu GMM",
+   "implementation": "masterquo/lab/protocol.py fit_family('LOGREG_GMM_AUG'), lab/nets.py, lab/minirocket.py",
+   "task": "klasyfikacja binarna LONG",
+   "data_source": "eksport treningowy M5 (data/training/datasets/<INST>/<run>) albo bufor bota",
+   "tf": "M5",
+   "horizon": "12 świec (60 min)",
+   "side": "LONG (tylko długie – nie oznaczać jako oba kierunki)",
+   "features": "FS-1.0.0 (lab/features.py: zwroty, ATR, EMA gap, kinematyka, sesja; sekwencje 32×kanały dla sieci)",
+   "label": "potrójna bariera: TP 1.5×ATR przed SL 1.0×ATR w 12 świecach M5 (LBL-TB-1.0.0); SL i TP w tej samej świecy → SL (konserwatywnie)",
+   "trainer": "masterquo/lab/protocol.py LabTrainer + training lab-offline (walk-forward 4 foldy, purge/embargo 12, holdout 20% raz)",
+   "loader": "lab/protocol.py load_artifact → LabService._infer (bot), kontrola parity przy zapisie",
+   "artifact": "data/lab/models/<INST>/<model_id>/model.pkl + manifest.json (+ ACTIVE.json: aktywny per rodzina, rollback)",
+   "instruments": [
+    "XAUUSD",
+    "BTC"
+   ],
+   "status": "kod: IMPLEMENTED; walidacja: NOT_VALIDATED; rola w Quant Core: BASE_FORECAST (eksperyment badawczy (PCA / GMM / neutralizacja) – wariant LOGREG, score innego zdarzenia niż TP setupu; artefakt w trybie ALL (training lab-offline, profil PEŁNY TRENING) albo gdy wygra selekcję; t_activate przypina rolę research -> rekord lab:<X> w Quant) | opis: EKSPERYMENT; zapisywany jest model oceniany (fit na danych rozwojowych), bez refitu na train+holdout",
+   "aliases": [],
+   "legacy_ids": [
+    "LAB_LOGREG_GMM_AUG"
+   ],
+   "category": "RESEARCH",
+   "registry_source": [
+    "lab.protocol.EXPERIMENTS",
+    "sh.models.REGISTRY (lab)"
+   ]
+  },
+  {
+   "id": "lab:LOGREG_NEUTRALIZED",
+   "name": "Eksperyment: LOGREG z neutralizacją czynników",
+   "implementation": "masterquo/lab/protocol.py fit_family('LOGREG_NEUTRALIZED'), lab/nets.py, lab/minirocket.py",
+   "task": "klasyfikacja binarna LONG",
+   "data_source": "eksport treningowy M5 (data/training/datasets/<INST>/<run>) albo bufor bota",
+   "tf": "M5",
+   "horizon": "12 świec (60 min)",
+   "side": "LONG (tylko długie – nie oznaczać jako oba kierunki)",
+   "features": "FS-1.0.0 (lab/features.py: zwroty, ATR, EMA gap, kinematyka, sesja; sekwencje 32×kanały dla sieci)",
+   "label": "potrójna bariera: TP 1.5×ATR przed SL 1.0×ATR w 12 świecach M5 (LBL-TB-1.0.0); SL i TP w tej samej świecy → SL (konserwatywnie)",
+   "trainer": "masterquo/lab/protocol.py LabTrainer + training lab-offline (walk-forward 4 foldy, purge/embargo 12, holdout 20% raz)",
+   "loader": "lab/protocol.py load_artifact → LabService._infer (bot), kontrola parity przy zapisie",
+   "artifact": "data/lab/models/<INST>/<model_id>/model.pkl + manifest.json (+ ACTIVE.json: aktywny per rodzina, rollback)",
+   "instruments": [
+    "XAUUSD",
+    "BTC"
+   ],
+   "status": "kod: IMPLEMENTED; walidacja: NOT_VALIDATED; rola w Quant Core: BASE_FORECAST (eksperyment badawczy (PCA / GMM / neutralizacja) – wariant LOGREG, score innego zdarzenia niż TP setupu; artefakt w trybie ALL (training lab-offline, profil PEŁNY TRENING) albo gdy wygra selekcję; t_activate przypina rolę research -> rekord lab:<X> w Quant) | opis: EKSPERYMENT; zapisywany jest model oceniany (fit na danych rozwojowych), bez refitu na train+holdout",
+   "aliases": [],
+   "legacy_ids": [
+    "LAB_LOGREG_NEUTRALIZED"
+   ],
+   "category": "RESEARCH",
+   "registry_source": [
+    "lab.protocol.EXPERIMENTS",
+    "sh.models.REGISTRY (lab)"
+   ]
+  },
+  {
+   "id": "si:MQ_RESNEXT1D_V2",
+   "name": "Structure Intelligence MQ_RESNEXT1D_V2",
+   "implementation": "backend/masterquo/lab/structure_nets.py, backend/masterquo/lab/si_service.py",
+   "task": "CLASS_PROBABILITIES / M1_MOVE_H3/5/15 (DOWN/FLAT/UP + kwantyle r_h/ATR) / probability",
+   "data_source": "—",
+   "tf": "M1",
+   "horizon": "—",
+   "side": "—",
+   "features": "—",
+   "label": "—",
+   "trainer": "training (structure_intelligence)",
+   "loader": "lab.si_service",
+   "artifact": "<data>/structure_intelligence/<instrument>/",
+   "instruments": [],
+   "status": "kod: IMPLEMENTED; walidacja: NOT_VALIDATED; rola w Quant Core: BASE_FORECAST (prognoza SHADOW STRUCTURE_MOVE_M1_V1 liczona na żywo przy każdej zamkniętej M1 (scalp.service -> scalp.dashboard (MTF) -> lab.si_service.forecast) tylko dla rodziny wskazanej w rejestrze SI shadow[STRUCTURE_MOVE_M1_V1]; archiwum si_forecasts / si_outcomes, migawka MTF i agent (get_structure_intelligence); bez adaptera Quant (PMW-PRED-2))",
+   "aliases": [],
+   "legacy_ids": [],
+   "category": "MODEL_TRAINED",
+   "registry_source": [
+    "lab.structure_nets.FAMILIES",
+    "sh.models.REGISTRY (si_move)"
+   ]
+  },
+  {
+   "id": "si:MQ_SEW_RESNET1D_V2",
+   "name": "Structure Intelligence MQ_SEW_RESNET1D_V2",
+   "implementation": "backend/masterquo/lab/structure_nets.py, backend/masterquo/lab/si_service.py",
+   "task": "CLASS_PROBABILITIES / M1_MOVE_H3/5/15 (DOWN/FLAT/UP + kwantyle r_h/ATR) / probability",
+   "data_source": "—",
+   "tf": "M1",
+   "horizon": "—",
+   "side": "—",
+   "features": "—",
+   "label": "—",
+   "trainer": "training (structure_intelligence)",
+   "loader": "lab.si_service",
+   "artifact": "<data>/structure_intelligence/<instrument>/",
+   "instruments": [],
+   "status": "kod: IMPLEMENTED; walidacja: NOT_VALIDATED; rola w Quant Core: BASE_FORECAST (prognoza SHADOW STRUCTURE_MOVE_M1_V1 liczona na żywo przy każdej zamkniętej M1 (scalp.service -> scalp.dashboard (MTF) -> lab.si_service.forecast) tylko dla rodziny wskazanej w rejestrze SI shadow[STRUCTURE_MOVE_M1_V1]; archiwum si_forecasts / si_outcomes, migawka MTF i agent (get_structure_intelligence); bez adaptera Quant (PMW-PRED-2))",
+   "aliases": [],
+   "legacy_ids": [],
+   "category": "MODEL_TRAINED",
+   "registry_source": [
+    "lab.structure_nets.FAMILIES",
+    "sh.models.REGISTRY (si_move)"
+   ]
+  },
+  {
+   "id": "si:MQ_SEW_RESNEXT_EB_V1",
+   "name": "Structure Intelligence MQ_SEW_RESNEXT_EB_V1",
+   "implementation": "backend/masterquo/lab/structure_nets.py, backend/masterquo/lab/si_service.py",
+   "task": "CLASS_PROBABILITIES / M1_MOVE_H3/5/15 (DOWN/FLAT/UP + kwantyle r_h/ATR) / probability",
+   "data_source": "—",
+   "tf": "M1",
+   "horizon": "—",
+   "side": "—",
+   "features": "—",
+   "label": "—",
+   "trainer": "training (structure_intelligence)",
+   "loader": "lab.si_service",
+   "artifact": "<data>/structure_intelligence/<instrument>/",
+   "instruments": [],
+   "status": "kod: IMPLEMENTED; walidacja: NOT_VALIDATED; rola w Quant Core: BASE_FORECAST (prognoza SHADOW STRUCTURE_MOVE_M1_V1 liczona na żywo przy każdej zamkniętej M1 (scalp.service -> scalp.dashboard (MTF) -> lab.si_service.forecast) tylko dla rodziny wskazanej w rejestrze SI shadow[STRUCTURE_MOVE_M1_V1]; archiwum si_forecasts / si_outcomes, migawka MTF i agent (get_structure_intelligence); bez adaptera Quant (PMW-PRED-2))",
+   "aliases": [],
+   "legacy_ids": [],
+   "category": "MODEL_TRAINED",
+   "registry_source": [
+    "lab.structure_nets.FAMILIES",
+    "sh.models.REGISTRY (si_move)"
+   ]
+  },
+  {
+   "id": "si:MQ_MINIROCKET_RIDGE_V2",
+   "name": "Structure Intelligence MQ_MINIROCKET_RIDGE_V2",
+   "implementation": "backend/masterquo/lab/si_families.py, backend/masterquo/lab/si_service.py",
+   "task": "CLASS_PROBABILITIES / M1_MOVE_H3/5/15 (DOWN/FLAT/UP + kwantyle r_h/ATR) / probability",
+   "data_source": "—",
+   "tf": "M1",
+   "horizon": "—",
+   "side": "—",
+   "features": "—",
+   "label": "—",
+   "trainer": "training (structure_intelligence)",
+   "loader": "lab.si_service",
+   "artifact": "<data>/structure_intelligence/<instrument>/",
+   "instruments": [],
+   "status": "kod: IMPLEMENTED; walidacja: NOT_VALIDATED; rola w Quant Core: BASE_FORECAST (prognoza SHADOW STRUCTURE_MOVE_M1_V1 liczona na żywo przy każdej zamkniętej M1 (scalp.service -> scalp.dashboard (MTF) -> lab.si_service.forecast) tylko dla rodziny wskazanej w rejestrze SI shadow[STRUCTURE_MOVE_M1_V1]; archiwum si_forecasts / si_outcomes, migawka MTF i agent (get_structure_intelligence); bez adaptera Quant (PMW-PRED-2))",
+   "aliases": [],
+   "legacy_ids": [],
+   "category": "MODEL_TRAINED",
+   "registry_source": [
+    "lab.si_families.FAMILIES",
+    "sh.models.REGISTRY (si_move)"
+   ]
+  },
+  {
+   "id": "si:MQ_SPIKE_BRAIN_FINANCE_V1",
+   "name": "Structure Intelligence MQ_SPIKE_BRAIN_FINANCE_V1",
+   "implementation": "backend/masterquo/lab/si_families.py, backend/masterquo/lab/si_service.py",
+   "task": "CLASS_PROBABILITIES / M1_MOVE_H3/5/15 (DOWN/FLAT/UP + kwantyle r_h/ATR) / probability",
+   "data_source": "—",
+   "tf": "M1",
+   "horizon": "—",
+   "side": "—",
+   "features": "—",
+   "label": "—",
+   "trainer": "training (structure_intelligence)",
+   "loader": "lab.si_service",
+   "artifact": "<data>/structure_intelligence/<instrument>/",
+   "instruments": [],
+   "status": "kod: IMPLEMENTED; walidacja: NOT_VALIDATED; rola w Quant Core: BASE_FORECAST (prognoza SHADOW STRUCTURE_MOVE_M1_V1 liczona na żywo przy każdej zamkniętej M1 (scalp.service -> scalp.dashboard (MTF) -> lab.si_service.forecast) tylko dla rodziny wskazanej w rejestrze SI shadow[STRUCTURE_MOVE_M1_V1]; archiwum si_forecasts / si_outcomes, migawka MTF i agent (get_structure_intelligence); bez adaptera Quant (PMW-PRED-2))",
+   "aliases": [],
+   "legacy_ids": [],
+   "category": "MODEL_TRAINED",
+   "registry_source": [
+    "lab.si_families.FAMILIES",
+    "sh.models.REGISTRY (si_move)"
+   ]
+  },
+  {
+   "id": "mm:buzoa",
+   "name": "BUZOA Optimization Engine",
+   "implementation": "backend/masterquo/mm/buzoa.py",
+   "task": "—",
+   "data_source": "—",
+   "tf": "—",
+   "horizon": "—",
+   "side": "—",
+   "features": "—",
+   "label": "—",
+   "trainer": "NOT_APPLICABLE (optimiser)",
+   "loader": "—",
+   "artifact": "—",
+   "instruments": [],
+   "status": "kod: IMPLEMENTED; walidacja: NOT_APPLICABLE; rola w Quant Core: TOOL (narzędzie / infrastruktura / proces uczenia – nie osobny głos modelu)",
+   "aliases": [],
+   "legacy_ids": [],
+   "category": "OPTIMIZER",
+   "registry_source": [
+    "mm.inventory.MODULES"
+   ]
+  },
+  {
+   "id": "mm:sdom",
+   "name": "SDOm Optimization Engine",
+   "implementation": "—",
+   "task": "—",
+   "data_source": "—",
+   "tf": "—",
+   "horizon": "—",
+   "side": "—",
+   "features": "—",
+   "label": "—",
+   "trainer": "NOT_APPLICABLE",
+   "loader": "—",
+   "artifact": "—",
+   "instruments": [],
+   "status": "kod: NO_SPEC; walidacja: NOT_APPLICABLE; rola w Quant Core: TOOL (brak specyfikacji w paczce – algorytm nie jest odtwarzany z nazwy)",
+   "aliases": [],
+   "legacy_ids": [],
+   "category": "NO_SPEC",
+   "registry_source": [
+    "mm.inventory.MODULES"
+   ]
+  },
+  {
+   "id": "mm:stfs",
+   "name": "S3CE-Net / STFS (training-time sampling)",
+   "implementation": "backend/masterquo/mm/stfs.py",
+   "task": "—",
+   "data_source": "—",
+   "tf": "—",
+   "horizon": "—",
+   "side": "—",
+   "features": "—",
+   "label": "—",
+   "trainer": "APPLICABLE (as a training strategy)",
+   "loader": "—",
+   "artifact": "—",
+   "instruments": [],
+   "status": "kod: IMPLEMENTED; walidacja: NOT_VALIDATED; rola w Quant Core: TOOL (narzędzie / infrastruktura / proces uczenia – nie osobny głos modelu)",
+   "aliases": [],
+   "legacy_ids": [],
+   "category": "TRAINABLE",
+   "registry_source": [
+    "mm.inventory.MODULES"
+   ]
+  },
+  {
+   "id": "mm:quant_momentum",
+   "name": "Quant Ultimate Momentum Pro / Quant 2nd Model / Momentum AI Fusion",
+   "implementation": "—",
+   "task": "—",
+   "data_source": "—",
+   "tf": "—",
+   "horizon": "—",
+   "side": "—",
+   "features": "—",
+   "label": "—",
+   "trainer": "UNKNOWN",
+   "loader": "—",
+   "artifact": "—",
+   "instruments": [],
+   "status": "kod: NO_SPEC; walidacja: NOT_APPLICABLE; rola w Quant Core: NONE (brak specyfikacji w paczce – algorytm nie jest odtwarzany z nazwy)",
+   "aliases": [],
+   "legacy_ids": [],
+   "category": "NO_SPEC",
+   "registry_source": [
+    "mm.inventory.MODULES"
+   ]
+  },
+  {
+   "id": "mm:renko",
+   "name": "Renko Regression Forecasting",
+   "implementation": "—",
+   "task": "—",
+   "data_source": "—",
+   "tf": "—",
+   "horizon": "—",
+   "side": "—",
+   "features": "—",
+   "label": "—",
+   "trainer": "UNKNOWN",
+   "loader": "—",
+   "artifact": "—",
+   "instruments": [],
+   "status": "kod: NO_SPEC; walidacja: NOT_APPLICABLE; rola w Quant Core: NONE (brak specyfikacji w paczce – algorytm nie jest odtwarzany z nazwy)",
+   "aliases": [],
+   "legacy_ids": [],
+   "category": "NO_SPEC",
+   "registry_source": [
+    "mm.inventory.MODULES"
+   ]
+  },
+  {
+   "id": "mm:head_shoulders",
+   "name": "Head & Shoulders Structure Detector",
+   "implementation": "backend/masterquo/analysis/chart_patterns.py (istniejący detektor formacji, w tym H&S)",
+   "task": "—",
+   "data_source": "—",
+   "tf": "—",
+   "horizon": "—",
+   "side": "—",
+   "features": "—",
+   "label": "—",
+   "trainer": "NOT_APPLICABLE",
+   "loader": "—",
+   "artifact": "—",
+   "instruments": [],
+   "status": "kod: NO_SPEC; walidacja: NOT_APPLICABLE; rola w Quant Core: NONE (brak specyfikacji w paczce – algorytm nie jest odtwarzany z nazwy)",
+   "aliases": [],
+   "legacy_ids": [],
+   "category": "NO_SPEC",
+   "registry_source": [
+    "mm.inventory.MODULES"
+   ]
+  },
+  {
+   "id": "mm:data_grabber",
+   "name": "Multi-TF Data Grabber Lite",
+   "implementation": "backend/masterquo/forecast/export.py (istniejący eksport historii zamkniętych świec + metadane + sha256)",
+   "task": "—",
+   "data_source": "—",
+   "tf": "—",
+   "horizon": "—",
+   "side": "—",
+   "features": "—",
+   "label": "—",
+   "trainer": "NOT_APPLICABLE",
+   "loader": "—",
+   "artifact": "—",
+   "instruments": [],
+   "status": "kod: NO_SPEC; walidacja: NOT_APPLICABLE; rola w Quant Core: TOOL (brak specyfikacji w paczce – algorytm nie jest odtwarzany z nazwy)",
+   "aliases": [],
+   "legacy_ids": [],
+   "category": "NO_SPEC",
+   "registry_source": [
+    "mm.inventory.MODULES"
+   ]
+  },
+  {
+   "id": "mm:tsvp",
+   "name": "Tick Session Volume Profile",
+   "implementation": "backend/masterquo/mm/tsvp.py, mql5/MasterModels/Include/PMW/PMW_TSVPCore.mqh, mql5/MasterModels/Indicators/PMW_TickSessionVP.mq5",
+   "task": "—",
+   "data_source": "—",
+   "tf": "—",
+   "horizon": "—",
+   "side": "—",
+   "features": "—",
+   "label": "—",
+   "trainer": "NOT_APPLICABLE",
+   "loader": "—",
+   "artifact": "—",
+   "instruments": [],
+   "status": "kod: IMPLEMENTED; walidacja: NOT_APPLICABLE; rola w Quant Core: TOOL (narzędzie / infrastruktura / proces uczenia – nie osobny głos modelu)",
+   "aliases": [],
+   "legacy_ids": [],
+   "category": "VISUALIZATION",
+   "registry_source": [
+    "mm.inventory.MODULES"
+   ]
+  },
+  {
+   "id": "mm:mathbench",
+   "name": "Math Engine Fidelity Benchmark",
+   "implementation": "backend/masterquo/mm/mathbench.py, mql5/MathFidelity/train_export_model.py, mql5/MathFidelity/Experts/MathFidelityBenchmark_EA.mq5, mql5/MathFidelity/Indicators/FidelityMonitor.mq5, mql5/MathFidelity/Scripts/MathFidelity_SelfTest.mq5",
+   "task": "—",
+   "data_source": "—",
+   "tf": "—",
+   "horizon": "—",
+   "side": "—",
+   "features": "—",
+   "label": "—",
+   "trainer": "NOT_APPLICABLE",
+   "loader": "—",
+   "artifact": "—",
+   "instruments": [],
+   "status": "kod: IMPLEMENTED; walidacja: NOT_APPLICABLE; rola w Quant Core: TOOL (narzędzie / infrastruktura / proces uczenia – nie osobny głos modelu)",
+   "aliases": [],
+   "legacy_ids": [],
+   "category": "BENCHMARK",
+   "registry_source": [
+    "mm.inventory.MODULES"
+   ]
+  },
+  {
+   "id": "mm:chart_sync",
+   "name": "MT5 Multi-Timeframe Chart Synchronization",
+   "implementation": "frontend (istniejąca opcjonalna synchronizacja wykresów w panelu, J1)",
+   "task": "—",
+   "data_source": "—",
+   "tf": "—",
+   "horizon": "—",
+   "side": "—",
+   "features": "—",
+   "label": "—",
+   "trainer": "NOT_APPLICABLE",
+   "loader": "—",
+   "artifact": "—",
+   "instruments": [],
+   "status": "kod: NO_SPEC; walidacja: NOT_APPLICABLE; rola w Quant Core: TOOL (brak specyfikacji w paczce – algorytm nie jest odtwarzany z nazwy)",
+   "aliases": [],
+   "legacy_ids": [],
+   "category": "NO_SPEC",
+   "registry_source": [
+    "mm.inventory.MODULES"
+   ]
+  },
+  {
+   "id": "mm:fusion_board",
+   "name": "Evidence board (cross-model integration layer, discovered need)",
+   "implementation": "backend/masterquo/mm/fusion.py",
+   "task": "—",
+   "data_source": "—",
+   "tf": "—",
+   "horizon": "—",
+   "side": "—",
+   "features": "—",
+   "label": "—",
+   "trainer": "NOT_APPLICABLE",
+   "loader": "—",
+   "artifact": "—",
+   "instruments": [],
+   "status": "kod: IMPLEMENTED; walidacja: NOT_APPLICABLE; rola w Quant Core: TOOL (narzędzie / infrastruktura / proces uczenia – nie osobny głos modelu)",
+   "aliases": [],
+   "legacy_ids": [],
+   "category": "DATA_INFRA",
+   "registry_source": [
+    "mm.inventory.MODULES"
+   ]
+  },
+  {
+   "id": "analysis:montecarlo",
+   "name": "Monte Carlo ścieżek cen (PMW-MC-1) – P(TP przed SL w horyzoncie)",
+   "implementation": "masterquo/montecarlo/engine.py, validate.py, service.py",
+   "task": "prawdopodobieństwo, że cena dojdzie do TP przed SL w H świecach M1 (każdy poziom osobno) + zasięg ruchu ±X; świeca z TP i SL = przedział ostrożny–optymistyczny",
+   "data_source": "zamknięte świece M1 bota (na żywo) / eksport MT5 M1 (+ opcjonalne ticki Bid/Ask rozstrzygające kolejność w świecy) – walidacja",
+   "tf": "M1",
+   "horizon": "H świec M1 (domyślnie 60; scenariusz SCALPING 30)",
+   "side": "BUY i SELL – strona Bid/Ask, spread ze świecy",
+   "features": "brak cech uczonych: losowanie całych świec (OHLC względem otwarcia) – IID / blokowe / warunkowane reżimem ATR i godziną sesji, skalowane do bieżącego ATR",
+   "label": "rzeczywiste TP przed SL w H świecach (walidacja; ticki, gdy są) – dane wyłącznie sprzed chwili oceny",
+   "trainer": "`python -m masterquo montecarlo validate` / 31_MONTE_CARLO_WALIDACJA.bat / zadanie runnera monte_carlo: walk-forward CAL/TEST z embargo H, model bazowy = klimatologia, Brier / log loss / kalibracja, CI bootstrap, kalibrator izotoniczny",
+   "loader": "MonteCarloService (własny wątek; bufor zamkniętych świec bota) → /api/v1/montecarlo/*, /api/v1/sh/scenario",
+   "artifact": "data/montecarlo/<INST>/registry.json + runs/<run>/report.json (aktywny kalibrator tylko z REAL_USER_DATA z przewagą; rollback: montecarlo rollback)",
+   "instruments": [
+    "XAUUSD",
+    "BTC"
+   ],
+   "status": "kod: IMPLEMENTED; walidacja: NOT_VALIDATED; rola w Quant Core: SIMULATION (MODEL_SIMULATED – wynik symulacji, nie prawdopodobieństwo skalibrowane na zdarzeniach) | opis: ZAIMPLEMENTOWANE_I_ZINTEGROWANE; bez kalibracji = prawdopodobieństwo w modelu (tak opisane w panelu); walidacja tylko na danych syntetycznych w tym środowisku (werdykt TEST_TECHNICZNY)",
+   "aliases": [],
+   "legacy_ids": [
+    "MONTE_CARLO_PATHS"
+   ],
+   "category": "SIMULATION",
+   "registry_source": [
+    "runtime.py"
+   ]
+  },
+  {
+   "id": "analysis:zones",
+   "name": "Mapa stref (PMW-ZONES)",
+   "implementation": "backend/masterquo/zones/",
+   "task": "—",
+   "data_source": "—",
+   "tf": "—",
+   "horizon": "—",
+   "side": "—",
+   "features": "—",
+   "label": "—",
+   "trainer": "—",
+   "loader": "—",
+   "artifact": "—",
+   "instruments": [],
+   "status": "kod: IMPLEMENTED; walidacja: NOT_APPLICABLE; rola w Quant Core: CONTEXT_STATE (rekord STATE (ZONE_MAP_SUMMARY) w migawce Quant bez cech MetaModelu – quant/features.py nie mapuje stref; cechy zone_* trafiają do kandydata i ledgera oceny (evaluation.zone_context))",
+   "aliases": [],
+   "legacy_ids": [],
+   "category": "ANALYSIS",
+   "registry_source": [
+    "runtime.py"
+   ]
+  },
+  {
+   "id": "analysis:market_zones",
+   "name": "Strefy rynkowe M1/M5/M15/M30 (PMW-MZ-1) – S/R, popyt/podaż, FVG, order blocks, EQH/EQL, konfluencja",
+   "implementation": "masterquo/zones/market.py, zones/market_service.py (panel Wykresy → Strefy rynkowe)",
+   "task": "detekcja stref z jawnymi regułami potwierdzenia, testów i unieważnienia – nie jest modelem do trenowania",
+   "data_source": "zamknięte świece M1/M5/M15/M30 dokładnego symbolu przez bridge (XAUUSD-, BTCUSDT-)",
+   "tf": "M1, M5, M15, M30",
+   "horizon": "—",
+   "side": "kierunek strefy (wzrostowa / spadkowa / neutralna)",
+   "features": "—",
+   "label": "—",
+   "trainer": "brak (reguły; parametry skalowane ATR i profilem instrumentu)",
+   "loader": "MarketZonesService (zadania na przycisk / aktualizacja po zamknięciu świecy)",
+   "artifact": "data/zones/market_zones.sqlite (historia stref i zdarzeń)",
+   "instruments": [
+    "XAUUSD",
+    "BTC"
+   ],
+   "status": "kod: IMPLEMENTED; walidacja: NOT_APPLICABLE; rola w Quant Core: NOT_A_VOTE (wizualizacja panelu Strefy rynkowe – liczone na żądanie (job) / w panelu, brak cyklu niezależnego od panelu; bez adaptera Quant i konsumenta cech) | opis: REGUŁY – zaimplementowane i zintegrowane; jakość 0–100 nie jest prawdopodobieństwem; EQH/EQL = płynność wnioskowana z OHLC",
+   "aliases": [],
+   "legacy_ids": [
+    "MARKET_ZONES_MZ1"
+   ],
+   "category": "ANALYSIS",
+   "registry_source": [
+    "runtime.py"
+   ]
+  },
+  {
+   "id": "analysis:indicators",
+   "name": "Wskaźniki PMW-IND-1 (AVWAP sesja/zdarzenie/manualny, semiwariancja, percentyl spreadu, cechy profilu sesji, mikrostruktura arkusza/OFI, relacja DXY)",
+   "implementation": "backend/masterquo/indicators/",
+   "task": "—",
+   "data_source": "—",
+   "tf": "—",
+   "horizon": "—",
+   "side": "—",
+   "features": "—",
+   "label": "—",
+   "trainer": "—",
+   "loader": "—",
+   "artifact": "—",
+   "instruments": [],
+   "status": "kod: IMPLEMENTED; walidacja: NOT_APPLICABLE; rola w Quant Core: CONTEXT_STATE",
+   "aliases": [],
+   "legacy_ids": [],
+   "category": "ANALYSIS",
+   "registry_source": [
+    "runtime.py"
+   ]
+  },
+  {
+   "id": "analysis:svp",
+   "name": "Session Volume Profile (PMW-SVP-1)",
+   "implementation": "backend/masterquo/svp/, backend/masterquo/sh/pack/features.py",
+   "task": "—",
+   "data_source": "—",
+   "tf": "—",
+   "horizon": "—",
+   "side": "—",
+   "features": "—",
+   "label": "—",
+   "trainer": "—",
+   "loader": "—",
+   "artifact": "—",
+   "instruments": [],
+   "status": "kod: IMPLEMENTED; walidacja: NOT_APPLICABLE; rola w Quant Core: GATE_EXISTING (profil poprzedniej sesji (svp.engine.compute na zamkniętych M5, tick volume = aktywność feedu, nie wolumen obrotu) jest warunkiem wejścia wariantów pakietu SH PMW_HG08 / PMW_SC10 (value_area_rejection: brak profilu = NO_DATA, bez setupu); profile użytkownika – panel; Quant nie dubluje bramki)",
+   "aliases": [],
+   "legacy_ids": [],
+   "category": "ANALYSIS",
+   "registry_source": [
+    "runtime.py"
+   ]
+  },
+  {
+   "id": "analysis:dxy_correlation",
+   "name": "Korelacja XAUUSD–DXY (PMW-IND-1 dxy)",
+   "implementation": "backend/masterquo/indicators/",
+   "task": "—",
+   "data_source": "—",
+   "tf": "—",
+   "horizon": "—",
+   "side": "—",
+   "features": "—",
+   "label": "—",
+   "trainer": "—",
+   "loader": "—",
+   "artifact": "—",
+   "instruments": [],
+   "status": "kod: IMPLEMENTED; walidacja: NOT_APPLICABLE; rola w Quant Core: CONTEXT_FEATURE",
+   "aliases": [],
+   "legacy_ids": [],
+   "category": "ANALYSIS",
+   "registry_source": [
+    "runtime.py"
+   ]
+  },
+  {
+   "id": "analysis:walls",
+   "name": "Walls D1 (σ: import IV → IV ręczna → HV_PROXY domyślnie)",
+   "implementation": "backend/masterquo/analysis/walls.py, backend/masterquo/analysis/iv_import.py",
+   "task": "—",
+   "data_source": "—",
+   "tf": "—",
+   "horizon": "—",
+   "side": "—",
+   "features": "—",
+   "label": "—",
+   "trainer": "—",
+   "loader": "—",
+   "artifact": "—",
+   "instruments": [],
+   "status": "kod: IMPLEMENTED; walidacja: NOT_APPLICABLE; rola w Quant Core: GATE_EXISTING (bez importu IV źródłem σ jest zmienność historyczna D1 (HV_PROXY, close-to-close), nie rynek opcji; IV_SOURCED niezaimplementowane (NOT_CONFIGURED); brak źródła = UNAVAILABLE, nie zero; poziomy ścian są wejściem strategii S12 (ścieżka A) – Quant ich nie dubluje)",
+   "aliases": [],
+   "legacy_ids": [],
+   "category": "ANALYSIS",
+   "registry_source": [
+    "runtime.py"
+   ]
+  },
+  {
+   "id": "analysis:evaluation",
+   "name": "AI Setup Probability Engine (PMW-EVAL)",
+   "implementation": "backend/masterquo/evaluation/",
+   "task": "—",
+   "data_source": "—",
+   "tf": "—",
+   "horizon": "—",
+   "side": "—",
+   "features": "—",
+   "label": "—",
+   "trainer": "—",
+   "loader": "—",
+   "artifact": "—",
+   "instruments": [],
+   "status": "kod: IMPLEMENTED; walidacja: NOT_APPLICABLE; rola w Quant Core: SETUP_EVENT",
+   "aliases": [],
+   "legacy_ids": [],
+   "category": "ANALYSIS",
+   "registry_source": [
+    "runtime.py"
+   ]
+  },
+  {
+   "id": "quant:metamodel",
+   "name": "PMW Quant MetaModel (logistyczny + net R ridge, OOF, kalibracja)",
+   "implementation": "backend/masterquo/quant/metamodel.py",
+   "task": "—",
+   "data_source": "—",
+   "tf": "—",
+   "horizon": "—",
+   "side": "—",
+   "features": "—",
+   "label": "—",
+   "trainer": "—",
+   "loader": "—",
+   "artifact": "—",
+   "instruments": [],
+   "status": "kod: IMPLEMENTED; walidacja: NOT_VALIDATED; rola w Quant Core: META_MODEL",
+   "aliases": [],
+   "legacy_ids": [],
+   "category": "META_MODEL",
+   "registry_source": [
+    "runtime.py"
+   ]
+  },
+  {
+   "id": "ext:catboost",
+   "name": "CatBoost",
+   "implementation": "—",
+   "task": "—",
+   "data_source": "—",
+   "tf": "—",
+   "horizon": "—",
+   "side": "—",
+   "features": "—",
+   "label": "—",
+   "trainer": "—",
+   "loader": "—",
+   "artifact": "—",
+   "instruments": [],
+   "status": "kod: NOT_IMPLEMENTED; walidacja: NOT_APPLICABLE; rola w Quant Core: NONE (nie istnieje w kodzie – nie dodano fikcyjnego adaptera)",
+   "aliases": [],
+   "legacy_ids": [],
+   "category": "NOT_IMPLEMENTED",
+   "registry_source": [
+    "lab/traceability.py (wzmianka)"
+   ]
+  },
+  {
+   "id": "quant:tabicl_v2",
+   "name": "TabICLv2 (estymator confidence kandydata, in-context)",
+   "implementation": "backend/masterquo/quant/tabicl.py, backend/tabicl_runtime/",
+   "task": "—",
+   "data_source": "—",
+   "tf": "—",
+   "horizon": "—",
+   "side": "—",
+   "features": "—",
+   "label": "—",
+   "trainer": "—",
+   "loader": "—",
+   "artifact": "—",
+   "instruments": [],
+   "status": "kod: IMPLEMENTED; walidacja: NOT_VALIDATED; rola w Quant Core: SETUP_EVENT (wynik per kandydat w pamięci QuantService (nieutrwalany) – brak samodzielnej predykcji)",
+   "aliases": [],
+   "legacy_ids": [],
+   "category": "MODEL_PRETRAINED",
+   "registry_source": [
+    "quant.ids.EXTRA_PRODUCERS (1.46)"
+   ]
+  },
+  {
+   "id": "flow:markov3",
+   "name": "Markov3 / Markov-diff flow (MQ_MARKOV3_FLOW_V1)",
+   "implementation": "backend/masterquo/lab/flow_context/markov.py",
+   "task": "—",
+   "data_source": "—",
+   "tf": "—",
+   "horizon": "—",
+   "side": "—",
+   "features": "—",
+   "label": "—",
+   "trainer": "—",
+   "loader": "—",
+   "artifact": "—",
+   "instruments": [],
+   "status": "kod: IMPLEMENTED; walidacja: NOT_VALIDATED; rola w Quant Core: CONTEXT_FEATURE (liczony w komórkach Structure Intelligence (panel) – bez adaptera Quant)",
+   "aliases": [],
+   "legacy_ids": [],
+   "category": "MODEL_TRAINED",
+   "registry_source": [
+    "quant.ids.EXTRA_PRODUCERS (1.46)"
+   ]
+  },
+  {
+   "id": "si:LOGREG",
+   "name": "Structure Intelligence LOGREG (FAMILIES_ALL)",
+   "implementation": "backend/masterquo/lab/structure_task.py",
+   "task": "—",
+   "data_source": "—",
+   "tf": "—",
+   "horizon": "—",
+   "side": "—",
+   "features": "—",
+   "label": "—",
+   "trainer": "—",
+   "loader": "—",
+   "artifact": "—",
+   "instruments": [],
+   "status": "kod: IMPLEMENTED; walidacja: NOT_VALIDATED; rola w Quant Core: BASE_FORECAST (rodzina bazowa SI – prognoza SHADOW STRUCTURE_MOVE_M1_V1 liczona na żywo przy każdej zamkniętej M1 (scalp.service -> scalp.dashboard (MTF) -> lab.si_service.forecast) tylko dla rodziny wskazanej w rejestrze SI shadow[STRUCTURE_MOVE_M1_V1]; archiwum si_forecasts / si_outcomes, migawka MTF i agent (get_structure_intelligence); bez adaptera Quant (PMW-PRED-2))",
+   "aliases": [],
+   "legacy_ids": [],
+   "category": "MODEL_TRAINED",
+   "registry_source": [
+    "quant.ids.EXTRA_PRODUCERS (1.46)"
+   ]
+  },
+  {
+   "id": "si:XGB",
+   "name": "Structure Intelligence XGB (FAMILIES_ALL)",
+   "implementation": "backend/masterquo/lab/structure_task.py",
+   "task": "—",
+   "data_source": "—",
+   "tf": "—",
+   "horizon": "—",
+   "side": "—",
+   "features": "—",
+   "label": "—",
+   "trainer": "—",
+   "loader": "—",
+   "artifact": "—",
+   "instruments": [],
+   "status": "kod: IMPLEMENTED; walidacja: NOT_VALIDATED; rola w Quant Core: BASE_FORECAST (rodzina bazowa SI – prognoza SHADOW STRUCTURE_MOVE_M1_V1 liczona na żywo przy każdej zamkniętej M1 (scalp.service -> scalp.dashboard (MTF) -> lab.si_service.forecast) tylko dla rodziny wskazanej w rejestrze SI shadow[STRUCTURE_MOVE_M1_V1]; archiwum si_forecasts / si_outcomes, migawka MTF i agent (get_structure_intelligence); bez adaptera Quant (PMW-PRED-2))",
+   "aliases": [],
+   "legacy_ids": [],
+   "category": "MODEL_TRAINED",
+   "registry_source": [
+    "quant.ids.EXTRA_PRODUCERS (1.46)"
+   ]
+  },
+  {
+   "id": "quotes:MQ_NEWTONIAN_QUOTES_V2",
+   "name": "QuoteEngine (kinematyka notowań)",
+   "implementation": "backend/masterquo/lab/quotes.py",
+   "task": "—",
+   "data_source": "—",
+   "tf": "—",
+   "horizon": "—",
+   "side": "—",
+   "features": "—",
+   "label": "—",
+   "trainer": "—",
+   "loader": "—",
+   "artifact": "—",
+   "instruments": [],
+   "status": "kod: IMPLEMENTED; walidacja: NOT_APPLICABLE; rola w Quant Core: CONTEXT_FEATURE (wątek si-quotes – stan panelu SI, bez adaptera Quant)",
+   "aliases": [],
+   "legacy_ids": [],
+   "category": "RULE_OR_MEASUREMENT",
+   "registry_source": [
+    "quant.ids.EXTRA_PRODUCERS (1.46)"
+   ]
+  },
+  {
+   "id": "lab:M29_fourier",
+   "name": "Lab M29 Fourier (prognoza archiwizowana)",
+   "implementation": "backend/masterquo/lab/service.py",
+   "task": "—",
+   "data_source": "—",
+   "tf": "—",
+   "horizon": "—",
+   "side": "—",
+   "features": "—",
+   "label": "—",
+   "trainer": "—",
+   "loader": "—",
+   "artifact": "—",
+   "instruments": [],
+   "status": "kod: IMPLEMENTED; walidacja: NOT_APPLICABLE; rola w Quant Core: TOOL (archiwum lab_forecasts i ocena – obserwacja, nie głos)",
+   "aliases": [],
+   "legacy_ids": [],
+   "category": "RULE_OR_MEASUREMENT",
+   "registry_source": [
+    "quant.ids.EXTRA_PRODUCERS (1.46)"
+   ]
+  },
+  {
+   "id": "lab:M31_tick_kinematics",
+   "name": "Lab M31 kinematyka ticków (legacy obok QuoteEngine)",
+   "implementation": "backend/masterquo/lab/service.py",
+   "task": "—",
+   "data_source": "—",
+   "tf": "—",
+   "horizon": "—",
+   "side": "—",
+   "features": "—",
+   "label": "—",
+   "trainer": "—",
+   "loader": "—",
+   "artifact": "—",
+   "instruments": [],
+   "status": "kod: IMPLEMENTED; walidacja: NOT_APPLICABLE; rola w Quant Core: TOOL (stan panelu lab – obserwacja)",
+   "aliases": [],
+   "legacy_ids": [],
+   "category": "RULE_OR_MEASUREMENT",
+   "registry_source": [
+    "quant.ids.EXTRA_PRODUCERS (1.46)"
+   ]
+  },
+  {
+   "id": "lab:M42_trade_pad",
+   "name": "Lab M42 trade pad (kalkulator)",
+   "implementation": "backend/masterquo/api/app.py",
+   "task": "—",
+   "data_source": "—",
+   "tf": "—",
+   "horizon": "—",
+   "side": "—",
+   "features": "—",
+   "label": "—",
+   "trainer": "—",
+   "loader": "—",
+   "artifact": "—",
+   "instruments": [],
+   "status": "kod: IMPLEMENTED; walidacja: NOT_APPLICABLE; rola w Quant Core: TOOL (kalkulator API na żądanie – nie model)",
+   "aliases": [],
+   "legacy_ids": [],
+   "category": "TOOL",
+   "registry_source": [
+    "quant.ids.EXTRA_PRODUCERS (1.46)"
+   ]
+  },
+  {
+   "id": "lab:M39_M41_edge",
+   "name": "Lab M39–M41 RepaintInspector / edge drift / bootstrap",
+   "implementation": "backend/masterquo/lab/service.py",
+   "task": "—",
+   "data_source": "—",
+   "tf": "—",
+   "horizon": "—",
+   "side": "—",
+   "features": "—",
+   "label": "—",
+   "trainer": "—",
+   "loader": "—",
+   "artifact": "—",
+   "instruments": [],
+   "status": "kod: IMPLEMENTED; walidacja: NOT_APPLICABLE; rola w Quant Core: TOOL (narzędzia diagnostyczne – nie głos)",
+   "aliases": [],
+   "legacy_ids": [],
+   "category": "TOOL",
+   "registry_source": [
+    "quant.ids.EXTRA_PRODUCERS (1.46)"
+   ]
+  },
+  {
+   "id": "research:graph50",
+   "name": "Research Graph50 (SCORE per cel)",
+   "implementation": "backend/masterquo/research/",
+   "task": "—",
+   "data_source": "—",
+   "tf": "—",
+   "horizon": "—",
+   "side": "—",
+   "features": "—",
+   "label": "—",
+   "trainer": "—",
+   "loader": "—",
+   "artifact": "—",
+   "instruments": [],
+   "status": "kod: IMPLEMENTED; walidacja: NOT_APPLICABLE; rola w Quant Core: BASE_FORECAST (rekordy z jawnym canonical_id research:graph50:<cel>)",
+   "aliases": [],
+   "legacy_ids": [],
+   "category": "RESEARCH",
+   "registry_source": [
+    "quant.ids.EXTRA_PRODUCERS (1.46)"
+   ]
+  },
+  {
+   "id": "research:g7_smc_radar",
+   "name": "Research G7 SMC radar",
+   "implementation": "backend/masterquo/research/",
+   "task": "—",
+   "data_source": "—",
+   "tf": "—",
+   "horizon": "—",
+   "side": "—",
+   "features": "—",
+   "label": "—",
+   "trainer": "—",
+   "loader": "—",
+   "artifact": "—",
+   "instruments": [],
+   "status": "kod: IMPLEMENTED; walidacja: NOT_APPLICABLE; rola w Quant Core: CONTEXT_FEATURE",
+   "aliases": [],
+   "legacy_ids": [],
+   "category": "RESEARCH",
+   "registry_source": [
+    "quant.ids.EXTRA_PRODUCERS (1.46)"
+   ]
+  },
+  {
+   "id": "research:sdformerflow",
+   "name": "Research SDformerFlow (TH_SDFORMERFLOW)",
+   "implementation": "backend/masterquo/research/",
+   "task": "—",
+   "data_source": "—",
+   "tf": "—",
+   "horizon": "—",
+   "side": "—",
+   "features": "—",
+   "label": "—",
+   "trainer": "—",
+   "loader": "—",
+   "artifact": "—",
+   "instruments": [],
+   "status": "kod: IMPLEMENTED; walidacja: NOT_APPLICABLE; rola w Quant Core: BASE_FORECAST (wymaga środowiska z torch 2.14.1)",
+   "aliases": [],
+   "legacy_ids": [],
+   "category": "RESEARCH",
+   "registry_source": [
+    "quant.ids.EXTRA_PRODUCERS (1.46)"
+   ]
+  },
+  {
+   "id": "mm:kalman_params",
+   "name": "Parametry Kalmana (kalibracja BUZOA)",
+   "implementation": "backend/masterquo/mm/orchestrator.py",
+   "task": "—",
+   "data_source": "—",
+   "tf": "—",
+   "horizon": "—",
+   "side": "—",
+   "features": "—",
+   "label": "—",
+   "trainer": "—",
+   "loader": "—",
+   "artifact": "—",
+   "instruments": [],
+   "status": "kod: IMPLEMENTED; walidacja: NOT_VALIDATED; rola w Quant Core: TOOL (kandydat parametrów – serwis używa domyślnej konfiguracji (brak ścieżki na żywo))",
+   "aliases": [],
+   "legacy_ids": [],
+   "category": "TRAINABLE",
+   "registry_source": [
+    "quant.ids.EXTRA_PRODUCERS (1.46)"
+   ]
+  },
+  {
+   "id": "mm:robust_vol",
+   "name": "Robust volatility (część breakout_zones)",
+   "implementation": "backend/masterquo/mm/",
+   "task": "—",
+   "data_source": "—",
+   "tf": "—",
+   "horizon": "—",
+   "side": "—",
+   "features": "—",
+   "label": "—",
+   "trainer": "—",
+   "loader": "—",
+   "artifact": "—",
+   "instruments": [],
+   "status": "kod: IMPLEMENTED; walidacja: NOT_APPLICABLE; rola w Quant Core: CONTEXT_FEATURE (pole rekordu MM live – cechą Quant nie jest)",
+   "aliases": [],
+   "legacy_ids": [],
+   "category": "RULE_OR_MEASUREMENT",
+   "registry_source": [
+    "quant.ids.EXTRA_PRODUCERS (1.46)"
+   ]
+  },
+  {
+   "id": "mm:drift",
+   "name": "Drift (PMW-MM)",
+   "implementation": "backend/masterquo/mm/drift.py",
+   "task": "—",
+   "data_source": "—",
+   "tf": "—",
+   "horizon": "—",
+   "side": "—",
+   "features": "—",
+   "label": "—",
+   "trainer": "—",
+   "loader": "—",
+   "artifact": "—",
+   "instruments": [],
+   "status": "kod: IMPLEMENTED; walidacja: NOT_APPLICABLE; rola w Quant Core: TOOL (pole rekordu MM live)",
+   "aliases": [],
+   "legacy_ids": [],
+   "category": "RULE_OR_MEASUREMENT",
+   "registry_source": [
+    "quant.ids.EXTRA_PRODUCERS (1.46)"
+   ]
+  },
+  {
+   "id": "mm:bat_encoder",
+   "name": "BAT encoder (losowe wagi, SHADOW_UNTRAINED)",
+   "implementation": "backend/masterquo/mm/, backend/masterquo/api/wf32_routes.py",
+   "task": "—",
+   "data_source": "—",
+   "tf": "—",
+   "horizon": "—",
+   "side": "—",
+   "features": "—",
+   "label": "—",
+   "trainer": "—",
+   "loader": "—",
+   "artifact": "—",
+   "instruments": [],
+   "status": "kod: IMPLEMENTED; walidacja: NOT_APPLICABLE; rola w Quant Core: NOT_A_VOTE (tylko API /api/v1/models/bat/shadow; wagi niewytrenowane)",
+   "aliases": [],
+   "legacy_ids": [],
+   "category": "RESEARCH",
+   "registry_source": [
+    "quant.ids.EXTRA_PRODUCERS (1.46)"
+   ]
+  },
+  {
+   "id": "extind:sar_context",
+   "name": "Kontekst SAR (kalibracja siatki)",
+   "implementation": "backend/masterquo/extind/",
+   "task": "—",
+   "data_source": "—",
+   "tf": "—",
+   "horizon": "—",
+   "side": "—",
+   "features": "—",
+   "label": "—",
+   "trainer": "—",
+   "loader": "—",
+   "artifact": "—",
+   "instruments": [],
+   "status": "kod: IMPLEMENTED; walidacja: NOT_APPLICABLE; rola w Quant Core: CONTEXT_FEATURE (kontekst snapshotu ACTIVE / agenta – bez adaptera Quant)",
+   "aliases": [],
+   "legacy_ids": [],
+   "category": "RULE_OR_MEASUREMENT",
+   "registry_source": [
+    "quant.ids.EXTRA_PRODUCERS (1.46)"
+   ]
+  },
+  {
+   "id": "extind:knowledge",
+   "name": "Reguły wiedzy IND-K01..K12",
+   "implementation": "backend/masterquo/extind/knowledge.py",
+   "task": "—",
+   "data_source": "—",
+   "tf": "—",
+   "horizon": "—",
+   "side": "—",
+   "features": "—",
+   "label": "—",
+   "trainer": "—",
+   "loader": "—",
+   "artifact": "—",
+   "instruments": [],
+   "status": "kod: IMPLEMENTED; walidacja: NOT_APPLICABLE; rola w Quant Core: NOT_A_VOTE (opis dla agenta – nie głos)",
+   "aliases": [],
+   "legacy_ids": [],
+   "category": "RULE_OR_MEASUREMENT",
+   "registry_source": [
+    "quant.ids.EXTRA_PRODUCERS (1.46)"
+   ]
+  },
+  {
+   "id": "extind:IQ_GOLD_GANN",
+   "name": "IQ Gold Gann (wskaźnik MT5, eksport kopert)",
+   "implementation": "mql5/PMW_ExtIndicatorExporter.mq5",
+   "task": "—",
+   "data_source": "—",
+   "tf": "—",
+   "horizon": "—",
+   "side": "—",
+   "features": "—",
+   "label": "—",
+   "trainer": "—",
+   "loader": "—",
+   "artifact": "—",
+   "instruments": [],
+   "status": "kod: IMPLEMENTED; walidacja: NOT_APPLICABLE; rola w Quant Core: CONTEXT_FEATURE (natywny wskaźnik licencjonowany – działa tylko w terminalu MT5)",
+   "aliases": [],
+   "legacy_ids": [],
+   "category": "NATIVE_MQL5",
+   "registry_source": [
+    "quant.ids.EXTRA_PRODUCERS (1.46)"
+   ]
+  },
+  {
+   "id": "extind:IQ_STAR_LINES",
+   "name": "IQ Star Lines (wskaźnik MT5, eksport kopert)",
+   "implementation": "mql5/PMW_ExtIndicatorExporter.mq5",
+   "task": "—",
+   "data_source": "—",
+   "tf": "—",
+   "horizon": "—",
+   "side": "—",
+   "features": "—",
+   "label": "—",
+   "trainer": "—",
+   "loader": "—",
+   "artifact": "—",
+   "instruments": [],
+   "status": "kod: IMPLEMENTED; walidacja: NOT_APPLICABLE; rola w Quant Core: CONTEXT_FEATURE (natywny wskaźnik licencjonowany – działa tylko w terminalu MT5)",
+   "aliases": [],
+   "legacy_ids": [],
+   "category": "NATIVE_MQL5",
+   "registry_source": [
+    "quant.ids.EXTRA_PRODUCERS (1.46)"
+   ]
+  },
+  {
+   "id": "extind:PAL02M",
+   "name": "PAL02M (tożsamość nieustalona)",
+   "implementation": "config/extind_manifests_v1.json",
+   "task": "—",
+   "data_source": "—",
+   "tf": "—",
+   "horizon": "—",
+   "side": "—",
+   "features": "—",
+   "label": "—",
+   "trainer": "—",
+   "loader": "—",
+   "artifact": "—",
+   "instruments": [],
+   "status": "kod: NO_SPEC; walidacja: NOT_APPLICABLE; rola w Quant Core: NONE (NO_SPEC: tożsamość narzędzia niepotwierdzona – algorytm nie jest odtwarzany z nazwy)",
+   "aliases": [],
+   "legacy_ids": [],
+   "category": "NO_SPEC",
+   "registry_source": [
+    "quant.ids.EXTRA_PRODUCERS (1.46)"
+   ]
+  },
+  {
+   "id": "strategies:regime",
+   "name": "MarketRegimeEngine MQ-REGIME-1.0.0 (wybór strategii ACTIVE)",
+   "implementation": "backend/masterquo/strategies/regime.py",
+   "task": "—",
+   "data_source": "—",
+   "tf": "—",
+   "horizon": "—",
+   "side": "—",
+   "features": "—",
+   "label": "—",
+   "trainer": "—",
+   "loader": "—",
+   "artifact": "—",
+   "instruments": [],
+   "status": "kod: IMPLEMENTED; walidacja: NOT_APPLICABLE; rola w Quant Core: GATE_EXISTING (bramka ścieżki A – Quant jej nie dubluje)",
+   "aliases": [],
+   "legacy_ids": [],
+   "category": "RULE_OR_MEASUREMENT",
+   "registry_source": [
+    "quant.ids.EXTRA_PRODUCERS (1.46)"
+   ]
+  },
+  {
+   "id": "analysis:signals",
+   "name": "Poziomy / range M5 / MITP / neutralizacja",
+   "implementation": "backend/masterquo/analysis/",
+   "task": "—",
+   "data_source": "—",
+   "tf": "—",
+   "horizon": "—",
+   "side": "—",
+   "features": "—",
+   "label": "—",
+   "trainer": "—",
+   "loader": "—",
+   "artifact": "—",
+   "instruments": [],
+   "status": "kod: IMPLEMENTED; walidacja: NOT_APPLICABLE; rola w Quant Core: GATE_EXISTING (warunki setupów ścieżki A (S12) – Quant ich nie dubluje)",
+   "aliases": [],
+   "legacy_ids": [],
+   "category": "RULE_OR_MEASUREMENT",
+   "registry_source": [
+    "quant.ids.EXTRA_PRODUCERS (1.46)"
+   ]
+  },
+  {
+   "id": "analytics:session_engine",
+   "name": "Silnik sesji (boxy sesyjne)",
+   "implementation": "backend/masterquo/analytics/",
+   "task": "—",
+   "data_source": "—",
+   "tf": "—",
+   "horizon": "—",
+   "side": "—",
+   "features": "—",
+   "label": "—",
+   "trainer": "—",
+   "loader": "—",
+   "artifact": "—",
+   "instruments": [],
+   "status": "kod: IMPLEMENTED; walidacja: NOT_APPLICABLE; rola w Quant Core: CONTEXT_FEATURE (wejście rule:liquidity (OBSERVE))",
+   "aliases": [],
+   "legacy_ids": [],
+   "category": "RULE_OR_MEASUREMENT",
+   "registry_source": [
+    "quant.ids.EXTRA_PRODUCERS (1.46)"
+   ]
+  },
+  {
+   "id": "engine:volzones",
+   "name": "Strefy zmienności (panel)",
+   "implementation": "backend/masterquo/engine/service.py",
+   "task": "—",
+   "data_source": "—",
+   "tf": "—",
+   "horizon": "—",
+   "side": "—",
+   "features": "—",
+   "label": "—",
+   "trainer": "—",
+   "loader": "—",
+   "artifact": "—",
+   "instruments": [],
+   "status": "kod: IMPLEMENTED; walidacja: NOT_APPLICABLE; rola w Quant Core: NOT_A_VOTE (tylko API / kontekst agenta)",
+   "aliases": [],
+   "legacy_ids": [],
+   "category": "RULE_OR_MEASUREMENT",
+   "registry_source": [
+    "quant.ids.EXTRA_PRODUCERS (1.46)"
+   ]
+  },
+  {
+   "id": "apollo:market_trap",
+   "name": "Market trap (SHADOW, ostrzeżenia)",
+   "implementation": "backend/masterquo/apollo/",
+   "task": "—",
+   "data_source": "—",
+   "tf": "—",
+   "horizon": "—",
+   "side": "—",
+   "features": "—",
+   "label": "—",
+   "trainer": "—",
+   "loader": "—",
+   "artifact": "—",
+   "instruments": [],
+   "status": "kod: IMPLEMENTED; walidacja: NOT_APPLICABLE; rola w Quant Core: NOT_A_VOTE (tylko GET /api/v1/market-trap)",
+   "aliases": [],
+   "legacy_ids": [],
+   "category": "RULE_OR_MEASUREMENT",
+   "registry_source": [
+    "quant.ids.EXTRA_PRODUCERS (1.46)"
+   ]
+  },
+  {
+   "id": "baskets:sfb",
+   "name": "Strategy Filter Bucket koszyków FX",
+   "implementation": "backend/masterquo/baskets/sfb.py",
+   "task": "—",
+   "data_source": "—",
+   "tf": "—",
+   "horizon": "—",
+   "side": "—",
+   "features": "—",
+   "label": "—",
+   "trainer": "—",
+   "loader": "—",
+   "artifact": "—",
+   "instruments": [],
+   "status": "kod: IMPLEMENTED; walidacja: NOT_APPLICABLE; rola w Quant Core: GATE_EXISTING (filtr koszyków (domyślnie OFF) – Quant go nie dubluje)",
+   "aliases": [],
+   "legacy_ids": [],
+   "category": "RULE_OR_MEASUREMENT",
+   "registry_source": [
+    "quant.ids.EXTRA_PRODUCERS (1.46)"
+   ]
+  },
+  {
+   "id": "ml:decision_tree_ranker",
+   "name": "Decision tree ranker (WF3.2)",
+   "implementation": "backend/masterquo/api/wf32_routes.py",
+   "task": "—",
+   "data_source": "—",
+   "tf": "—",
+   "horizon": "—",
+   "side": "—",
+   "features": "—",
+   "label": "—",
+   "trainer": "—",
+   "loader": "—",
+   "artifact": "—",
+   "instruments": [],
+   "status": "kod: IMPLEMENTED; walidacja: NOT_VALIDATED; rola w Quant Core: TOOL (nigdy nie trenowany w aplikacji – API zwraca FALLBACK_BASELINE)",
+   "aliases": [],
+   "legacy_ids": [],
+   "category": "MODEL_TRAINED",
+   "registry_source": [
+    "quant.ids.EXTRA_PRODUCERS (1.46)"
+   ]
+  },
+  {
+   "id": "ml:association_rules",
+   "name": "Reguły asocjacyjne (WF3.2)",
+   "implementation": "backend/masterquo/api/wf32_routes.py",
+   "task": "—",
+   "data_source": "—",
+   "tf": "—",
+   "horizon": "—",
+   "side": "—",
+   "features": "—",
+   "label": "—",
+   "trainer": "—",
+   "loader": "—",
+   "artifact": "—",
+   "instruments": [],
+   "status": "kod: IMPLEMENTED; walidacja: NOT_APPLICABLE; rola w Quant Core: NOT_A_VOTE (tylko API (OBSERVE))",
+   "aliases": [],
+   "legacy_ids": [],
+   "category": "RULE_OR_MEASUREMENT",
+   "registry_source": [
+    "quant.ids.EXTRA_PRODUCERS (1.46)"
+   ]
+  },
+  {
+   "id": "ml:pt_directional_skill",
+   "name": "Test Pesarana–Timmermanna (WF3.2)",
+   "implementation": "backend/masterquo/api/wf32_routes.py",
+   "task": "—",
+   "data_source": "—",
+   "tf": "—",
+   "horizon": "—",
+   "side": "—",
+   "features": "—",
+   "label": "—",
+   "trainer": "—",
+   "loader": "—",
+   "artifact": "—",
+   "instruments": [],
+   "status": "kod: IMPLEMENTED; walidacja: NOT_APPLICABLE; rola w Quant Core: TOOL (miara trafności na danych wywołującego – nie model)",
+   "aliases": [],
+   "legacy_ids": [],
+   "category": "TOOL",
+   "registry_source": [
+    "quant.ids.EXTRA_PRODUCERS (1.46)"
+   ]
+  },
+  {
+   "id": "ml:change_point_engine",
+   "name": "Change points PELT (WF3.2)",
+   "implementation": "backend/masterquo/api/wf32_routes.py",
+   "task": "—",
+   "data_source": "—",
+   "tf": "—",
+   "horizon": "—",
+   "side": "—",
+   "features": "—",
+   "label": "—",
+   "trainer": "—",
+   "loader": "—",
+   "artifact": "—",
+   "instruments": [],
+   "status": "kod: IMPLEMENTED; walidacja: NOT_APPLICABLE; rola w Quant Core: NOT_A_VOTE (tylko API)",
+   "aliases": [],
+   "legacy_ids": [],
+   "category": "RULE_OR_MEASUREMENT",
+   "registry_source": [
+    "quant.ids.EXTRA_PRODUCERS (1.46)"
+   ]
+  },
+  {
+   "id": "forecast:long_horizon",
+   "name": "Rozkład 24–72 h (WF3.2)",
+   "implementation": "backend/masterquo/api/wf32_routes.py",
+   "task": "—",
+   "data_source": "—",
+   "tf": "—",
+   "horizon": "—",
+   "side": "—",
+   "features": "—",
+   "label": "—",
+   "trainer": "—",
+   "loader": "—",
+   "artifact": "—",
+   "instruments": [],
+   "status": "kod: IMPLEMENTED; walidacja: NOT_APPLICABLE; rola w Quant Core: NOT_A_VOTE (tylko API i eksport)",
+   "aliases": [],
+   "legacy_ids": [],
+   "category": "RULE_OR_MEASUREMENT",
+   "registry_source": [
+    "quant.ids.EXTRA_PRODUCERS (1.46)"
+   ]
+  },
+  {
+   "id": "forecast:double_retest_v2",
+   "name": "Maszyna stanów Double Retest v2",
+   "implementation": "masterquo/forecast/double_retest.py",
+   "task": "reguła setupu (bez trenowania)",
+   "data_source": "bary bota",
+   "tf": "M5/M30",
+   "horizon": "—",
+   "side": "oba",
+   "features": "—",
+   "label": "—",
+   "trainer": "brak (reguła)",
+   "loader": "ForecastService",
+   "artifact": "—",
+   "instruments": [
+    "XAUUSD",
+    "BTC"
+   ],
+   "status": "kod: IMPLEMENTED; walidacja: NOT_APPLICABLE; rola w Quant Core: CONTEXT_FEATURE (flagi w rekordzie prognozy – bez adaptera Quant) | opis: REGUŁA – nie jest modelem do trenowania",
+   "aliases": [],
+   "legacy_ids": [
+    "DOUBLE_RETEST_V2"
+   ],
+   "category": "RULE_OR_MEASUREMENT",
+   "registry_source": [
+    "quant.ids.EXTRA_PRODUCERS (1.46)"
+   ]
+  },
+  {
+   "id": "scalp:C_policy",
    "name": "Scalp C – ocena polityki HEDGE_PARTIAL vs REDUCE",
    "implementation": "masterquo/scalp/replay.py, report.hedge_summary",
    "task": "porównanie polityk w replayu OHLC (bez ticków) – NIE jest siecią ani klasyfikatorem",
@@ -99,8 +3202,18 @@
     "XAUUSD",
     "BTC"
    ],
-   "status": "EWALUACJA_POLITYKI – hedge pozostaje SHADOW/REDUCE"
-  },
+   "status": "kod: IMPLEMENTED; walidacja: NOT_APPLICABLE; rola w Quant Core: TOOL (wynik replayu w rejestrze scalp – nie predykcja) | opis: EWALUACJA_POLITYKI – hedge pozostaje SHADOW/REDUCE",
+   "aliases": [],
+   "legacy_ids": [
+    "SCALP_C"
+   ],
+   "category": "TOOL",
+   "registry_source": [
+    "quant.ids.EXTRA_PRODUCERS (1.46)"
+   ]
+  }
+ ],
+ "outside_registry": [
   {
    "id": "SCALP_PROFILE",
    "name": "Profil scalp Range→Sweep→Retest (automat stanów)",
@@ -119,287 +3232,10 @@
     "XAUUSD",
     "BTC"
    ],
-   "status": "REGUŁA"
-  },
-  {
-   "id": "LEGACY_ML_DT",
-   "name": "Legacy ML – Decision Tree",
-   "implementation": "masterquo/ml/{features,labels,models,trainer,registry,service,router,offline}.py",
-   "task": "P(setup S01–S12 osiąga cel netto przed SL) dla potwierdzonej wersji setupu",
-   "data_source": "setupy silnika na żywo (HIGH) + backfill z eksportu (APPROX, tylko gdy zadanie o to prosi)",
-   "tf": "TF setupu",
-   "horizon": "do wyjścia setupu",
-   "side": "oba (cecha kierunku)",
-   "features": "MQ-FEAT-1.1.0 (ml/features.py; 1.0.0 + cechy stref PMW-ZONE-FEAT-1)",
-   "label": "MQ-LABEL-1.1.0 (koszty: spread+poślizg+prowizja)",
-   "trainer": "ml/trainer.py (bloki fit/tune/calibrate/test, embargo 120 min); offline: training ml-offline",
-   "loader": "ml/registry.py Bundle → MLService.predict (bot, baza aktywnego instrumentu)",
-   "artifact": "XAUUSD: data/ml/models + masterquo.sqlite; BTC: data/instruments/BTC/ml/{models,ml.sqlite}",
-   "instruments": [
-    "XAUUSD",
-    "BTC"
-   ],
-   "status": "ZINTEGROWANE per instrument; model z próbek APPROX = RESEARCH_APPROX (nigdy champion automatycznie)"
-  },
-  {
-   "id": "LEGACY_ML_XGB",
-   "name": "Legacy ML – XGBoost (CPU)",
-   "implementation": "jak LEGACY_ML_DT",
-   "task": "jak LEGACY_ML_DT",
-   "data_source": "jak LEGACY_ML_DT",
-   "tf": "TF setupu",
-   "horizon": "do wyjścia setupu",
-   "side": "oba",
-   "features": "MQ-FEAT-1.1.0",
-   "label": "MQ-LABEL-1.1.0",
-   "trainer": "ml/trainer.py",
-   "loader": "ml/registry.py",
-   "artifact": "jak LEGACY_ML_DT",
-   "instruments": [
-    "XAUUSD",
-    "BTC"
-   ],
-   "status": "jak LEGACY_ML_DT"
-  },
-  {
-   "id": "LAB_DUMMY",
-   "name": "Lab DUMMY – częstość bazowa",
-   "implementation": "masterquo/lab/protocol.py fit_family('DUMMY'), lab/nets.py, lab/minirocket.py",
-   "task": "klasyfikacja binarna LONG",
-   "data_source": "eksport treningowy M5 (data/training/datasets/<INST>/<run>) albo bufor bota",
-   "tf": "M5",
-   "horizon": "12 świec (60 min)",
-   "side": "LONG (tylko długie – nie oznaczać jako oba kierunki)",
-   "features": "FS-1.0.0 (lab/features.py: zwroty, ATR, EMA gap, kinematyka, sesja; sekwencje 32×kanały dla sieci)",
-   "label": "potrójna bariera: TP 1.5×ATR przed SL 1.0×ATR w 12 świecach M5 (LBL-TB-1.0.0); SL i TP w tej samej świecy → SL (konserwatywnie)",
-   "trainer": "masterquo/lab/protocol.py LabTrainer + training lab-offline (walk-forward 4 foldy, purge/embargo 12, holdout 20% raz)",
-   "loader": "lab/protocol.py load_artifact → LabService._infer (bot), kontrola parity przy zapisie",
-   "artifact": "data/lab/models/<INST>/<model_id>/model.pkl + manifest.json (+ ACTIVE.json: aktywny per rodzina, rollback)",
-   "instruments": [
-    "XAUUSD",
-    "BTC"
-   ],
-   "status": "MODEL_KONTROLNY (nie zapisywany jako artefakt); zapisywany jest model oceniany (fit na danych rozwojowych), bez refitu na train+holdout"
-  },
-  {
-   "id": "LAB_RULE",
-   "name": "Lab RULE – reguła odniesienia",
-   "implementation": "masterquo/lab/protocol.py fit_family('RULE'), lab/nets.py, lab/minirocket.py",
-   "task": "klasyfikacja binarna LONG",
-   "data_source": "eksport treningowy M5 (data/training/datasets/<INST>/<run>) albo bufor bota",
-   "tf": "M5",
-   "horizon": "12 świec (60 min)",
-   "side": "LONG (tylko długie – nie oznaczać jako oba kierunki)",
-   "features": "FS-1.0.0 (lab/features.py: zwroty, ATR, EMA gap, kinematyka, sesja; sekwencje 32×kanały dla sieci)",
-   "label": "potrójna bariera: TP 1.5×ATR przed SL 1.0×ATR w 12 świecach M5 (LBL-TB-1.0.0); SL i TP w tej samej świecy → SL (konserwatywnie)",
-   "trainer": "masterquo/lab/protocol.py LabTrainer + training lab-offline (walk-forward 4 foldy, purge/embargo 12, holdout 20% raz)",
-   "loader": "lab/protocol.py load_artifact → LabService._infer (bot), kontrola parity przy zapisie",
-   "artifact": "data/lab/models/<INST>/<model_id>/model.pkl + manifest.json (+ ACTIVE.json: aktywny per rodzina, rollback)",
-   "instruments": [
-    "XAUUSD",
-    "BTC"
-   ],
-   "status": "MODEL_KONTROLNY; zapisywany jest model oceniany (fit na danych rozwojowych), bez refitu na train+holdout"
-  },
-  {
-   "id": "LAB_LOGREG",
-   "name": "Lab regresja logistyczna",
-   "implementation": "masterquo/lab/protocol.py fit_family('LOGREG'), lab/nets.py, lab/minirocket.py",
-   "task": "klasyfikacja binarna LONG",
-   "data_source": "eksport treningowy M5 (data/training/datasets/<INST>/<run>) albo bufor bota",
-   "tf": "M5",
-   "horizon": "12 świec (60 min)",
-   "side": "LONG (tylko długie – nie oznaczać jako oba kierunki)",
-   "features": "FS-1.0.0 (lab/features.py: zwroty, ATR, EMA gap, kinematyka, sesja; sekwencje 32×kanały dla sieci)",
-   "label": "potrójna bariera: TP 1.5×ATR przed SL 1.0×ATR w 12 świecach M5 (LBL-TB-1.0.0); SL i TP w tej samej świecy → SL (konserwatywnie)",
-   "trainer": "masterquo/lab/protocol.py LabTrainer + training lab-offline (walk-forward 4 foldy, purge/embargo 12, holdout 20% raz)",
-   "loader": "lab/protocol.py load_artifact → LabService._infer (bot), kontrola parity przy zapisie",
-   "artifact": "data/lab/models/<INST>/<model_id>/model.pkl + manifest.json (+ ACTIVE.json: aktywny per rodzina, rollback)",
-   "instruments": [
-    "XAUUSD",
-    "BTC"
-   ],
-   "status": "ZAIMPLEMENTOWANE_I_ZINTEGROWANE; zapisywany jest model oceniany (fit na danych rozwojowych), bez refitu na train+holdout"
-  },
-  {
-   "id": "LAB_TREE",
-   "name": "Lab drzewo decyzyjne (≠ legacy Decision Tree: inne pytanie – bariera LONG M5, nie setup S01–S12)",
-   "implementation": "masterquo/lab/protocol.py fit_family('TREE'), lab/nets.py, lab/minirocket.py",
-   "task": "klasyfikacja binarna LONG",
-   "data_source": "eksport treningowy M5 (data/training/datasets/<INST>/<run>) albo bufor bota",
-   "tf": "M5",
-   "horizon": "12 świec (60 min)",
-   "side": "LONG (tylko długie – nie oznaczać jako oba kierunki)",
-   "features": "FS-1.0.0 (lab/features.py: zwroty, ATR, EMA gap, kinematyka, sesja; sekwencje 32×kanały dla sieci)",
-   "label": "potrójna bariera: TP 1.5×ATR przed SL 1.0×ATR w 12 świecach M5 (LBL-TB-1.0.0); SL i TP w tej samej świecy → SL (konserwatywnie)",
-   "trainer": "masterquo/lab/protocol.py LabTrainer + training lab-offline (walk-forward 4 foldy, purge/embargo 12, holdout 20% raz)",
-   "loader": "lab/protocol.py load_artifact → LabService._infer (bot), kontrola parity przy zapisie",
-   "artifact": "data/lab/models/<INST>/<model_id>/model.pkl + manifest.json (+ ACTIVE.json: aktywny per rodzina, rollback)",
-   "instruments": [
-    "XAUUSD",
-    "BTC"
-   ],
-   "status": "ZAIMPLEMENTOWANE_I_ZINTEGROWANE; zapisywany jest model oceniany (fit na danych rozwojowych), bez refitu na train+holdout"
-  },
-  {
-   "id": "LAB_MINIROCKET",
-   "name": "Lab MiniRocket (numpy) + klasyfikator liniowy",
-   "implementation": "masterquo/lab/protocol.py fit_family('MINIROCKET'), lab/nets.py, lab/minirocket.py",
-   "task": "klasyfikacja binarna LONG",
-   "data_source": "eksport treningowy M5 (data/training/datasets/<INST>/<run>) albo bufor bota",
-   "tf": "M5",
-   "horizon": "12 świec (60 min)",
-   "side": "LONG (tylko długie – nie oznaczać jako oba kierunki)",
-   "features": "FS-1.0.0 (lab/features.py: zwroty, ATR, EMA gap, kinematyka, sesja; sekwencje 32×kanały dla sieci)",
-   "label": "potrójna bariera: TP 1.5×ATR przed SL 1.0×ATR w 12 świecach M5 (LBL-TB-1.0.0); SL i TP w tej samej świecy → SL (konserwatywnie)",
-   "trainer": "masterquo/lab/protocol.py LabTrainer + training lab-offline (walk-forward 4 foldy, purge/embargo 12, holdout 20% raz)",
-   "loader": "lab/protocol.py load_artifact → LabService._infer (bot), kontrola parity przy zapisie",
-   "artifact": "data/lab/models/<INST>/<model_id>/model.pkl + manifest.json (+ ACTIVE.json: aktywny per rodzina, rollback)",
-   "instruments": [
-    "XAUUSD",
-    "BTC"
-   ],
-   "status": "ZAIMPLEMENTOWANE_I_ZINTEGROWANE; zapisywany jest model oceniany (fit na danych rozwojowych), bez refitu na train+holdout"
-  },
-  {
-   "id": "LAB_XGB",
-   "name": "Lab XGBoost (CPU)",
-   "implementation": "masterquo/lab/protocol.py fit_family('XGB'), lab/nets.py, lab/minirocket.py",
-   "task": "klasyfikacja binarna LONG",
-   "data_source": "eksport treningowy M5 (data/training/datasets/<INST>/<run>) albo bufor bota",
-   "tf": "M5",
-   "horizon": "12 świec (60 min)",
-   "side": "LONG (tylko długie – nie oznaczać jako oba kierunki)",
-   "features": "FS-1.0.0 (lab/features.py: zwroty, ATR, EMA gap, kinematyka, sesja; sekwencje 32×kanały dla sieci)",
-   "label": "potrójna bariera: TP 1.5×ATR przed SL 1.0×ATR w 12 świecach M5 (LBL-TB-1.0.0); SL i TP w tej samej świecy → SL (konserwatywnie)",
-   "trainer": "masterquo/lab/protocol.py LabTrainer + training lab-offline (walk-forward 4 foldy, purge/embargo 12, holdout 20% raz)",
-   "loader": "lab/protocol.py load_artifact → LabService._infer (bot), kontrola parity przy zapisie",
-   "artifact": "data/lab/models/<INST>/<model_id>/model.pkl + manifest.json (+ ACTIVE.json: aktywny per rodzina, rollback)",
-   "instruments": [
-    "XAUUSD",
-    "BTC"
-   ],
-   "status": "ZAIMPLEMENTOWANE_I_ZINTEGROWANE; zapisywany jest model oceniany (fit na danych rozwojowych), bez refitu na train+holdout"
-  },
-  {
-   "id": "LAB_RESNET1D",
-   "name": "Lab ResNet1D (numpy)",
-   "implementation": "masterquo/lab/protocol.py fit_family('RESNET1D'), lab/nets.py, lab/minirocket.py",
-   "task": "klasyfikacja binarna LONG",
-   "data_source": "eksport treningowy M5 (data/training/datasets/<INST>/<run>) albo bufor bota",
-   "tf": "M5",
-   "horizon": "12 świec (60 min)",
-   "side": "LONG (tylko długie – nie oznaczać jako oba kierunki)",
-   "features": "FS-1.0.0 (lab/features.py: zwroty, ATR, EMA gap, kinematyka, sesja; sekwencje 32×kanały dla sieci)",
-   "label": "potrójna bariera: TP 1.5×ATR przed SL 1.0×ATR w 12 świecach M5 (LBL-TB-1.0.0); SL i TP w tej samej świecy → SL (konserwatywnie)",
-   "trainer": "masterquo/lab/protocol.py LabTrainer + training lab-offline (walk-forward 4 foldy, purge/embargo 12, holdout 20% raz)",
-   "loader": "lab/protocol.py load_artifact → LabService._infer (bot), kontrola parity przy zapisie",
-   "artifact": "data/lab/models/<INST>/<model_id>/model.pkl + manifest.json (+ ACTIVE.json: aktywny per rodzina, rollback)",
-   "instruments": [
-    "XAUUSD",
-    "BTC"
-   ],
-   "status": "ZAIMPLEMENTOWANE_I_ZINTEGROWANE; zapisywany jest model oceniany (fit na danych rozwojowych), bez refitu na train+holdout"
-  },
-  {
-   "id": "LAB_SEW_SNN",
-   "name": "Lab SEW-SNN (sieć impulsowa, numpy)",
-   "implementation": "masterquo/lab/protocol.py fit_family('SEW_SNN'), lab/nets.py, lab/minirocket.py",
-   "task": "klasyfikacja binarna LONG",
-   "data_source": "eksport treningowy M5 (data/training/datasets/<INST>/<run>) albo bufor bota",
-   "tf": "M5",
-   "horizon": "12 świec (60 min)",
-   "side": "LONG (tylko długie – nie oznaczać jako oba kierunki)",
-   "features": "FS-1.0.0 (lab/features.py: zwroty, ATR, EMA gap, kinematyka, sesja; sekwencje 32×kanały dla sieci)",
-   "label": "potrójna bariera: TP 1.5×ATR przed SL 1.0×ATR w 12 świecach M5 (LBL-TB-1.0.0); SL i TP w tej samej świecy → SL (konserwatywnie)",
-   "trainer": "masterquo/lab/protocol.py LabTrainer + training lab-offline (walk-forward 4 foldy, purge/embargo 12, holdout 20% raz)",
-   "loader": "lab/protocol.py load_artifact → LabService._infer (bot), kontrola parity przy zapisie",
-   "artifact": "data/lab/models/<INST>/<model_id>/model.pkl + manifest.json (+ ACTIVE.json: aktywny per rodzina, rollback)",
-   "instruments": [
-    "XAUUSD",
-    "BTC"
-   ],
-   "status": "ZAIMPLEMENTOWANE_I_ZINTEGROWANE; zapisywany jest model oceniany (fit na danych rozwojowych), bez refitu na train+holdout"
-  },
-  {
-   "id": "LAB_LOGREG_PCA",
-   "name": "Eksperyment: LOGREG na PCA",
-   "implementation": "masterquo/lab/protocol.py fit_family('LOGREG_PCA'), lab/nets.py, lab/minirocket.py",
-   "task": "klasyfikacja binarna LONG",
-   "data_source": "eksport treningowy M5 (data/training/datasets/<INST>/<run>) albo bufor bota",
-   "tf": "M5",
-   "horizon": "12 świec (60 min)",
-   "side": "LONG (tylko długie – nie oznaczać jako oba kierunki)",
-   "features": "FS-1.0.0 (lab/features.py: zwroty, ATR, EMA gap, kinematyka, sesja; sekwencje 32×kanały dla sieci)",
-   "label": "potrójna bariera: TP 1.5×ATR przed SL 1.0×ATR w 12 świecach M5 (LBL-TB-1.0.0); SL i TP w tej samej świecy → SL (konserwatywnie)",
-   "trainer": "masterquo/lab/protocol.py LabTrainer + training lab-offline (walk-forward 4 foldy, purge/embargo 12, holdout 20% raz)",
-   "loader": "lab/protocol.py load_artifact → LabService._infer (bot), kontrola parity przy zapisie",
-   "artifact": "data/lab/models/<INST>/<model_id>/model.pkl + manifest.json (+ ACTIVE.json: aktywny per rodzina, rollback)",
-   "instruments": [
-    "XAUUSD",
-    "BTC"
-   ],
-   "status": "EKSPERYMENT; zapisywany jest model oceniany (fit na danych rozwojowych), bez refitu na train+holdout"
-  },
-  {
-   "id": "LAB_LOGREG_GMM_AUG",
-   "name": "Eksperyment: LOGREG z cechami reżimu GMM",
-   "implementation": "masterquo/lab/protocol.py fit_family('LOGREG_GMM_AUG'), lab/nets.py, lab/minirocket.py",
-   "task": "klasyfikacja binarna LONG",
-   "data_source": "eksport treningowy M5 (data/training/datasets/<INST>/<run>) albo bufor bota",
-   "tf": "M5",
-   "horizon": "12 świec (60 min)",
-   "side": "LONG (tylko długie – nie oznaczać jako oba kierunki)",
-   "features": "FS-1.0.0 (lab/features.py: zwroty, ATR, EMA gap, kinematyka, sesja; sekwencje 32×kanały dla sieci)",
-   "label": "potrójna bariera: TP 1.5×ATR przed SL 1.0×ATR w 12 świecach M5 (LBL-TB-1.0.0); SL i TP w tej samej świecy → SL (konserwatywnie)",
-   "trainer": "masterquo/lab/protocol.py LabTrainer + training lab-offline (walk-forward 4 foldy, purge/embargo 12, holdout 20% raz)",
-   "loader": "lab/protocol.py load_artifact → LabService._infer (bot), kontrola parity przy zapisie",
-   "artifact": "data/lab/models/<INST>/<model_id>/model.pkl + manifest.json (+ ACTIVE.json: aktywny per rodzina, rollback)",
-   "instruments": [
-    "XAUUSD",
-    "BTC"
-   ],
-   "status": "EKSPERYMENT; zapisywany jest model oceniany (fit na danych rozwojowych), bez refitu na train+holdout"
-  },
-  {
-   "id": "LAB_LOGREG_NEUTRALIZED",
-   "name": "Eksperyment: LOGREG z neutralizacją czynników",
-   "implementation": "masterquo/lab/protocol.py fit_family('LOGREG_NEUTRALIZED'), lab/nets.py, lab/minirocket.py",
-   "task": "klasyfikacja binarna LONG",
-   "data_source": "eksport treningowy M5 (data/training/datasets/<INST>/<run>) albo bufor bota",
-   "tf": "M5",
-   "horizon": "12 świec (60 min)",
-   "side": "LONG (tylko długie – nie oznaczać jako oba kierunki)",
-   "features": "FS-1.0.0 (lab/features.py: zwroty, ATR, EMA gap, kinematyka, sesja; sekwencje 32×kanały dla sieci)",
-   "label": "potrójna bariera: TP 1.5×ATR przed SL 1.0×ATR w 12 świecach M5 (LBL-TB-1.0.0); SL i TP w tej samej świecy → SL (konserwatywnie)",
-   "trainer": "masterquo/lab/protocol.py LabTrainer + training lab-offline (walk-forward 4 foldy, purge/embargo 12, holdout 20% raz)",
-   "loader": "lab/protocol.py load_artifact → LabService._infer (bot), kontrola parity przy zapisie",
-   "artifact": "data/lab/models/<INST>/<model_id>/model.pkl + manifest.json (+ ACTIVE.json: aktywny per rodzina, rollback)",
-   "instruments": [
-    "XAUUSD",
-    "BTC"
-   ],
-   "status": "EKSPERYMENT; zapisywany jest model oceniany (fit na danych rozwojowych), bez refitu na train+holdout"
-  },
-  {
-   "id": "MONTE_CARLO_PATHS",
-   "name": "Monte Carlo ścieżek cen (PMW-MC-1) – P(TP przed SL w horyzoncie)",
-   "implementation": "masterquo/montecarlo/engine.py, validate.py, service.py",
-   "task": "prawdopodobieństwo, że cena dojdzie do TP przed SL w H świecach M1 (każdy poziom osobno) + zasięg ruchu ±X; świeca z TP i SL = przedział ostrożny–optymistyczny",
-   "data_source": "zamknięte świece M1 bota (na żywo) / eksport MT5 M1 (+ opcjonalne ticki Bid/Ask rozstrzygające kolejność w świecy) – walidacja",
-   "tf": "M1",
-   "horizon": "H świec M1 (domyślnie 60; scenariusz SCALPING 30)",
-   "side": "BUY i SELL – strona Bid/Ask, spread ze świecy",
-   "features": "brak cech uczonych: losowanie całych świec (OHLC względem otwarcia) – IID / blokowe / warunkowane reżimem ATR i godziną sesji, skalowane do bieżącego ATR",
-   "label": "rzeczywiste TP przed SL w H świecach (walidacja; ticki, gdy są) – dane wyłącznie sprzed chwili oceny",
-   "trainer": "`python -m masterquo montecarlo validate` / 31_MONTE_CARLO_WALIDACJA.bat / zadanie runnera monte_carlo: walk-forward CAL/TEST z embargo H, model bazowy = klimatologia, Brier / log loss / kalibracja, CI bootstrap, kalibrator izotoniczny",
-   "loader": "MonteCarloService (własny wątek; bufor zamkniętych świec bota) → /api/v1/montecarlo/*, /api/v1/sh/scenario",
-   "artifact": "data/montecarlo/<INST>/registry.json + runs/<run>/report.json (aktywny kalibrator tylko z REAL_USER_DATA z przewagą; rollback: montecarlo rollback)",
-   "instruments": [
-    "XAUUSD",
-    "BTC"
-   ],
-   "status": "ZAIMPLEMENTOWANE_I_ZINTEGROWANE; bez kalibracji = prawdopodobieństwo w modelu (tak opisane w panelu); walidacja tylko na danych syntetycznych w tym środowisku (werdykt TEST_TECHNICZNY)"
+   "status": "REGUŁA",
+   "category": "POZA_REJESTREM",
+   "registry_source": [],
+   "reason": "brak w rejestrze kanonicznym (quant/ids, quant/inventory) – opis zachowany, nie jest pozycją rejestru"
   },
   {
    "id": "LAB_MARKOV",
@@ -419,7 +3255,10 @@
     "XAUUSD",
     "BTC"
    ],
-   "status": "ESTYMOWANY_ONLINE; walidacja: archiwum prognoz punkt-w-czasie (Dane i diagnostyka)"
+   "status": "ESTYMOWANY_ONLINE; walidacja: archiwum prognoz punkt-w-czasie (Dane i diagnostyka)",
+   "category": "POZA_REJESTREM",
+   "registry_source": [],
+   "reason": "brak w rejestrze kanonicznym (quant/ids, quant/inventory) – opis zachowany, nie jest pozycją rejestru"
   },
   {
    "id": "LAB_ACD",
@@ -439,127 +3278,10 @@
     "XAUUSD",
     "BTC"
    ],
-   "status": "ESTYMOWANY_ONLINE; minimum 300 zdarzeń, inaczej warming_up"
-  },
-  {
-   "id": "INDICATORS_FFT_VMD_EMD",
-   "name": "Wskaźniki, FFT/VMD/EMD, BB/MA, Double Bottom",
-   "implementation": "masterquo/analytics/*, strategies/indicators.py",
-   "task": "obliczenia – nie są sieciami i nie mają przycisku „trenuj”",
-   "data_source": "bary bota",
-   "tf": "różne",
-   "horizon": "—",
-   "side": "—",
-   "features": "—",
-   "label": "—",
-   "trainer": "brak",
-   "loader": "AnalyticsService",
-   "artifact": "—",
-   "instruments": [
-    "XAUUSD",
-    "BTC"
-   ],
-   "status": "OBLICZENIA"
-  },
-  {
-   "id": "MARKET_ZONES_MZ1",
-   "name": "Strefy rynkowe M1/M5/M15/M30 (PMW-MZ-1) – S/R, popyt/podaż, FVG, order blocks, EQH/EQL, konfluencja",
-   "implementation": "masterquo/zones/market.py, zones/market_service.py (panel Wykresy → Strefy rynkowe)",
-   "task": "detekcja stref z jawnymi regułami potwierdzenia, testów i unieważnienia – nie jest modelem do trenowania",
-   "data_source": "zamknięte świece M1/M5/M15/M30 dokładnego symbolu przez bridge (XAUUSD-, BTCUSDT-)",
-   "tf": "M1, M5, M15, M30",
-   "horizon": "—",
-   "side": "kierunek strefy (wzrostowa / spadkowa / neutralna)",
-   "features": "—",
-   "label": "—",
-   "trainer": "brak (reguły; parametry skalowane ATR i profilem instrumentu)",
-   "loader": "MarketZonesService (zadania na przycisk / aktualizacja po zamknięciu świecy)",
-   "artifact": "data/zones/market_zones.sqlite (historia stref i zdarzeń)",
-   "instruments": [
-    "XAUUSD",
-    "BTC"
-   ],
-   "status": "REGUŁY – zaimplementowane i zintegrowane; jakość 0–100 nie jest prawdopodobieństwem; EQH/EQL = płynność wnioskowana z OHLC"
-  },
-  {
-   "id": "TH_BASELINE",
-   "name": "Centrum treningu – bazowy – częstości klas: kierunek ruchu po kosztach",
-   "implementation": "masterquo/trainhub/learn.py, features.py (wspólne cechy trening/inferencja), dataset.py, registry.py, inference.py",
-   "task": "klasa DOWN/FLAT/UP zmiany zamknięcia po H świecach względem progu max(k×ATR14, koszt świecy)",
-   "data_source": "magazyn świec data/marketdata/<INST> (eksport MT5 przyrostowy/historyczny, Parquet + CSV + manifest z sumami)",
-   "tf": "bazowy M1/M5/M15/M30 + wyższe TF dołączane od zamknięcia świecy",
-   "horizon": "H świec (domyślnie 6 × M5)",
-   "side": "oba (klasy)",
-   "features": "PMW-TH-FEAT-1 (zwroty, ATR, świeca, zmienność, RSI, EMA, z-score, aktywność ticków, spread, czas, cechy wyższych TF)",
-   "label": "PMW-TH-LABEL-1 (koszty: spread ze świecy + prowizja z historii transakcji albo założenie + poślizg-założenie); okna przez lukę sesji odrzucone",
-   "trainer": "Centrum treningu / `python -m masterquo trainhub train|full` (purged walk-forward + embargo, nietknięty holdout 20%, kalibracja temperaturą na dev, proces osobny)",
-   "loader": "TrainhubInference (tylko AKTYWNA paczka po teście zgodności i predykcji; inaczej stan INCOMPATIBLE/ERROR bez wartości)",
-   "artifact": "data/trainhub/models/<INST>/<MODEL>_<TF>_H<h>/<wersja>/ (model.joblib, cechy, config, metryki, manifest danych, zależności, REPRODUCE.md, sha256)",
-   "instruments": [
-    "XAUUSD",
-    "BTC"
-   ],
-   "status": "ZAIMPLEMENTOWANE_I_ZINTEGROWANE (OBSERVATION – nie głosuje w strategiach); trening sprawdzony tylko na symulatorze (SYNTHETIC_TEST) – brak oceny na danych rzeczywistych"
-  },
-  {
-   "id": "TH_LOGREG",
-   "name": "Centrum treningu – regresja logistyczna wieloklasowa: kierunek ruchu po kosztach",
-   "implementation": "masterquo/trainhub/learn.py, features.py (wspólne cechy trening/inferencja), dataset.py, registry.py, inference.py",
-   "task": "klasa DOWN/FLAT/UP zmiany zamknięcia po H świecach względem progu max(k×ATR14, koszt świecy)",
-   "data_source": "magazyn świec data/marketdata/<INST> (eksport MT5 przyrostowy/historyczny, Parquet + CSV + manifest z sumami)",
-   "tf": "bazowy M1/M5/M15/M30 + wyższe TF dołączane od zamknięcia świecy",
-   "horizon": "H świec (domyślnie 6 × M5)",
-   "side": "oba (klasy)",
-   "features": "PMW-TH-FEAT-1 (zwroty, ATR, świeca, zmienność, RSI, EMA, z-score, aktywność ticków, spread, czas, cechy wyższych TF)",
-   "label": "PMW-TH-LABEL-1 (koszty: spread ze świecy + prowizja z historii transakcji albo założenie + poślizg-założenie); okna przez lukę sesji odrzucone",
-   "trainer": "Centrum treningu / `python -m masterquo trainhub train|full` (purged walk-forward + embargo, nietknięty holdout 20%, kalibracja temperaturą na dev, proces osobny)",
-   "loader": "TrainhubInference (tylko AKTYWNA paczka po teście zgodności i predykcji; inaczej stan INCOMPATIBLE/ERROR bez wartości)",
-   "artifact": "data/trainhub/models/<INST>/<MODEL>_<TF>_H<h>/<wersja>/ (model.joblib, cechy, config, metryki, manifest danych, zależności, REPRODUCE.md, sha256)",
-   "instruments": [
-    "XAUUSD",
-    "BTC"
-   ],
-   "status": "ZAIMPLEMENTOWANE_I_ZINTEGROWANE (OBSERVATION – nie głosuje w strategiach); trening sprawdzony tylko na symulatorze (SYNTHETIC_TEST) – brak oceny na danych rzeczywistych"
-  },
-  {
-   "id": "TH_HGB",
-   "name": "Centrum treningu – gradient boosting histogramowy: kierunek ruchu po kosztach",
-   "implementation": "masterquo/trainhub/learn.py, features.py (wspólne cechy trening/inferencja), dataset.py, registry.py, inference.py",
-   "task": "klasa DOWN/FLAT/UP zmiany zamknięcia po H świecach względem progu max(k×ATR14, koszt świecy)",
-   "data_source": "magazyn świec data/marketdata/<INST> (eksport MT5 przyrostowy/historyczny, Parquet + CSV + manifest z sumami)",
-   "tf": "bazowy M1/M5/M15/M30 + wyższe TF dołączane od zamknięcia świecy",
-   "horizon": "H świec (domyślnie 6 × M5)",
-   "side": "oba (klasy)",
-   "features": "PMW-TH-FEAT-1 (zwroty, ATR, świeca, zmienność, RSI, EMA, z-score, aktywność ticków, spread, czas, cechy wyższych TF)",
-   "label": "PMW-TH-LABEL-1 (koszty: spread ze świecy + prowizja z historii transakcji albo założenie + poślizg-założenie); okna przez lukę sesji odrzucone",
-   "trainer": "Centrum treningu / `python -m masterquo trainhub train|full` (purged walk-forward + embargo, nietknięty holdout 20%, kalibracja temperaturą na dev, proces osobny)",
-   "loader": "TrainhubInference (tylko AKTYWNA paczka po teście zgodności i predykcji; inaczej stan INCOMPATIBLE/ERROR bez wartości)",
-   "artifact": "data/trainhub/models/<INST>/<MODEL>_<TF>_H<h>/<wersja>/ (model.joblib, cechy, config, metryki, manifest danych, zależności, REPRODUCE.md, sha256)",
-   "instruments": [
-    "XAUUSD",
-    "BTC"
-   ],
-   "status": "ZAIMPLEMENTOWANE_I_ZINTEGROWANE (OBSERVATION – nie głosuje w strategiach); trening sprawdzony tylko na symulatorze (SYNTHETIC_TEST) – brak oceny na danych rzeczywistych"
-  },
-  {
-   "id": "TH_XGB",
-   "name": "Centrum treningu – XGBoost (CPU, gdy pakiet dostępny): kierunek ruchu po kosztach",
-   "implementation": "masterquo/trainhub/learn.py, features.py (wspólne cechy trening/inferencja), dataset.py, registry.py, inference.py",
-   "task": "klasa DOWN/FLAT/UP zmiany zamknięcia po H świecach względem progu max(k×ATR14, koszt świecy)",
-   "data_source": "magazyn świec data/marketdata/<INST> (eksport MT5 przyrostowy/historyczny, Parquet + CSV + manifest z sumami)",
-   "tf": "bazowy M1/M5/M15/M30 + wyższe TF dołączane od zamknięcia świecy",
-   "horizon": "H świec (domyślnie 6 × M5)",
-   "side": "oba (klasy)",
-   "features": "PMW-TH-FEAT-1 (zwroty, ATR, świeca, zmienność, RSI, EMA, z-score, aktywność ticków, spread, czas, cechy wyższych TF)",
-   "label": "PMW-TH-LABEL-1 (koszty: spread ze świecy + prowizja z historii transakcji albo założenie + poślizg-założenie); okna przez lukę sesji odrzucone",
-   "trainer": "Centrum treningu / `python -m masterquo trainhub train|full` (purged walk-forward + embargo, nietknięty holdout 20%, kalibracja temperaturą na dev, proces osobny)",
-   "loader": "TrainhubInference (tylko AKTYWNA paczka po teście zgodności i predykcji; inaczej stan INCOMPATIBLE/ERROR bez wartości)",
-   "artifact": "data/trainhub/models/<INST>/<MODEL>_<TF>_H<h>/<wersja>/ (model.joblib, cechy, config, metryki, manifest danych, zależności, REPRODUCE.md, sha256)",
-   "instruments": [
-    "XAUUSD",
-    "BTC"
-   ],
-   "status": "ZAIMPLEMENTOWANE_I_ZINTEGROWANE (OBSERVATION – nie głosuje w strategiach); trening sprawdzony tylko na symulatorze (SYNTHETIC_TEST) – brak oceny na danych rzeczywistych"
+   "status": "ESTYMOWANY_ONLINE; minimum 300 zdarzeń, inaczej warming_up",
+   "category": "POZA_REJESTREM",
+   "registry_source": [],
+   "reason": "brak w rejestrze kanonicznym (quant/ids, quant/inventory) – opis zachowany, nie jest pozycją rejestru"
   },
   {
    "id": "STRATEGIES_S01_S12",
@@ -579,7 +3301,10 @@
     "XAUUSD",
     "BTC"
    ],
-   "status": "REGUŁY"
+   "status": "REGUŁY",
+   "category": "POZA_REJESTREM",
+   "registry_source": [],
+   "reason": "brak w rejestrze kanonicznym (quant/ids, quant/inventory) – opis zachowany, nie jest pozycją rejestru"
   }
  ]
 }
