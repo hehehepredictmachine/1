@@ -24,11 +24,14 @@
   /api/v1/structure-intelligence/native-status was always NATIVE_FEED_UNAVAILABLE.
 * Flow context Markov3 / MarkovDiff (models check --smoke, area lab): a model fitted on SYNTHETIC_TEST data (role TEST_ONLY) was loaded
   into the Structure Intelligence M1 cell without any provenance. The run now stores its data kind / role and the cell shows it (panel
-  only - no decision reads Markov3). Whether TEST_ONLY should be loaded at all is decision D23 (loading unchanged).
+  only - no decision reads Markov3). Decision D23 (b): a TEST_ONLY model is no longer loaded into the SI cell (the cell shows
+  MODEL_TEST_ONLY_NOT_LOADED with its data kind) unless the test variable PMW_FLOW_ALLOW_TEST_MODEL=1 is set; a 1.46.0 run without
+  meta.json is still loaded and marked UNKNOWN.
 """
 from __future__ import annotations
 
 import json
+import os
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -288,14 +291,24 @@ class TestMarkovProvenance(unittest.TestCase):
         self.assertEqual(out["role"], "TEST_ONLY")
         meta = json.loads((Path(out["dir"]) / "meta.json").read_text(encoding="utf-8"))   # 1.46.0: no provenance stored
         self.assertEqual((meta["data_kind"], meta["role"]), ("SYNTHETIC_TEST", "TEST_ONLY"))
-        fs = FS.FlowSections()
-        k = fs.update("XAUUSD", "M1", dev[-900:], 0.01, 0.01)
-        self.assertIsNotNone(k.m3)                                              # loading unchanged (D23)
-        m3 = fs.summary(k)["markov3"]
-        self.assertEqual((m3.get("model_role"), m3.get("data_kind")), ("TEST_ONLY", "SYNTHETIC_TEST"))
-        (Path(out["dir"]) / "meta.json").unlink()                               # a run of 1.46.0: provenance unknown, still loaded
-        k = FS._Key("XAUUSD", "M1", 0.01, 0.01)
-        self.assertEqual(k.model_meta["role"], "UNKNOWN")
+        env = {x: v for x, v in os.environ.items() if x != FS.ALLOW_TEST_MODEL_ENV}
+        with mock.patch.dict(os.environ, env, clear=True):
+            fs = FS.FlowSections()
+            k = fs.update("XAUUSD", "M1", dev[-900:], 0.01, 0.01)
+            self.assertIsNone(k.m3)                                             # D23 (b): TEST_ONLY not loaded into the SI cell
+            m3 = fs.summary(k)["markov3"]
+            self.assertEqual((m3.get("status"), m3.get("model_role"), m3.get("data_kind")),
+                             ("MODEL_TEST_ONLY_NOT_LOADED", "TEST_ONLY", "SYNTHETIC_TEST"))
+            with mock.patch.dict(os.environ, {FS.ALLOW_TEST_MODEL_ENV: "1"}):     # tests opt in: loaded, with its provenance
+                fs = FS.FlowSections()
+                k = fs.update("XAUUSD", "M1", dev[-900:], 0.01, 0.01)
+            self.assertIsNotNone(k.m3)
+            m3 = fs.summary(k)["markov3"]
+            self.assertEqual((m3.get("model_role"), m3.get("data_kind")), ("TEST_ONLY", "SYNTHETIC_TEST"))
+            (Path(out["dir"]) / "meta.json").unlink()                           # a run of 1.46.0: provenance unknown, still loaded
+            k = FS._Key("XAUUSD", "M1", 0.01, 0.01)
+            self.assertIsNotNone(k.m3)
+            self.assertEqual(k.model_meta["role"], "UNKNOWN")
 
 if __name__ == "__main__":
     unittest.main()

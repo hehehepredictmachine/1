@@ -81,7 +81,7 @@ def corpus(tmp: Path):
         rows.append({"text": w, "label": ("POSITIVE", "NEUTRAL", "NEGATIVE")[k], "first_seen_at": f"2026-01-{1 + i % 28:02d}T00:{i % 60:02d}:00Z"})
     p = tmp / "corpus.jsonl"
     p.write_text("\n".join(json.dumps(r) for r in rows), encoding="utf-8")
-    NL.import_file(p)
+    NL.import_file(p, data_kind="SYNTHETIC_TEST")          # 1.46 (I0470): the corpus provenance decides the NLP data_kind
     return NL.load_corpus()
 
 
@@ -127,7 +127,8 @@ def main(argv=None) -> int:
                     dq = sum(q for _, q in bk["bids"]), sum(q for _, q in bk["asks"])
                     live = {"spread": ap_ - bp, "micro": {"status": "READY", "values": {
                         "best_imbalance": (bq - aq) / (bq + aq), "depth_imbalance": (dq[0] - dq[1]) / (dq[0] + dq[1]), "ofi_window": 0.0,
-                        "microprice_dev": (ap_ * bq + bp * aq) / (bq + aq) - mid, "mid": mid, "bid_levels": len(bk["bids"])}}}
+                        "microprice_dev": (ap_ * bq + bp * aq) / (bq + aq) - mid, "mid": mid, "bid_levels": len(bk["bids"]),
+                        "book_spread": ap_ - bp}}}                # 1.46 arch (I0192): the classifier normalises by the book's own spread
                 res = fam.predict(art, live)
                 p = fam.pred(inst="XAUUSD", symbol="XAUUSD-", state="READY", result=res, run_id=r["run_id"], data_time="2026-11-06T10:00:00Z",
                              data_kind="SYNTHETIC")

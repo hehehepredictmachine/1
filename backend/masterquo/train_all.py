@@ -1,4 +1,6 @@
-"""`python -m masterquo train-all` - compatibility entry point of the 1.15 training pipeline: an explicit SUBSET of `training run`.
+"""`python -m masterquo train-all` - compatibility entry point of the 1.15 training pipeline: an explicit SUBSET of `training run`
+(22_TRENUJ_WSZYSTKIE_MODELE.bat itself now calls `training run` directly through tools/trening.cmd; this command keeps the old arguments
+working for own scripts).
 
 1.46 (I0132): it is NOT what 22_TRENUJ_WSZYSTKIE_MODELE.bat does - the .bat calls `training run` without --tasks (every task of
 training/runner.TASKS). train-all passes --tasks TRAIN_ALL_TASKS (10 model tasks; export, quality, activation and the bot reload always run);
@@ -18,10 +20,8 @@ Nothing here sends orders; the execution mode is not touched; the bot's config i
 """
 from __future__ import annotations
 
-import http.cookiejar
-import json
-import urllib.error
-import urllib.request
+from . import localapi
+from .localapi import Bot  # noqa: F401 - 1.46 arch (I0075/I0080): the local-API client lives in masterquo/localapi.py; old name kept
 
 # 1.46: LAB_FAMILIES / LAB_EXPERIMENTS and _wait removed - unused since train_all runs `training run` (families come from the training profile)
 
@@ -36,54 +36,9 @@ def say(msg: str) -> None:
     print(f"[Apollo23] {msg}", flush=True)
 
 
-class Bot:
-    """Same-origin client of the local API (session cookie + CSRF token, as the monitor uses)."""
-
-    def __init__(self, port: int):
-        self.base = f"http://127.0.0.1:{port}"
-        self.jar = http.cookiejar.CookieJar()
-        self.op = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(self.jar))
-        self.csrf = None
-
-    def _req(self, method: str, path: str, body=None, timeout: float = 30):
-        data = None if body is None else json.dumps(body).encode()
-        r = urllib.request.Request(self.base + path, data=data, method=method)
-        r.add_header("Origin", self.base)
-        if data is not None:
-            r.add_header("Content-Type", "application/json")
-        if self.csrf and method != "GET":
-            r.add_header("X-MQ-CSRF", self.csrf)
-        try:
-            with self.op.open(r, timeout=timeout) as resp:
-                txt = resp.read().decode("utf-8", "replace")
-                return resp.status, (json.loads(txt) if txt.strip().startswith(("{", "[")) else txt)
-        except urllib.error.HTTPError as e:
-            txt = e.read().decode("utf-8", "replace")
-            try:
-                return e.code, json.loads(txt)
-            except ValueError:
-                return e.code, txt
-
-    def login(self) -> None:
-        self._req("GET", "/")
-        st, j = self._req("GET", "/api/v1/session")
-        if st != 200 or not isinstance(j, dict):
-            raise RuntimeError(f"SESSION_FAILED {st}")
-        self.csrf = j.get("csrf")
-
-    def get(self, path, timeout=30):
-        return self._req("GET", path, timeout=timeout)
-
-    def post(self, path, body=None, timeout=60):
-        return self._req("POST", path, body or {}, timeout=timeout)
-
-
 def _health(port: int) -> dict | None:
-    try:
-        with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/v1/health", timeout=3) as r:
-            return json.loads(r.read().decode())
-    except Exception:
-        return None
+    """Old name (timeout 3 s as before); the one implementation is masterquo.localapi.health."""
+    return localapi.health(port, 3)
 
 
 def train_all(a) -> int:

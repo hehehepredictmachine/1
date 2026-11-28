@@ -21,7 +21,7 @@ import urllib.request
 import webbrowser
 from pathlib import Path
 
-from . import paths
+from . import localapi, paths
 
 
 def _rt_dir() -> Path:
@@ -30,20 +30,14 @@ def _rt_dir() -> Path:
     return d
 
 
-def _port() -> int:
-    try:
-        from .config import ConfigStore
-        return ConfigStore().get().server.port
-    except Exception:
-        return 8765
+# 1.46 arch (I0080): the local-API client helpers live in the leaf masterquo/localapi.py (other modules import them from there, not from
+# this entry point); the old names stay as aliases with the former defaults (here: health timeout 1.5 s). I0094: localapi.port() reads
+# config.json read-only (config.server_port) - no migration write / .bak before the instance lock.
+_port = localapi.port
 
 
 def _health(port: int, timeout: float = 1.5) -> dict | None:
-    try:
-        with urllib.request.urlopen(urllib.request.Request(f"http://127.0.0.1:{port}/api/v1/health", headers={"Host": f"127.0.0.1:{port}"}), timeout=timeout) as r:
-            return json.loads(r.read().decode())
-    except (urllib.error.URLError, OSError, ValueError):
-        return None
+    return localapi.health(port, timeout)
 
 
 def _setup_logging() -> None:
@@ -160,9 +154,7 @@ def _port_busy(port: int) -> bool:
 _LOCK_HANDLE = None
 
 
-def _single_instance_lock():
-    global _LOCK_HANDLE
-    f = open(_rt_dir() / "instance.lock", "a+b")
+def _try_lock(f) -> bool:
     try:
         if os.name == "nt":
             import msvcrt
@@ -171,11 +163,43 @@ def _single_instance_lock():
         else:
             import fcntl
             fcntl.flock(f.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        return True
     except OSError:
-        f.close()
-        return None
-    _LOCK_HANDLE = f
-    return f
+        return False
+
+
+def _single_instance_lock(retries: int = 3, wait: float = 0.1):
+    """1.46 arch (I0094): a few short retries - a CLI probe (_instance_lock_busy) holds the lock for microseconds and must never make a
+    server starting at that moment exit with 'Inna instancja'. A real second instance still holds it -> None, as before."""
+    global _LOCK_HANDLE
+    f = open(_rt_dir() / "instance.lock", "a+b")
+    for i in range(max(1, retries)):
+        if _try_lock(f):
+            _LOCK_HANDLE = f
+            return f
+        if i + 1 < retries:
+            time.sleep(wait)
+    f.close()
+    return None
+
+
+def _instance_lock_busy() -> bool:
+    """1.46 arch (I0094): True when another process holds runtime/instance.lock, i.e. a server is starting or running in this data folder.
+    The probe lock is released at once (see _single_instance_lock)."""
+    try:
+        with open(_rt_dir() / "instance.lock", "a+b") as f:
+            if not _try_lock(f):
+                return True
+            if os.name == "nt":
+                import msvcrt
+                f.seek(0)
+                msvcrt.locking(f.fileno(), msvcrt.LK_UNLCK, 1)
+            else:
+                import fcntl
+                fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+            return False
+    except OSError:
+        return False
 
 
 def cmd_stop(args) -> int:
@@ -205,7 +229,10 @@ def cmd_stop(args) -> int:
 
 
 def _load_dotenv() -> None:
-    """Optional <root>/.env with ANTHROPIC_API_KEY / ANTHROPIC_MODEL / MASTERQUO_DATA_DIR (never packaged)."""
+    """Optional <root>/.env (never packaged). Only secrets_store.DOTENV_VARS are taken (ANTHROPIC_API_KEY, ANTHROPIC_MODEL,
+    MASTERQUO_DATA_DIR, FRED_API_KEY, TELEGRAM_BOT_TOKEN - 1.46 arch I0118: one list, the same as before); a variable already set in the
+    environment wins."""
+    from .secrets_store import DOTENV_VARS
     f = paths.ROOT_DIR / ".env"
     if not f.exists():
         return
@@ -214,18 +241,26 @@ def _load_dotenv() -> None:
         if not line or line.startswith("#") or "=" not in line:
             continue
         k, v = (x.strip() for x in line.split("=", 1))
-        if k in ("ANTHROPIC_API_KEY", "ANTHROPIC_MODEL", "MASTERQUO_DATA_DIR", "FRED_API_KEY", "TELEGRAM_BOT_TOKEN") and v and not os.environ.get(k):
+        if k in DOTENV_VARS and v and not os.environ.get(k):
             os.environ[k] = v.strip('"')
 
 
 def cmd_profile(name: str) -> int:
-    """Rollback helper. Run with the server stopped (a running server keeps its own copy of the config)."""
-    from .config import ConfigStore
-    store = ConfigStore()
+    """Rollback helper. Run with the server stopped (a running server keeps its own copy of the config).
+
+    1.46 arch (I0094): refuses (exit 3) while the bot answers on its port or holds the instance lock - 1.45 wrote config.json anyway, the
+    running bot ignored the change and its next settings save overwrote it with its own copy. `show` only reads (never writes the file)."""
+    from .config import ConfigStore, peek
     if name == "show":
-        a = store.get().active
+        a = peek().active
         print(f"Profil: {a.profile}, wybór strategii: {a.strategy_mode}{' ' + a.manual_strategy_id if a.manual_strategy_id else ''}")
         return 0
+    h = _health(_port())
+    if (h and h.get("app") in (APP_NAME, "MasterQUO AI")) or _instance_lock_busy():
+        print("[Apollo23] Program działa – zmiana profilu z wiersza poleceń zostałaby nadpisana przez działający program. "
+              "Zatrzymaj program (04_STOP_MASTERQUO.bat) albo zmień profil w Ustawieniach monitora.", file=sys.stderr)
+        return 3
+    store = ConfigStore()
     store.update({"active": {"profile": name}})
     print(f"[OK] Profil wykrywania: {name}. Tryb wykonywania zleceń i limity bez zmian. Uruchom 03_START_MASTERQUO.bat.")
     return 0
@@ -437,8 +472,7 @@ def cmd_import_iv(path: str) -> int:
     if not p.is_file():
         print(f"[BŁĄD] Brak pliku: {p}")
         return 2
-    db = Database()
-    db.migrate()
+    db = Database()                     # 1.46 arch (I0096): Database.__init__ migrates (the second db.migrate() here was redundant)
     rep = iv_import.store(db, iv_import.parse_text(p.read_text(encoding="utf-8"), "json" if p.suffix.lower() == ".json" else "csv"), imported_by="CLI")
     print(f"[IV] wierszy {rep['rows']}: przyjęto {rep['accepted']}, już zapisane {rep['already_stored']}, odrzucono {len(rep['rejected'])}")
     for r in rep["rejected"][:50]:

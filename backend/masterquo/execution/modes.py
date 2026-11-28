@@ -29,6 +29,7 @@ from __future__ import annotations
 import threading
 import time
 
+from ..config import ALLOWED_ASSETS
 from ..db.database import dumps
 from ..risk.engine import limits_configured
 from ..timeutil import iso, utcnow
@@ -60,10 +61,15 @@ class ModeManager:
         self.kill_reason: str | None = None
         self.license_ok = None                            # 1.44.0: () -> bool z licensing.gate (wersja klienta); None = bez licencji
         self.changed_at = iso(utcnow())
+        self.start_mode_applied: str | None = None        # arch146 D1: set only if apply_start_mode ran (status, read only)
 
     def apply_start_mode(self) -> str | None:
-        """1.39 (user decision): start in execution.start_mode on every launch (real terminal only - the runtime does not call this on the
-        synthetic demo, where AUTO_LIVE is impossible). Returns the mode applied or None."""
+        """1.39 (user decision, intent): start in execution.start_mode on every launch (real terminal only). Returns the mode applied or None.
+
+        NOT called by Runtime: its start condition (runtime.py:87, `not demo and mt5_factory is None`) is never true because the MT5
+        factory is always set before it - arch146 D1 leaves it deliberately unchanged (applying it would start in AUTO_LIVE and bind a
+        REAL account). The engine starts in the stored execution.mode and status() reports start_mode_effective = NOT_APPLIED; only an
+        explicit call (tests) sets start_mode_applied."""
         sm = getattr(self.cfg_store.get().execution, "start_mode", None)
         if not sm:
             return None
@@ -73,6 +79,7 @@ class ModeManager:
                 self.mode = sm
                 if sm not in ORDER_MODES:
                     self.bound_account = None
+            self.start_mode_applied = sm
         self.log.warn("MODE", "START_MODE", f"Start w trybie {LABEL_PL.get(sm, sm)} (execution.start_mode)"
                       + (" – rachunek REAL zostanie powiązany automatycznie (live_autobind)" if sm == "AUTO_LIVE" else ""))
         self._persist_and_publish("start_mode")
@@ -92,15 +99,26 @@ class ModeManager:
                     "bound_account": self.bound_account, "kill_switch": self.kill_switch, "kill_reason": self.kill_reason,
                     "changed_at": self.changed_at, "strategy_mode": cfg.active.strategy_mode, "ml_mode": cfg.ml.mode,
                     "instrument": cfg.assets.active, "primary_path": prim, "primary_path_label": PATH_LABEL[prim],
-                    "primary_paths": {k: cfg.execution.primary_path.get(k, "UNSET") for k in ("XAUUSD", "BTC")},
-                    "mode_note": cfg.execution.mode_note}
+                    "primary_paths": {k: cfg.execution.primary_path.get(k, "UNSET") for k in ALLOWED_ASSETS},
+                    "mode_note": cfg.execution.mode_note, **self._start_mode_status(cfg)}
+
+    def _start_mode_status(self, cfg) -> dict:
+        """arch146 D1 (S1, description only): whether execution.start_mode took effect at this start. The runtime's start condition is
+        never true (decision D1: left as is), so the stored execution.mode is what the engine starts in - said here instead of implied."""
+        sm = getattr(cfg.execution, "start_mode", None)
+        if self.start_mode_applied:
+            return {"start_mode_configured": sm, "start_mode_effective": "APPLIED", "start_mode_reason": None}
+        why = ("execution.start_mode nie jest ustawiony" if not sm else
+               f"execution.start_mode = {sm} nie jest stosowany przy starcie (warunek w runtime.py nieaktywny, celowo bez zmian – arch146 D1)")
+        return {"start_mode_configured": sm, "start_mode_effective": "NOT_APPLIED",
+                "start_mode_reason": why + "; silnik startuje w ostatnio zapisanym trybie execution.mode."}
 
     def primary_path(self, instrument: str | None = None) -> str:
         cfg = self.cfg_store.get()
         return cfg.execution.primary_path.get(instrument or cfg.assets.active, "UNSET")
 
     def set_primary_path(self, instrument: str, path: str) -> dict:
-        if instrument not in ("XAUUSD", "BTC"):
+        if instrument not in ALLOWED_ASSETS:                 # 1.46 arch (I0087): the constant from config.py (same values)
             raise ModeError("ASSET_NOT_ALLOWED")
         if path not in PATHS + ("UNSET",):
             raise ModeError("UNKNOWN_PATH")

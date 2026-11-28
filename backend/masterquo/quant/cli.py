@@ -28,11 +28,8 @@ _OPENER = None
 
 
 def _server(path: str, timeout: float = 5.0):
-    try:
-        from ..config import ConfigStore
-        port = ConfigStore().get().server.port
-    except Exception:  # noqa: BLE001
-        port = 8765
+    from ..config import server_port
+    port = server_port()          # 1.46 arch (I0094/I0125): read-only (never migrates / writes the bot's config.json), paths.DEFAULT_PORT fallback
     global _OPENER
     base = f"http://127.0.0.1:{port}"
     try:
@@ -94,8 +91,10 @@ def main(argv=None) -> int:
         st = SV.Settings(SV.qdir() / "settings.json").get()
         live = _server("/api/v1/quant/status")
         insts = [inst] if inst else ["XAUUSD", "BTC"]
-        _p({"mode": st["mode"], "assist": st.get("assist"), "ledger": led.counts(inst),
-            "active": {i: M.pointer(i).get("active") for i in insts}, "versions": {i: M.list_versions(i)[-10:] for i in insts}, "bot": "działa" if live else "nie działa (stan offline z plików)",
+        cnt = led.counts(inst)
+        _p({"mode": st["mode"], "assist": st.get("assist"), "ledger": cnt, "training_evidence": SV.training_evidence(cnt),
+            "active": {i: M.pointer(i).get("active") for i in insts}, "versions": {i: M.list_versions(i)[-10:] for i in insts},
+            "retrain_required": {i: M.retrain_notices(i) for i in insts}, "bot": "działa" if live else "nie działa (stan offline z plików)",
             "live": {k: (live or {}).get(k) for k in ("generation", "complete", "models", "snapshot", "timings")} if live else None})
         return 0
     if a.cmd == "train":
@@ -103,7 +102,7 @@ def main(argv=None) -> int:
         _p(res)
         return 2 if all(r["status"] == "INSUFFICIENT_EVIDENCE" for r in res) else 0
     if a.cmd == "list":
-        _p({"active": M.pointer(inst).get("active"), "versions": M.list_versions(inst)})
+        _p({"active": M.pointer(inst).get("active"), "versions": M.list_versions(inst), "retrain_required": M.retrain_notices(inst)})
         return 0
     if a.cmd == "activate":
         if not (a.task and a.version):
@@ -114,6 +113,11 @@ def main(argv=None) -> int:
         except (M.MetaError, OSError, ValueError) as exc:
             print(f"[ODMOWA] {exc}")
             return 3
+        try:                                  # 1.46: which feature semantics the activated MetaModel gets (FEAT-1 / FEAT-3)
+            sem = M.feature_semantics(inst, a.task, a.version)
+            print(f"[QUANT] semantyka cech: {sem['feature_version']} – {sem['note']}")
+        except (M.MetaError, OSError, ValueError) as exc:
+            print(f"[QUANT] semantyka cech: nieznana ({exc})")
         return 0
     if a.cmd == "rollback":
         if not a.task:

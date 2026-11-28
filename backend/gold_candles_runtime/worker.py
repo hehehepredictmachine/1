@@ -63,6 +63,20 @@ def session_check(feature_close_utc: str, horizon_minutes: int, inst: str | None
     return "NOT_VERIFIED_BROKER_SESSIONS"
 
 
+# gold_candles.model / analysis status -> status of the bot (forecast/service.STATUS_PL, modelhub/adapters.FORECAST_STATE). 1.46 (I0632):
+# MODEL_FROM_FUTURE_RELATIVE_TO_SNAPSHOT (model.forecast) and NO_TRAINED_MODEL passed through raw - unknown to both maps, so the
+# state was ERROR instead of INCOMPATIBLE / NOT_TRAINED and the panel had no Polish description. Unknown statuses stay unchanged.
+FORECAST_STATUS_MAP = {"FEATURE_WARMUP_OR_STALE_M30": "WARMUP", "STALE_M5_DATA": "STALE_DATA", "SHADOW_RESEARCH_FORECAST": "SHADOW",
+                       "MODEL_FROM_FUTURE_RELATIVE_TO_SNAPSHOT": "MODEL_FROM_FUTURE", "NO_TRAINED_MODEL": "NO_MODEL"}
+
+
+def _map_status(fc_status: str | None, mstatus: str) -> str | None:
+    """Status of one analyze answer: the model status (NO_MODEL / CONTRACT_MISMATCH) first, then the forecast status mapped."""
+    if mstatus != "OK":
+        return mstatus
+    return FORECAST_STATUS_MAP.get(fc_status, fc_status)
+
+
 def analyze_request(req: dict) -> dict:
     from gold_candles.analysis import analyze
     from gold_candles.data import DataError
@@ -77,15 +91,8 @@ def analyze_request(req: dict) -> dict:
         model, entry, mstatus, mreason = _active_model(symbol, tick)
         report = analyze(m5, m30, config, model, as_of, "LIVE", req.get("quote"))
         fc = report.get("forecast") or {}
-        status = fc.get("status")
-        if mstatus != "OK":
-            status = mstatus
-        elif status == "FEATURE_WARMUP_OR_STALE_M30":
-            status = "WARMUP"
-        elif status == "STALE_M5_DATA":
-            status = "STALE_DATA"
-        elif status == "SHADOW_RESEARCH_FORECAST":
-            status = "SHADOW"
+        status = _map_status(fc.get("status"), mstatus)
+        if status == "SHADOW":
             for h in (fc.get("probabilities") or {}).values():
                 h["session_check"] = session_check(fc["feature_time_utc"], h["horizon_minutes"])
                 if h["session_check"] == "BLOCKED_SESSION_BREAK":
@@ -111,10 +118,27 @@ def analyze_request(req: dict) -> dict:
 
 
 _scalp_cache: dict = {"run_id": None, "model": None}
+SCALP_MAX_DELAY_S = 90.0          # as_of - close of the newest M1 beyond this = the feed is frozen (STALE_DATA)
+
+
+def _ts(v) -> float | None:
+    """ISO-8601 UTC string or epoch seconds -> epoch seconds; None when absent / unreadable."""
+    if v is None or isinstance(v, bool):
+        return None
+    if isinstance(v, (int, float)):
+        return float(v)
+    try:
+        return datetime.fromisoformat(str(v)).timestamp()          # ISO with Z / +00:00 (Python >= 3.11)
+    except ValueError:
+        return None
 
 
 def scalp_forecast(req: dict) -> dict:
-    """Task-A forecast 1/3/5 min on the latest CLOSED M1 (scalp model registry). SHADOW only - never an order permission."""
+    """Task-A forecast 1/3/5 min on the latest CLOSED M1 (scalp model registry). SHADOW only - never an order permission.
+
+    1.46 (I0754): with the bot's `as_of` the newest closed M1 must have closed at most SCALP_MAX_DELAY_S before it, otherwise STALE_DATA
+    (a frozen feed after a disconnect was published as the current forecast). feature_time_utc stays the bar OPEN (BAR_OPEN semantics of
+    quant/checks); bar_close_utc is the first moment the forecast can exist. A request without as_of (older caller) is answered as before."""
     import numpy as np
     from datetime import datetime as _dt
     from . import scalp_features as SF
@@ -131,6 +155,11 @@ def scalp_forecast(req: dict) -> dict:
         _scalp_cache.update(run_id=rid, model=ScalpModel(entry))
     bars = req.get("m1") or []
     t = [int(_dt.fromisoformat(b["open_utc"].replace("Z", "+00:00")).timestamp()) for b in bars]
+    as_of = _ts(req.get("as_of"))
+    if as_of is not None and t and as_of - (t[-1] + 60) > SCALP_MAX_DELAY_S:
+        return {"status": "STALE_DATA", "execution_permission": False,
+                "reason": f"ostatnia zamknięta M1 ({bars[-1]['open_utc']}) zamknięta {as_of - (t[-1] + 60):.0f} s przed as_of "
+                          f"(> {SCALP_MAX_DELAY_S:.0f} s) – feed M1 nieaktualny"}
     X, atr = SF.build(t, [b["o"] for b in bars], [b["h"] for b in bars], [b["l"] for b in bars], [b["c"] for b in bars],
                       [b.get("tv") for b in bars], [b.get("spread_price") for b in bars])
     if not len(X) or np.isnan(X[-1]).any():
@@ -144,8 +173,13 @@ def scalp_forecast(req: dict) -> dict:
         out[hz] = {"p_down": round(float(P[0]), 4), "p_flat": round(float(P[1]), 4), "p_up": round(float(P[2]), 4),
                    "q10_q50_q90_price": None if q is None else [round(c + float(x) * a, 3) for x in q],
                    "status": entry["horizon_status"].get(hz), "model": entry["models"][hz]["selected"]}
-    return {"status": "SHADOW", "run_id": rid, "feature_time_utc": bars[-1]["open_utc"], "horizons": out, "execution_permission": False,
-            "note": "P(UP) nie jest P(TP przed SL) ani oceną transakcji"}
+    ans = {"status": "SHADOW", "run_id": rid, "feature_time_utc": bars[-1]["open_utc"],
+           "bar_close_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(t[-1] + 60)), "horizons": out,
+           "execution_permission": False, "note": "P(UP) nie jest P(TP przed SL) ani oceną transakcji"}
+    warn = getattr(_scalp_cache["model"], "version_warning", None)
+    if warn:                                  # 1.46 (I0619): the pickles loaded, but were trained with another scikit-learn
+        ans["env_warning"] = warn
+    return ans
 
 
 def setup_quality(req: dict) -> dict:
@@ -169,9 +203,13 @@ def setup_quality(req: dict) -> dict:
         return {"status": "UNAVAILABLE", "reason": "FEATURES_MISSING", "pass": False, "execution_permission": False}
     p = float(_scalp_cache["setup"].predict(np.asarray([[float(f[k]) for k in sm["features"]]]))[0])
     thr = sm.get("threshold")
-    return {"status": "SHADOW", "p": round(p, 4), "threshold": thr, "pass": thr is not None and p >= thr, "model": sm["selected"],
-            "run_id": rid, "model_status": entry.get("task_b_status"), "execution_permission": False,
-            "reason": None if thr is not None else "brak progu poprawiającego expectancy w development – filtr nie odrzuca na podstawie modelu"}
+    ans = {"status": "SHADOW", "p": round(p, 4), "threshold": thr, "pass": thr is not None and p >= thr, "model": sm["selected"],
+           "run_id": rid, "model_status": entry.get("task_b_status"), "execution_permission": False,
+           "reason": None if thr is not None else "brak progu poprawiającego expectancy w development – filtr nie odrzuca na podstawie modelu"}
+    warn = getattr(_scalp_cache["setup"], "version_warning", None)
+    if warn:                                  # 1.46 (I0619): the HGB pickle loaded, but was trained with another scikit-learn
+        ans["env_warning"] = warn
+    return ans
 
 
 def main() -> int:

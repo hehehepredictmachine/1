@@ -1,6 +1,6 @@
 """Chart pattern engine (MQ-CHART-1.0.0) - OHLC + CONFIRMED pivots only (no screenshots).
 
-Pivots: swing highs/lows with left = right = 3 bars (strategies.indicators.pivots); a pivot at bar p is KNOWN only after
+Pivots: swing highs/lows with left = right = 3 bars (indicators.series.pivots); a pivot at bar p is KNOWN only after
 bar p+3 has closed (`known_at`). A pattern is never dated before its last pivot became known: detected_at = known time of
 the last anchor; a confirmation (breakout / neckline break) is a CLOSED bar after that.  States:
   FORMING      geometry complete with known pivots, no confirming close yet (a preview - never a trade by itself)
@@ -36,7 +36,7 @@ from __future__ import annotations
 import hashlib
 from datetime import timedelta
 
-from ..strategies import indicators as ind
+from ..indicators import series as ind
 from ..timeutil import TF_SECONDS, iso, parse_iso
 
 VERSION = "MQ-CHART-1.0.0"

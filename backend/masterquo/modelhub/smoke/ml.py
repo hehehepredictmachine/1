@@ -283,14 +283,21 @@ def _legacy(ctx) -> dict:
     job = db.one("SELECT status, detail_json FROM ml_jobs WHERE job_id=?", (st["job_id"],)) or {}
     det = json.loads(job.get("detail_json") or "{}")
     dec = det.get("decisions") or {}
-    champ = ml.registry.champion_id
     dt = time.monotonic() - t0
     cands = ", ".join(str(d.get("family")) + ":" + ("OK" if d.get("passed") else "ODRZUCONY") for d in dec.values())
-    steps = {"train": check(job.get("status") == "DONE" and champ is not None and len(dec) == 2,
+    # 1.46 D6: the bot's job applies the one promotion policy (training/promotion.py) - synthetic samples never make a champion. The
+    # remaining steps need a loaded champion: the best passing candidate is promoted explicitly in this temporary smoke database only.
+    pol = det.get("promotion_policy") or {}
+    gate_ok = ml.registry.champion_id is None and pol.get("role") == "FIXTURE_ONLY"
+    passing = sorted(((m, d) for m, d in dec.items() if d.get("passed")), key=lambda x: x[1].get("family") != "XGBOOST")
+    if job.get("status") == "DONE" and gate_ok and passing:
+        ml.registry.promote(passing[0][0], "SMOKE_TECHNICAL_PROMOTION (dane syntetyczne, tymczasowa baza smoke)")
+    champ = ml.registry.champion_id
+    steps = {"train": check(job.get("status") == "DONE" and gate_ok and champ is not None and len(dec) == 2,
                             f"podproces masterquo.ml.trainer na snapshocie {st['snapshot_id']} ({st['rows']} próbek SYNTHETIC, HIGH): DONE w {dt:.1f} s; "
-                            f"kandydaci {cands}; champion {champ}. "
-                            "Znany problem D6: ml/service.py:366 rejestruje bez allow_promotion=False (etykiety APPROX mogą zostać championem)",
-                            f"job {job.get('status')} {str(det)[:200]}, champion {champ}")}
+                            f"kandydaci {cands}; polityka promocji {pol.get('role')} – bez championa z danych syntetycznych (D6); "
+                            f"champion techniczny {champ} ustawiony jawnie przez Registry.promote w tymczasowej bazie",
+                            f"job {job.get('status')} {str(det)[:200]}, polityka {pol.get('role')}, champion {champ}")}
     if steps["train"]["status"] != "OK":
         return steps
     ctx.step = "artifact"

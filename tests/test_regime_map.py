@@ -1,5 +1,4 @@
 """PMW-UPD-09 R22 MQ_REGIME_MULTI_V2 (T123-T128)."""
-import math
 import unittest
 
 import numpy as np

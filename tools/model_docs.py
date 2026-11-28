@@ -22,6 +22,22 @@ sys.path.insert(0, str(ROOT / "backend"))
 ROLE_RULES = ("OFF = nie liczy; SHADOW = liczy i zapisuje, rola OBSERVE (bez wpływu); ASSIST = tylko po walidacji APPROVED na danych REAL – "
               "może wyłącznie wstrzymać wejście (SH: READY→WAIT, ACTIVE: węzeł MODELS); REQUIRED = `config.decision.required_models` – brak / "
               "nieświeża / przeciwna prognoza blokuje nowe wejście. Żadna rola nie tworzy wejścia ani nie podnosi WAIT.")
+# 1.46 arch (I0395 / I0472): the ASSIST sentence follows what the role really does for the family's result type (FamilyService.assist_effect)
+_ASSIST_TEXT = {
+    "HOLD_DIRECTION": "ASSIST = tylko po walidacji APPROVED na danych REAL – może wyłącznie wstrzymać wejście (SH: READY→WAIT, ACTIVE: węzeł "
+                      "MODELS), gdy P(strona przeciwna) ≥ `families.assist_hold_threshold`",
+    "CONTEXT_VOL": "ASSIST = tylko po walidacji APPROVED na danych REAL – dodaje scenariusz zmienności do widoku ryzyka setupu SH (informacja; "
+                   "limity bez zmian), nie wstrzymuje wejść",
+}
+
+
+def role_rules(f: dict) -> str:
+    """The role sentence of one family card."""
+    eff = f.get("assist_effect") or (f.get("status") or {}).get("assist_effect") or "NONE"
+    assist = _ASSIST_TEXT.get(eff) or (f"ASSIST = niedostępna – typ wyniku `{f.get('task_type')}` nie ma odbiorcy roli ASSIST "
+                                       "(odmowa ASSIST_NO_RECEIVER); wynik działa tylko jako obserwacja")
+    return ("OFF = nie liczy; SHADOW = liczy i zapisuje, rola OBSERVE (bez wpływu); " + assist + "; REQUIRED = `config.decision.required_models` "
+            "– brak / nieświeża / przeciwna prognoza blokuje nowe wejście. Żadna rola nie tworzy wejścia ani nie podnosi WAIT.")
 
 
 def _catalog():
@@ -64,6 +80,12 @@ def _req(d: dict | None) -> str:
     return ", ".join(parts)
 
 
+def _planned(f: dict, sep: str) -> str:
+    """1.46 (I0400 / I0468): declared receivers without a reader in the code - shown apart, never as receivers."""
+    pl = f.get("planned_receivers") or []
+    return f"{sep}planowani, niepodłączeni: {', '.join(pl)}" if pl else ""
+
+
 def main() -> int:
     from masterquo.studio import registry as REG
     mat = REG.matrix()
@@ -72,17 +94,21 @@ def main() -> int:
     reg = _registry()
     # ---------------------------------------------------------------- integration map
     L = ["# Mapa integracji modeli – 1.33.0 (PMW-FAM-1)", "", "Wygenerowane przez `tools/model_docs.py` z katalogu `FamilyService.catalog()`.", "",
-         f"Role: {ROLE_RULES}", "", "| Rodzina | Nazwa | Zadanie / jednostka | TF / horyzonty | Środowisko | Zależności | Odbiorcy |", "|---|---|---|---|---|---|---|"]
+         f"Role: {ROLE_RULES}", "",
+         ("Rola ASSIST działa tylko tam, gdzie wynik ma odbiorcę (kolumna ASSIST): HOLD_DIRECTION = wstrzymanie wejścia przy przeciwnym "
+          "rozkładzie kierunku, CONTEXT_VOL = scenariusz zmienności w widoku ryzyka SH, NONE = rola odrzucana (ASSIST_NO_RECEIVER)."), "",
+         "| Rodzina | Nazwa | Zadanie / jednostka | TF / horyzonty | Środowisko | Zależności | Odbiorcy | ASSIST |", "|---|---|---|---|---|---|---|---|"]
     for f in cat:
         L.append(f"| `{f['id']}` | {f['name']} | {f['task_type']} / {f['unit']} | {_tf_h(f, reg, '–')} | "
-                 f"{f['runtime']} | {', '.join(f.get('deps') or []) or '–'} | {'<br>'.join(f.get('receivers') or [])} |")
+                 f"{f['runtime']} | {', '.join(f.get('deps') or []) or '–'} | {'<br>'.join(f.get('receivers') or [])}{_planned(f, '<br>')} | {f.get('assist_effect') or 'NONE'} |")
     L += ["", "## Gdzie prognozy trafiają w działającym bocie", "",
           "* **SCALPING / HEDGING** – `SHService.evaluate` → `FamilyService.setup_context` (kontekst w setupie, `family_context`) i "
           "`apply_to_setup` (ASSIST: READY→WAIT z powodem w checklistcie); koordynator PMW-ARC-1 zapisuje DecisionRecord i stosuje REQUIRED.",
           "* **ACTIVE (S01–S12)** – `engine.light_cycle` → `DecisionCoordinator.model_gate_active` → węzeł `MODELS` drzewa decyzji (przed hashem "
           "decyzji), więc karta sygnału i bramka wykonania widzą ten sam werdykt.",
           "* **Panel** – Centrum treningu → „Rodziny modeli 1.33” (`/api/v1/families`, `/api/v1/families/predictions`); Koordynator decyzji (`#/decyzje`).",
-          "* **Agent** – `modelhub.adapters.all_predictions` (kontekst rozmowy, zamrożony snapshot).",
+          ("* **Quant / API** – `modelhub.adapters.all_predictions` (migawka Quant, `/api/v1/models/predictions`, `/api/v1/models/evidence`). "
+           "Agent nie czyta prognoz rodzin – odbiorcy AGENT / RISK / STRATEGY / PORTFOLIO są tylko planowani (niepodłączeni w 1.46)."),
           "* **TH_RF / TH_SVM / TH_XGB** – przez trainhub (Centrum treningu, paczki aktywowane ręcznie); **SEQ_GRU_EVENT** – adapter modelu zdarzeń MM.", ""]
     (ROOT / "docs" / "MAPA_INTEGRACJI_MODELI.md").write_text("\n".join(L) + "\n", encoding="utf-8")
     # ---------------------------------------------------------------- data requirements
@@ -113,7 +139,9 @@ def main() -> int:
              f"| Interwał / horyzonty | {_tf_h(f, reg)} |",
              f"| Środowisko | {f['runtime']} ({', '.join(f.get('deps') or []) or 'bez dodatkowych bibliotek'}) |",
              f"| Dane | {_req(f.get('data_requirements'))} |", f"| Odbiorcy | {', '.join(f.get('receivers') or [])} |",
-             f"| Role | {ROLE_RULES} |", "",
+             *([f"| Odbiorcy planowani | {', '.join(f['planned_receivers'])} – niepodłączeni w 1.46 (brak odbiorcy w kodzie) |"]
+               if f.get('planned_receivers') else []),
+             f"| Role | {role_rules(f)} |", "",
              "## Walidacja", "",
              "Bramka promocji liczona wyłącznie na części rozwojowej (walidacja), holdout raportowany osobno; kryteria muszą być spełnione, "
              "inaczej artefakt ma stan VALIDATION_FAILED i nie może dostać roli ASSIST.", ""]

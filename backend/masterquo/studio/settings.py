@@ -6,7 +6,10 @@ import json
 import os
 from pathlib import Path
 
-DEFAULTS = {"port": 8780, "bot_port": 8765, "bot_data_dir": None, "profile": "smoke", "continue_after_failure": True}
+# 1.46 arch (I0125): bot_port None = automatic - server.port from the bot's own config.json (config.server_port, the same file the bot
+# listens by; paths.DEFAULT_PORT when it cannot be read). 1.45 had a fixed default port here: a changed server.port never reached Studio.
+# A port the user saved explicitly stays as saved (load() reports bot_port_source SETTINGS / BOT_CONFIG).
+DEFAULTS = {"port": 8780, "bot_port": None, "bot_data_dir": None, "profile": "smoke", "continue_after_failure": True}
 # 1.46: continue_after_failure is RESERVED - nothing reads it yet: the queue always goes on with the next job after a failed one (stopping
 # the queue needs a queue-paused state + a resume control in the UI). The key stays (settings files / API keep it).
 PROFILES = ("smoke", "research", "full")                     # trainhub / family budgets (frontend studio/main.tsx offers the same three)
@@ -57,17 +60,34 @@ def bot_data_dir(s: dict | None = None) -> Path:
         return paths.ROOT_DIR / "data"
 
 
-def load() -> dict:
-    p = data_dir() / "settings.json"
+def bot_server_port(s: dict | None = None) -> int:
+    """I0125: the port the BOT listens on - server.port of its config.json (read-only, never written), paths.DEFAULT_PORT if unreadable."""
+    from ..config import server_port
+    return server_port(bot_data_dir(s) / "config.json")
+
+
+def _stored() -> dict:
+    """Validated stored values (DEFAULTS keys only); a bad value stored by 1.45.0 (no validation) = the default, never a 500."""
     try:
-        s = {**DEFAULTS, **json.loads(p.read_text(encoding="utf-8"))}
+        raw = json.loads((data_dir() / "settings.json").read_text(encoding="utf-8"))
+        s = {**DEFAULTS, **(raw if isinstance(raw, dict) else {})}
     except (OSError, ValueError, TypeError):
         return dict(DEFAULTS)
-    for k, dv in DEFAULTS.items():           # 1.46: a bad value stored by 1.45.0 (no validation) = the default, never a 500 on every request
+    out = {}
+    for k, dv in DEFAULTS.items():
         try:
-            s[k] = _check(k, s[k])
+            out[k] = None if (k == "bot_port" and s[k] is None) else _check(k, s[k])
         except ValueError:
-            s[k] = dv
+            out[k] = dv
+    return out
+
+
+def load() -> dict:
+    s = _stored()
+    if s["bot_port"] is None:                # I0125: automatic - follow the bot's server.port
+        s["bot_port"], s["bot_port_source"] = bot_server_port(s), "BOT_CONFIG"
+    else:
+        s["bot_port_source"] = "SETTINGS"
     return s
 
 
@@ -75,12 +95,12 @@ def save(patch: dict) -> dict:
     clean = {k: _check(k, v) for k, v in patch.items() if k in DEFAULTS}          # 1.46: validated (ValueError -> 400)
     if clean.get("bot_data_dir") is not None and not Path(clean["bot_data_dir"]).is_dir():
         raise ValueError("bot_data_dir: katalog nie istnieje")
-    s = {**load(), **clean}
+    s = {**_stored(), **clean}                # I0125: an automatic bot_port stays automatic (stored as null, resolved by load())
     p = data_dir() / "settings.json"
     tmp = p.with_suffix(".tmp")
     tmp.write_text(json.dumps(s, indent=1), encoding="utf-8")
     tmp.replace(p)
-    return s
+    return load()
 
 
 class BotConfig:

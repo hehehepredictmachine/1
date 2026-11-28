@@ -2,7 +2,6 @@
 modify or close an order or change risk / STOP / execution mode."""
 from __future__ import annotations
 
-import collections
 import hashlib
 import json
 import math
@@ -11,26 +10,23 @@ import time
 
 from fastapi import Body, HTTPException
 
-from .. import paths
 from ..timeutil import TF_SECONDS
-from .app import body_num, deals_coverage_from_utc
+from .common import body_num  # 1.46 arch I0081: not from .app (import cycle)
 
 
 def register(app, rt) -> None:
-    _lock = threading.RLock()            # 1.46: re-entrant - the "universe" factory calls lazy("hl") (a plain Lock deadlocked every lazy() route)
-    _svc: dict = {}
-
-    def lazy(name, factory):
-        with _lock:
-            if name not in _svc:
-                _svc[name] = factory()
-            return _svc[name]
+    # 1.46 arch (I0088/I0092): the services of these routes belong to the Runtime (rt.wf32_services; rt.wf32 is app.state.wf32) - the
+    # routes only use them. A runtime without them (tests, tools) gets its own instance here; nothing here starts a thread.
+    from ..wf32_services import Wf32Services
+    svc = getattr(rt, "wf32_services", None)
+    if not isinstance(svc, Wf32Services):
+        svc = Wf32Services(rt)
+    lazy = svc.lazy
 
     # ------------------------------------------------------------------ TASK 019: TraderLifeGame
-    from ..trader_life_game import GameError, GameService, ReadOnlyAccountView
+    from ..trader_life_game import GameError
 
-    def tlg():
-        return lazy("tlg", lambda: GameService(paths.data_dir() / "trader_life_game", ReadOnlyAccountView.from_bridge(getattr(rt, "bridge", None))))
+    tlg = svc.tlg
 
     def g(fn, *a, **k):
         try:
@@ -257,21 +253,12 @@ def register(app, rt) -> None:
     # ------------------------------------------------------------------ TASK 001-004: multi-market plane + order flow (read-only)
     from ..markets import universe as MU
     from ..orderflow import analytics as OA
-    from ..orderflow.trades import SIDE_SEMANTICS, TradeLedger
+    from ..orderflow.trades import SIDE_SEMANTICS
 
-    def _hl():
-        b = getattr(rt, "baskets", None)
-        if b is not None and getattr(b, "hl", None) is not None:
-            return b.hl
-        from ..baskets.hyperliquid import Hyperliquid
-        return lazy("hl", Hyperliquid)
-
-    def universe():
-        return lazy("universe", lambda: MU.Universe(_hl()))
+    _hl, universe = svc.hl, svc.universe                   # lazy, owned by the Runtime (I0088)
 
     _BR = {"CRYPTO": MU.CryptoMarketBridge, "INDICES": MU.IndicesMarketBridge, "FOMO_STOCK_PERPS": MU.FomoStockPerpsBridge}
-    _ledger = TradeLedger(max_per_instrument=200_000)     # 1.46: bounded (the oldest events of an instrument are dropped first)
-    _ledger_lock = threading.Lock()                         # 1.46: one ledger, many request threads
+    _ledger, _ledger_lock = svc.ledger, svc.ledger_lock    # 1.46: bounded, one ledger + its lock (I0088: owned by the Runtime)
 
     def bridge(market: str):
         if market not in _BR:
@@ -342,7 +329,7 @@ def register(app, rt) -> None:
     from ..mm.bat_encoder import BATEncoder
 
     _ranker: dict = {"bundle": None, "manifest": None}
-    _journal: collections.deque = collections.deque(maxlen=500)      # 1.46: results of PT / DT calls since start (export: pt-skill, dt-ranker)
+    _journal = svc.journal          # 1.46: results of PT / DT calls since start (export: pt-skill, dt-ranker); I0088: owned by the Runtime
 
     def _remember(kind: str, inputs, n: int, result: dict, **extra) -> None:
         digest = hashlib.sha256(json.dumps(inputs, sort_keys=True, default=str).encode()).hexdigest()
@@ -382,7 +369,12 @@ def register(app, rt) -> None:
     @app.get("/api/v1/models/dt-ranker/status")
     def dtr_status():
         return {"schema": DT.SCHEMA, "feature_schema": DT.FEATURE_SCHEMA, "mode": DT.DEFAULT_POLICY["mode"], "ready": _ranker["bundle"] is not None,
-                "manifest": _ranker["manifest"], "note": "osobna rodzina; legacy DECISION_TREE / XGBOOST / selektor bez zmian"}
+                "manifest": _ranker["manifest"], "note": "osobna rodzina; legacy DECISION_TREE / XGBOOST / selektor bez zmian",
+                # 1.46 arch (I0338/I0339/I0340): an honest description - the application has no training job, no artifact store and no
+                # candidate source for this ranker (no specification), so /rank always answers FALLBACK_BASELINE / MODEL_NOT_READY
+                "training_path": "NOT_IMPLEMENTED",
+                "training_note": "Aplikacja nie trenuje tego rankera i nie ma rejestru jego artefaktów ani źródła kandydatów bota (brak "
+                                 "specyfikacji); /api/v1/models/dt-ranker/rank zawsze zwraca FALLBACK_BASELINE (MODEL_NOT_READY), tryb SHADOW."}
 
     @app.post("/api/v1/models/dt-ranker/rank")
     def dtr_rank(body: dict = Body(...)):
@@ -447,8 +439,8 @@ def register(app, rt) -> None:
     def bootstrap_status():
         b = getattr(rt, "bootstrap", None)
         if b is None:
-            from ..bootstrap import Bootstrap
-            b = lazy("bootstrap_view", lambda: Bootstrap(rt))
+            # 1.46 arch (I0088/I0092): no second Bootstrap instance here - the Runtime builds the one (Runtime.__init__)
+            return {"status": "NOT_STARTED", "reason": "bootstrap nie został utworzony przez Runtime", "components": []}
         return b.status()
 
     @app.put("/api/v1/bootstrap")
@@ -471,82 +463,11 @@ def register(app, rt) -> None:
         return DK.save_display(*(body.get(k, cur[k]) for k in DK.DISPLAY_KEYS))
 
     # ------------------------------------------------------------------ TASK 017: Telegram account center (outbound only, OFF by default)
-    from ..notify.account_center import AccountCenter, CenterError
+    from ..notify.account_center import CenterError
 
-    def _acct_roi(days: int) -> dict:
-        b = rt.bridge
-        with b._lock:
-            deals = list(b.deals)
-            cover = deals_coverage_from_utc(b)        # 1.46: deposits older than the deal history (deals_history_days) counted as profit
-        from .. import stats as _ST
-        off = b.clock.offset
-        r = _ST.account_roi(rt.db, b.account_key, deals, off, days=days, deals_from_utc=cover) or {}
-        # 1.46: account_roi has no deals / net / currency keys - the report always showed "—". Net = equity change minus external flows
-        # (same Modified-Dietz window), deals = trade deals in that window; unknown stays None ("—").
-        net = deals_n = None
-        if r.get("status") == "OK" and None not in (r.get("start_equity"), r.get("end_equity"), r.get("net_flows")):
-            net = round(r["end_equity"] - r["start_equity"] - r["net_flows"], 2)
-            from ..timeutil import parse_iso as _pi
-            t0, t1 = _pi(r["period_from"]).timestamp(), _pi(r["period_to"]).timestamp()
-            deals_n = sum(1 for d in deals if d.get("type") in (0, 1) and off is not None and t0 < float(d.get("time") or 0) - off <= t1)
-        cur = (b.account_status() or {}).get("currency") if hasattr(b, "account_status") else None
-        return {"roi_pct": r.get("roi_pct"), "status": r.get("status") or ("OK" if r.get("roi_pct") is not None else "NO_DATA"),
-                "deals": deals_n, "net": net, "currency": cur}
-
-    def _acct_deals_fn(b):
-        """1.46: bridge.deals is [] until the first history poll and still holds the PREVIOUS account's deals after an account switch
-        (connect() / _poll_account() do not clear it, a deal carries no account) - the Telegram baseline written from it replayed the
-        whole history, and the other account's deals were reported as the pinned account's events. The list is tagged with the account
-        it was loaded for (bridge "deals" notification, sent by _poll_deals in the bridge thread); None = NOT LOADED for this account."""
-        tracked = hasattr(b, "add_listener")
-        owner = {"key": None}
-        if tracked:
-            b.add_listener(lambda kind, data: owner.update(key=b.account_key) if kind == "deals" else None)
-
-        def deals():
-            with b._lock:
-                if getattr(b, "deals_loaded_at", None) is None or (tracked and owner["key"] != b.account_key):
-                    return None
-                return [dict(d) for d in (b.deals or [])]
-        return deals
-
-    def acct():
-        def make():
-            b = getattr(rt, "bridge", None)
-            tg = getattr(rt, "telegram", None)
-            magic = getattr(getattr(rt.cfg.get(), "mt5", None), "magic_number", None) if getattr(rt, "cfg", None) else None
-            magics = [magic] if magic else []
-            try:                                                   # 1.46: SH engine deals (own magic) are PMW_ENGINES too, not EXTERNAL_MAGIC
-                from ..sh import config as _SHC
-                if _SHC.load().get("magic_number"):
-                    magics.append(int(_SHC.load()["magic_number"]))
-            except Exception:  # noqa: BLE001 - no SH config: only the main magic
-                pass
-            return AccountCenter(paths.data_dir() / "telegram_account", deliver=(tg.account_event if tg else None),
-                                 deals_fn=_acct_deals_fn(b) if b else None,
-                                 account_fn=(lambda: b.account_status()) if b else None, pmw_magics=magics,
-                                 roi_fn=_acct_roi if b else None)
-        return lazy("acct", make)
-
-    def _acct_loop():
-        import logging as _lg
-        import time as _t
-        lg, last = _lg.getLogger("masterquo.telegram_account"), {}
-        stop = getattr(rt, "_stop", None)
-        # 1.46: ends with Runtime.stop() (was `while True` - after the engine stopped it kept polling and rewriting the state every 10 s)
-        while not (stop.wait(10) if isinstance(stop, threading.Event) else (_t.sleep(10) or False)):
-            # 1.46: each step on its own (a failing report no longer blocks the delivery of queued events) and errors are logged
-            # (at most once per 10 min per step) instead of disappearing
-            for step in ("poll", "queue_reports", "flush"):
-                try:
-                    getattr(acct(), step)()
-                except Exception as exc:  # noqa: BLE001 - never breaks the engine
-                    if _t.time() - last.get(step, 0) > 600:
-                        last[step] = _t.time()
-                        lg.warning("telegram account %s: %s: %s", step, type(exc).__name__, str(exc)[:300])
-    if getattr(rt, "bridge", None) is not None and not getattr(rt, "_acct_thread", None):
-        rt._acct_thread = threading.Thread(target=_acct_loop, name="telegram-account", daemon=True)
-        rt._acct_thread.start()
+    # 1.46 arch (I0088/I0092): the AccountCenter, its ROI and deals sources live in wf32_services (owned by the Runtime); the account loop
+    # (poll / queue_reports / flush every 10 s) is started by Runtime.start - after the licence unlock, real MT5 only - not here
+    _acct_roi, acct = svc.acct_roi, svc.acct
 
     def ac(fn, *a):
         try:
@@ -628,7 +549,7 @@ def register(app, rt) -> None:
             raise HTTPException(400, "timeframe: M5 | M15")
         return SCC.evaluate([{**b, "h": float(b["h"]), "l": float(b["l"]), "c": float(b["c"])} for b in _bars(timeframe, 400)])
 
-    _trials = ASG.TrialLedger(paths.data_dir() / "apollo" / "asge_trials.jsonl")      # 1.46: durable append-only ledger
+    _trials = svc.trials             # 1.46: durable append-only ledger; I0088: owned by the Runtime
 
     @app.post("/api/v1/asge/run")
     def asge_run(body: dict = Body(...)):
@@ -686,5 +607,4 @@ def register(app, rt) -> None:
         return r
 
     # 1.46: the exporters (api/export_routes.py) read THESE objects - one ledger / journal, never a copy
-    app.state.wf32 = {"ledger": _ledger, "trials": _trials, "shadow_journal": _journal, "hl": _hl, "universe": universe, "tlg": tlg,
-                      "acct": acct, "acct_roi": _acct_roi}
+    app.state.wf32 = svc.public          # 1.46 arch (I0088): the same dict object as rt.wf32 (alias kept for the exporters)

@@ -1,6 +1,8 @@
 //+------------------------------------------------------------------+
 //| PMW_MR2_Fit.mq5 - small native Fit (transform biases + ridge)     |
 //| on a TRAIN file exported by Python (`minirocket export-train`):   |
+//| 1.46: export-train is NOT_IMPLEMENTED in the CLI (no lab protocol |
+//| function returns the TRAIN rows of a candidate) - no input file.  |
 //| sections XWIN (n*L f4), YCLS (n*H i4, -1 missing), RVAL (n*H f8). |
 //| DUAL Cholesky only when n <= 2048; otherwise blocked CG with a    |
 //| diagonal preconditioner; non-convergence -> SOLVER_NOT_CONVERGED |

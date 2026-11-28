@@ -10,6 +10,8 @@ import time
 from pathlib import Path
 
 INSTR = ("XAUUSD", "BTC")
+EXPORT_INFO_HELP = ("polecenie informacyjne – NIE eksportuje (kod wyjścia 2). Eksport historii REAL_USER_DATA: 00_TRENING_START.bat → Eksport "
+                    "albo `python -m masterquo training export` (działający bot, jeden worker MT5)")
 
 
 def _print(x) -> None:
@@ -46,7 +48,8 @@ def main(argv: list[str]) -> int:
     common(s, False, False)
     s.add_argument("--symbol")
     s.add_argument("--source", choices=("bridge", "import"), default="bridge")
-    s = sub.add_parser("export")
+    # 1.46 arch (I0135): an informational command (it never exports - exit code 2 kept for the .bat launchers); the help says so
+    s = sub.add_parser("export", help=EXPORT_INFO_HELP, description=EXPORT_INFO_HELP)
     common(s, False, False)
     s.add_argument("--symbol")
     s.add_argument("--months", type=int, default=12)
@@ -102,8 +105,8 @@ def main(argv: list[str]) -> int:
                     "blocked": None if ds else "BLOCKED_NO_REAL_DATA"})
             return 0 if ds else 2
         if a.c == "export":
-            print("[INFO] Eksport historii wykonuje działający bot przez istniejący worker MT5 (00_TRENING_START.bat → Eksport). "
-                  "Ta komenda nie łączy się z terminalem (bez drugiego initialize).")
+            print("[INFO] Polecenie informacyjne. Eksport historii wykonuje działający bot przez istniejący worker MT5 (00_TRENING_START.bat → "
+                  "Eksport albo `python -m masterquo training export`). Ta komenda nie łączy się z terminalem (bez drugiego initialize).")
             return 2
         if a.c in ("calibrate", "train-markov", "dataset", "pipeline"):
             ds, err = _raw(a.asset, a.dataset, a.allow_synthetic_fixture)
@@ -297,11 +300,36 @@ def train_markov(inst: str, dev: list[dict], point: float, tick: float, meta: di
     md.save(d / "diff")
     role = "TEST_ONLY" if meta.get("data_kind") != "REAL_USER_DATA" else "RESEARCH"
     # 1.46 arch: provenance stored next to the model and shown by the live SI cell (a TEST_ONLY fit on synthetic data was loaded without
-    # any marking). Loading TEST_ONLY models at all is unchanged (decision D23 in docs/arch146/ETAP2_PROJEKT.md).
+    # any marking). Decision D23 (b): the SI cell does not load a TEST_ONLY model (flow_context/service._Key._load_models; tests opt in
+    # with PMW_FLOW_ALLOW_TEST_MODEL=1); RESEARCH (REAL_USER_DATA) and a 1.46.0 run without meta.json are loaded. A TEST_ONLY fit does not
+    # replace a RESEARCH model in markov/latest.txt (latest_unchanged); a RESEARCH fit always becomes the latest.
     (d / "meta.json").write_text(json.dumps({"data_kind": meta.get("data_kind"), "role": role}), encoding="utf-8")
-    (FT.root(inst) / "markov" / "latest.txt").write_text(str(d), encoding="utf-8")
+    latest = FT.root(inst) / "markov" / "latest.txt"
+    keep = _research_latest(latest) if role == "TEST_ONLY" else None
     out.update(dir=str(d), data_kind=meta.get("data_kind"), role=role)
+    if keep is not None:
+        # D23 review: a TEST_ONLY fit (never loaded into the SI cell) must not displace a RESEARCH model (REAL_USER_DATA) from latest.txt -
+        # the cell would lose the real model and show MODEL_TEST_ONLY_NOT_LOADED; the test fit stays saved in its own folder
+        out["latest_unchanged"] = {"model_dir": str(keep), "model_role": "RESEARCH",
+                                   "reason": "model TEST_ONLY nie zastępuje modelu RESEARCH (REAL_USER_DATA) w markov/latest.txt (decyzja D23)"}
+        out["si_cell"] = f"bez zmian – komórka SI dalej używa modelu RESEARCH {keep.name}; model TEST_ONLY zapisany, nieaktywny (decyzja D23)"
+        return out
+    latest.write_text(str(d), encoding="utf-8")
+    if role == "TEST_ONLY":
+        out["si_cell"] = "MODEL_TEST_ONLY_NOT_LOADED – model z danych nie-REAL nie jest wczytywany do komórki SI (decyzja D23)"
     return out
+
+
+def _research_latest(latest: Path) -> Path | None:
+    """The run named by markov/latest.txt when it is a loadable RESEARCH fit (meta.json role RESEARCH = REAL_USER_DATA), else None."""
+    try:
+        d = Path(latest.read_text(encoding="utf-8").strip())
+        meta = json.loads((d / "meta.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    if isinstance(meta, dict) and meta.get("role") == "RESEARCH" and (d / "markov3.json").is_file():
+        return d
+    return None
 
 
 if __name__ == "__main__":

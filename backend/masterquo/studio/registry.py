@@ -75,15 +75,16 @@ def tasks(cfg_store=None) -> list[dict]:
                              state="SUPPORTED" if avail.get(mid) else "BLOCKED_DEPENDENCY",
                              reason=None if avail.get(mid) else "biblioteka niedostępna", transfer="TRAINHUB_REGISTRY", config={"models": [mid]}))
         from ..modelhub.families import registry as famreg
+        from ..quant import ids as I  # 1.46 arch (I0009): alias constants
         for fid, f in famreg().items():
-            if fid in ("TH_RF", "TH_XGB", "TH_SVM"):
+            if fid in I.TRAINHUB_FAMILY_ALIASES:
                 continue                                                        # trained through the TRAINHUB tasks above
             kind = f.DATA.get("kind")
             cat = {"TRAINED": "TRAINABLE", "ESTIMATED": "FITTABLE", "VALIDATED_RULES": "CALIBRATABLE", "MEASUREMENT": "TRAINABLE",
                    "PRETRAINED_ADAPTER": "EXTERNAL"}[f.KIND]
             impl, why = f.implementation()
             st = "SUPPORTED" if impl == "AVAILABLE" else "BLOCKED_DEPENDENCY"
-            if fid == "SEQ_GRU_EVENT":
+            if fid == I.EVENT_GRU_FAMILY:
                 st, why = "EXTERNAL", "trening w Centrum MM (mm/event_engine) – Studio pokazuje stan, nie trenuje drugi raz"
             if kind == "MULTI_SERIES":
                 # 1.46: Studio exports ONLY the task's own instrument - pair / basket tasks (PAIR_COINT, STATARB) were SUPPORTED with export /

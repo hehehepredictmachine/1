@@ -141,8 +141,11 @@ class StructureIntelligenceService:
                 cells[tf] = self.cell(tf, bars.get(tf) or [], tick, zones, instrument)
             except Exception as exc:                            # noqa: BLE001
                 cells[tf] = {"tf": tf, "status": "ERROR", "error": type(exc).__name__}
+        # w2 (I0041): the id depends on the cells only - known before the forecast, so its si_forecasts rows carry it (was always NULL)
+        sid = "SIS-" + hashlib.sha256(json.dumps({"i": instrument, "a": as_of, "c": {k: v.get("last_closed_open") for k, v in cells.items()}},
+                                                 sort_keys=True).encode()).hexdigest()[:16]
         try:
-            fc = self.forecast(bars, instrument, tick, as_of)
+            fc = self.forecast(bars, instrument, tick, as_of, snapshot_id=sid)
         except Exception as exc:                                # noqa: BLE001 - 1.46: a failing SHADOW forecast lost every TF cell
             fc = {"forecast_status": "ABSTAIN", "reason": f"FORECAST_ERROR: {type(exc).__name__}: {exc}"[:200]}
         try:
@@ -152,8 +155,6 @@ class StructureIntelligenceService:
         with self._lock:
             self.seq += 1
             seq = self.seq
-        sid = "SIS-" + hashlib.sha256(json.dumps({"i": instrument, "a": as_of, "c": {k: v.get("last_closed_open") for k, v in cells.items()}},
-                                                 sort_keys=True).encode()).hexdigest()[:16]
         snap = {"snapshot_id": sid, "seq": seq, "instrument": instrument, "as_of": as_of, "computed_at": iso(utcnow()), "cells": cells,
                 "divergences": self.divergences(cells), "forecast": fc, "neutralization": neu,
                 "quotes": self.quotes_public(compact=True), "native": self.native_status(instrument, poll=False),
@@ -291,13 +292,18 @@ class StructureIntelligenceService:
         now_ms = int(time.time() * 1000)
         snap = eng.snapshot(now_ms)
         org = eng.origin_ms / 1000.0
-        for fc in eng.emit(snap, now_ms):
-            self.db.execute("INSERT OR IGNORE INTO quote_forecasts(forecast_id, context, side, scale, issued_at, target_at, payload) VALUES (?,?,?,?,?,?,?)",
-                            (fc["forecast_id"], fc["context"], fc["side"], fc["scale"], iso(datetime.fromtimestamp(org + fc["issued_s"], timezone.utc)),
-                             iso(datetime.fromtimestamp(org + fc["target_s"], timezone.utc)), json.dumps(fc, default=str)))
-        for m in eng.score(now_ms):
-            self.db.execute("INSERT OR IGNORE INTO quote_outcomes(forecast_id, status, scored_at, outcome, error, payload) VALUES (?,?,?,?,?,?)",
-                            (m["forecast_id"], m["status"], iso(utcnow()), m.get("outcome"), m.get("error"), json.dumps(m, default=str)))
+        rows_f = [(fc["forecast_id"], fc["context"], fc["side"], fc["scale"], iso(datetime.fromtimestamp(org + fc["issued_s"], timezone.utc)),
+                   iso(datetime.fromtimestamp(org + fc["target_s"], timezone.utc)), json.dumps(fc, default=str)) for fc in eng.emit(snap, now_ms)]
+        rows_o = [(m["forecast_id"], m["status"], iso(utcnow()), m.get("outcome"), m.get("error"), json.dumps(m, default=str))
+                  for m in eng.score(now_ms)]
+        if rows_f or rows_o:
+            # 1.46 arch D14: one write transaction per snapshot (was one BEGIN IMMEDIATE / COMMIT per row in the bot's main database),
+            # same rows; no retention here (deleting history is the owner's decision)
+            with self.db.tx() as con:
+                con.executemany("INSERT OR IGNORE INTO quote_forecasts(forecast_id, context, side, scale, issued_at, target_at, payload) "
+                                "VALUES (?,?,?,?,?,?,?)", rows_f)
+                con.executemany("INSERT OR IGNORE INTO quote_outcomes(forecast_id, status, scored_at, outcome, error, payload) VALUES (?,?,?,?,?,?)",
+                                rows_o)
         pub = {k: v for k, v in snap.items() if k != "_fits"}
         pub.update(instrument=inst, symbol=sym, source=r.get("source"), clock_transform=r.get("clock_transform"),
                    last_tick_at=iso(datetime.fromtimestamp(eng.last_tick_ms / 1000.0, timezone.utc)), computed_at=iso(utcnow()))
@@ -330,7 +336,7 @@ class StructureIntelligenceService:
                 "collector": self.quote_status, "note": "estymacja SE ≠ trafność prognozy; R² względem persistence, null przy stałym celu"}
 
     # ------------------------------------------------------------ forecast (SHADOW artefact only) + archive + maturation
-    def forecast(self, bars: dict, instrument: str, tick: float, as_of: str | None) -> dict:
+    def forecast(self, bars: dict, instrument: str, tick: float, as_of: str | None, snapshot_id: str | None = None) -> dict:
         from . import structure_task as T
         try:
             reg = T._reg(instrument)
@@ -351,7 +357,7 @@ class StructureIntelligenceService:
             for hd in out["heads"]:
                 try:
                     self.db.execute("INSERT OR IGNORE INTO si_forecasts(instrument, task_id, model_id, as_of, horizon, snapshot_id, emitted_at, payload) "
-                                    "VALUES (?,?,?,?,?,?,?,?)", (instrument, T.TASK_MOVE, out["artifact_id"], out["as_of"], hd["h_bars"], None, iso(utcnow()),
+                                    "VALUES (?,?,?,?,?,?,?,?)", (instrument, T.TASK_MOVE, out["artifact_id"], out["as_of"], hd["h_bars"], snapshot_id, iso(utcnow()),
                                                                  json.dumps(dict(hd, anchor_close=out["anchor_close"], anchor_atr=out["anchor_atr"]))))
                 except Exception:                               # noqa: BLE001
                     pass

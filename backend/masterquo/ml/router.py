@@ -9,8 +9,11 @@ resumed) and starts the one of the new instrument. Everything else is delegated 
 from __future__ import annotations
 
 import threading
+import time
 
 from .service import MLService
+
+JOIN_TIMEOUT_S = 10.0          # 1.46 arch (I0096): how long switch() waits for the old service's threads before closing its database
 
 
 def ml_store(inst: str, main_db=None):
@@ -63,12 +66,31 @@ class MLRouter:
                 return False
             old = self.cur
             old.stop()
+            self._close_old_db(old)
             new = self._make(inst)
             object.__setattr__(self, "cur", new)
             if self._started:
                 new.start()
             self._a[4].info("ML", "INSTRUMENT", f"Legacy ML: przełączono na bazę instrumentu {new.inst} ({new.root})")
             return True
+
+    def _close_old_db(self, old) -> None:
+        """1.46 arch (I0096): the old instrument's database was never closed on a switch. Closed only AFTER old.stop() and after its
+        worker threads ended (joined, bounded wait) and NEVER when it is the main database (XAUUSD uses masterquo.sqlite). Database.close()
+        closes the connection of the calling thread only - connections of other threads (an in-flight gate / API call on the old
+        service) are untouched, so no running reader can hit a closed connection (the engine's ML gate falls back on errors)."""
+        db = getattr(old, "db", None)
+        if db is None or db is self._a[1]:
+            return
+        end = time.monotonic() + JOIN_TIMEOUT_S
+        for t in list(getattr(old, "_threads", None) or []):
+            t.join(max(0.0, end - time.monotonic()))
+            if t.is_alive():
+                return                                 # still working - leave the database to the garbage collector, as before
+        try:
+            db.close()
+        except Exception as exc:                       # noqa: BLE001 - closing never stops the switch
+            self._a[4].warn("ML", "DB_CLOSE_FAILED", f"Legacy ML: nie zamknięto bazy instrumentu {getattr(old, 'inst', '?')}: {exc}"[:300])
 
     def __getattr__(self, name):
         return getattr(object.__getattribute__(self, "cur"), name)

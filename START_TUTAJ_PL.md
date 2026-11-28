@@ -35,9 +35,16 @@
   prognozy „ostatnia cena”. Szczegóły: `docs/MIGRACJA_FINCAST_GRANITE_1_40_PL.md`, `docs/WYDAJNOSC_UI_1_40_PL.md`.
 
 ## Nowe w 1.39 – LIVE od startu, GARCH, intro i menu Galaxy, WTC PEPE 2.1
-* **Bot startuje w AUTO LIVE** i przy pierwszej decyzji wiąże się z zalogowanym rachunkiem **REAL** (prawdziwe pieniądze). Bramki walidacji
-  są ostrzeżeniami; STOP, limity ryzyka, spread, deduplikacja, uzgadnianie z MT5 i wymóg rachunku REAL działają. Wyłączenie: STOP albo
-  `data\config.json` → `"execution": {"start_mode": "SIGNALS", "live_autobind": false}`.
+* **Nieaktualne (arch146 D1): bot NIE startuje w AUTO LIVE.** Ustawienie `execution.start_mode` (domyślnie `AUTO_LIVE`) nie jest
+  stosowane przy starcie – bot startuje w ostatnio zapisanym trybie `execution.mode` (przy pierwszym starcie PAPER); status trybu pokazuje
+  `start_mode_effective: NOT_APPLIED`. AUTO LIVE (prawdziwe pieniądze) włącza się tylko wyborem w panelu z potwierdzeniem `LIVE <login>` –
+  ten wybór jest zapisywany i **przetrwa restart**. `execution.live_autobind` wiąże rachunek **REAL** sam tylko wtedy, gdy zapisany tryb
+  to już AUTO LIVE bez potwierdzonego rachunku. Bramki walidacji są ostrzeżeniami; STOP, limity ryzyka, spread, deduplikacja, uzgadnianie
+  z MT5 i wymóg rachunku REAL działają.
+* **Wyłączenie LIVE:** w panelu zmień tryb wykonania na **SIGNALS** albo **PAPER** („Zastosuj tryb wykonania”, `POST /api/v1/mode`) –
+  zmiana jest zapisywana i przetrwa restart. Przy zamkniętym bocie to samo daje `data\config.json` →
+  `"execution": {"mode": "SIGNALS", "bound_account": null}`. **STOP nie przetrwa restartu** (po ponownym uruchomieniu nowe wejścia są
+  znów dozwolone), a zmiana `start_mode` albo `live_autobind` **nie wyłącza** zapisanego AUTO LIVE.
 * **GARCH** dla PMW_HG09: Strategie → Pakiet 20 → „PMW_HG09 – zmienność” (wymaga wytrenowanego i aktywnego VOL_GARCH).
 * **Intro** `$PEPEMARKET WIZARD` (Esc / POMIŃ INTRO; Ctrl+Alt+B ponownie) i **menu Galaxy** z 7 planetami (`#/menu`, edytor „Projektuj”);
   Neural City: `#/neural-city`. **WTC PEPE → CUSTOMIZE CHART**: Chart Lab 2.1 i Session Volume Profile.

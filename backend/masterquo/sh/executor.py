@@ -8,6 +8,9 @@ the same account the plan was opened on (the 1.14 Execution Lock is withdrawn, u
 
 Every action is claimed in sh_actions before the terminal is touched (idempotency): a repeated event reuses the stored result,
 an action whose outcome is unknown (timeout) is never resent - reconciliation with the terminal decides.
+w2 (I0739): a MANAGEMENT action (perform: CLOSE_* / MODIFY_*) that certainly did not reach the terminal (the worker refused it
+before submitting, the job was cancelled while queued, no tick before order_send) ends NOT_SENT instead of UNKNOWN - the service may
+send the same action again for a short time. Entries (open(): OPEN_P and OPEN_H) stay UNKNOWN exactly as before.
 Own magic number and comment `SH:<plan>:<leg>` so the legacy position manager never touches SH positions and vice versa.
 """
 from __future__ import annotations
@@ -15,6 +18,34 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 OK_CODES = (10008, 10009, 10010)
+
+
+class TerminalDataUnavailable(RuntimeError):
+    """The terminal answered None (error) to a positions / deals query - 'no data' is NOT 'no positions': nothing may be settled on it."""
+
+
+def _listed(m, ps, total=None):
+    """MT5 list query result (runs on the terminal thread): a tuple, or None = error. None counts as an empty list only when the terminal
+    reports success (last_error 1) or, for positions, positions_total() == 0; otherwise a ("UNAVAILABLE", error) marker."""
+    if ps is not None:
+        return ps
+    try:
+        err = m.last_error() if hasattr(m, "last_error") else None
+    except Exception:  # noqa: BLE001 - unknown error state = unavailable
+        err = None
+    if isinstance(err, (tuple, list)) and err and err[0] == 1:
+        return ()
+    try:
+        none_open = total is not None and total() == 0
+    except Exception:  # noqa: BLE001 - unknown count = unavailable
+        none_open = False
+    return () if none_open else ("UNAVAILABLE", err)
+
+
+def _rows(res):
+    if isinstance(res, tuple) and len(res) == 2 and res[0] == "UNAVAILABLE":
+        raise TerminalDataUnavailable(f"MT5 zwrócił None ({res[1]})")
+    return res
 
 
 class SHExecutor:
@@ -72,10 +103,11 @@ class SHExecutor:
         """Execute one state-machine action (CLOSE_PARTIAL / CLOSE_RUNNER / CLOSE_PRIMARY / CLOSE_HEDGE / MODIFY_SL / MODIFY_TP)."""
         return self._run(plan, False, action, mode, quote, slippage, now,
                          lambda: self._paper_action(action, quote, side_of_position, slippage),
-                         lambda: self._mt5_action(plan, action, ticket, side_of_position))
+                         lambda: self._mt5_action(plan, action, ticket, side_of_position),
+                         retryable=not str(action.get("kind") or "").startswith("OPEN_"))
 
     # ------------------------------------------------------------------ core
-    def _run(self, plan, entry, action, mode, quote, slippage, now, paper, real) -> dict:
+    def _run(self, plan, entry, action, mode, quote, slippage, now, paper, real, *, retryable: bool = False) -> dict:
         g = self._gate(mode, plan or {}, entry=entry)
         if g:
             return {"status": "BLOCKED", "reason": g}
@@ -86,11 +118,16 @@ class SHExecutor:
             return {"status": "UNKNOWN", "reason": f"akcja {action['action_id']} w stanie {cl['status']} – bez ponownego wysłania"}
         try:
             res = paper() if mode == "PAPER" else real()
-        except TimeoutError:
-            res = {"status": "UNKNOWN", "reason": "TIMEOUT_ORDER_SEND"}
         except Exception as exc:  # noqa: BLE001 - outcome unknown, never retried blindly
-            res = {"status": "UNKNOWN", "reason": f"{type(exc).__name__}: {exc}"[:200]}
-        st = {"FILLED": "DONE", "PARTIAL": "DONE", "DONE": "DONE", "REJECTED": "REJECTED"}.get(res["status"], "UNKNOWN")
+            if retryable and getattr(exc, "not_submitted", False):
+                res = {"status": "NOT_SENT", "reason": f"{type(exc).__name__}: {exc}"[:200]}   # w2 (I0739): certainly not sent
+            elif isinstance(exc, TimeoutError):
+                res = {"status": "UNKNOWN", "reason": "TIMEOUT_ORDER_SEND"}
+            else:
+                res = {"status": "UNKNOWN", "reason": f"{type(exc).__name__}: {exc}"[:200]}
+        if res.get("status") == "NOT_SENT" and not retryable:
+            res = dict(res, status="UNKNOWN")                                  # entries never become re-sendable
+        st = {"FILLED": "DONE", "PARTIAL": "DONE", "DONE": "DONE", "REJECTED": "REJECTED", "NOT_SENT": "NOT_SENT"}.get(res["status"], "UNKNOWN")
         self.store.finish_action(action["action_id"], st, res, now)
         self.store.event(action.get("plan_id") or action.get("basket_id"), "ACTION", {"action": action, "result": res}, now)
         return res
@@ -119,16 +156,25 @@ class SHExecutor:
         fm = int(self.symbol_info.get("filling_mode") or 0)
         return m.ORDER_FILLING_FOK if fm & 1 else (m.ORDER_FILLING_IOC if fm & 2 else m.ORDER_FILLING_RETURN)
 
-    def _result(self, r, req_volume: float) -> dict:
+    def _result(self, r, req_volume: float, deal: bool = True) -> dict:
+        """deal = TRADE_ACTION_DEAL (open / close): an OK retcode without an executed volume is UNKNOWN (the position may have changed -
+        reconciliation decides), never DONE; DONE only for an SL/TP modification (deal=False)."""
         if r is None:
             return {"status": "UNKNOWN", "reason": "ORDER_SEND_NONE"}
         rc = getattr(r, "retcode", None)
         if rc in OK_CODES and (getattr(r, "volume", 0) or 0) > 0:
             part = rc == 10010 or r.volume < req_volume - 1e-9
             return {"status": "PARTIAL" if part else "FILLED", "price": r.price, "volume": r.volume, "deal": r.deal, "order": r.order, "retcode": rc}
+        if rc in OK_CODES and deal:
+            return {"status": "UNKNOWN", "reason": "OK_BEZ_WOLUMENU", "retcode": rc}
         if rc in OK_CODES:                                                              # SLTP modification
             return {"status": "DONE", "retcode": rc}
         return {"status": "REJECTED", "retcode": rc, "reason": str(getattr(r, "comment", ""))}
+
+    def rest_cancelled(self) -> bool:
+        """The unfilled rest of a partially filled DEAL is cancelled by the terminal (FOK / IOC filling; PAPER fills completely): only
+        then may the rest of a partial close be requested again. RETURN filling may keep the rest working - no second request."""
+        return self.terminal is None or bool(int(self.symbol_info.get("filling_mode") or 0) & 3)
 
     def _mt5_open(self, plan, action, tag) -> dict:
         sym = plan["symbol"]
@@ -164,8 +210,10 @@ class SHExecutor:
         if not own or own["plan_id"] != plan["plan_id"]:
             return {"status": "REJECTED", "reason": "POZYCJA_NIE_NALEŻY_DO_PLANU"}
 
+        modify = action["kind"] in ("MODIFY_SL", "MODIFY_TP")
+
         def go(m):
-            if action["kind"] in ("MODIFY_SL", "MODIFY_TP"):
+            if modify:
                 p = (m.positions_get(ticket=ticket) or [None])[0]
                 if p is None:
                     return SimpleNamespace(retcode=-1, comment="POSITION_NOT_FOUND", volume=0)
@@ -174,26 +222,35 @@ class SHExecutor:
                 return m.order_send({"action": m.TRADE_ACTION_SLTP, "symbol": sym, "position": int(ticket), "sl": sl, "tp": tp,
                                      "magic": self.magic})
             q = m.symbol_info_tick(sym)
+            if q is None:
+                return SimpleNamespace(not_sent="NO_TICK")             # w2 (I0739): nothing sent (was AttributeError -> UNKNOWN)
             buy = pos_side == "SELL"
             return m.order_send({"action": m.TRADE_ACTION_DEAL, "symbol": sym, "volume": float(action["volume"]), "position": int(ticket),
                                  "type": m.ORDER_TYPE_BUY if buy else m.ORDER_TYPE_SELL, "price": q.ask if buy else q.bid,
                                  "deviation": self.deviation, "magic": self.magic,
                                  "comment": self.comment(plan["plan_id"], action["action_id"].split(":")[-1]),
                                  "type_time": m.ORDER_TIME_GTC, "type_filling": self._filling(m)})
-        return self._result(self.terminal(go), float(action.get("volume") or 0))
+        r = self.terminal(go)
+        if isinstance(getattr(r, "not_sent", None), str):
+            return {"status": "NOT_SENT", "reason": r.not_sent}
+        return self._result(r, float(action.get("volume") or 0), deal=not modify)
 
     # ------------------------------------------------------------------ restart reconciliation
     def terminal_positions(self, symbol: str) -> list[dict]:
+        """Open positions of the symbol. Raises TerminalDataUnavailable when the terminal answers None without reporting success
+        (an error is not 'no positions' - a plan must never be settled as closed on it)."""
         if self.terminal is None:
             return []
-        ps = self.terminal(lambda m: m.positions_get(symbol=symbol)) or ()
+        ps = _rows(self.terminal(lambda m: _listed(m, m.positions_get(symbol=symbol), getattr(m, "positions_total", None))))
         return [{"ticket": int(p.ticket), "magic": int(p.magic), "volume": float(p.volume), "type": int(p.type), "price_open": float(p.price_open),
                  "sl": float(p.sl or 0), "tp": float(p.tp or 0), "comment": str(p.comment)} for p in ps]
 
     def closing_deals(self, ticket: int) -> list[dict]:
+        """Closing deals of a position: DEAL_ENTRY_OUT (1), INOUT (2, reversal) and OUT_BY (3, 'Close By' of the primary with the hedge on a
+        hedging account) - OUT only made a Close By look like 'no deal'. Raises TerminalDataUnavailable on a None without success."""
         if self.terminal is None:
             return []
-        ds = self.terminal(lambda m: m.history_deals_get(position=int(ticket))) or ()
+        ds = _rows(self.terminal(lambda m: _listed(m, m.history_deals_get(position=int(ticket)))))
         return [{"ticket": int(d.ticket), "entry": int(d.entry), "volume": float(d.volume), "price": float(d.price), "time": float(d.time),
-                 "comment": str(d.comment)} for d in ds if int(d.entry) == 1]
+                 "comment": str(d.comment)} for d in ds if int(d.entry) in (1, 2, 3)]
 

@@ -6,7 +6,6 @@ import json
 import math
 import os
 import time
-import urllib.request
 from pathlib import Path
 
 from fastapi import Body, FastAPI, HTTPException, Query
@@ -49,11 +48,9 @@ def _imported(b, package: str) -> dict | None:
 
 
 def _bot_health(port: int) -> dict | None:
-    try:
-        with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/v1/health", timeout=2) as r:
-            return json.loads(r.read())
-    except Exception:  # noqa: BLE001
-        return None
+    """GET /api/v1/health of the bot (2 s); one implementation in masterquo.localapi (1.46 arch I0080)."""
+    from .. import localapi
+    return localapi.health(port, 2)
 
 
 LOCAL_HOSTS = ("127.0.0.1", "localhost")
@@ -146,7 +143,8 @@ def create_app(queue: Queue | None = None, *, start_worker: bool = True) -> Fast
         except Exception:  # noqa: BLE001
             mt5 = "NOT_INSTALLED (Windows + MetaTrader5)"
         envs = {e: (paths.ROOT_DIR / e).exists() for e in (".venv", ".venv_deep", ".venv_kronos", ".venv_candles")}
-        return {"bot": {"running": bool(bot), "health": bot, "port": s["bot_port"], "data_dir": str(S.bot_data_dir(s))},
+        return {"bot": {"running": bool(bot), "health": bot, "port": s["bot_port"], "port_source": s.get("bot_port_source"),   # I0125
+                        "data_dir": str(S.bot_data_dir(s))},
                 "mt5_package": mt5, "envs": envs, "studio_data_dir": str(S.data_dir()), "export_lock": q.lock.owner(),
                 "mode_hint": "BOT_CACHE" if bot else "MT5_DIRECT", "settings": s}
 
@@ -225,7 +223,7 @@ def create_app(queue: Queue | None = None, *, start_worker: bool = True) -> Fast
             raise HTTPException(409, "przekazać można tylko paczkę po pozytywnym teście loadera (stan PACKAGED)")
         s = S.load()
         if _bot_health(int(s["bot_port"])):
-            from ..train_all import Bot
+            from ..localapi import Bot
             b = Bot(int(s["bot_port"]))
             # 1.46: a failed bot session / connection / timeout was a 500; an import that succeeded while its answer timed out left the job
             # PACKAGED for good (a retry got 409 'already exists') - the bot's import record of this package now completes the transfer

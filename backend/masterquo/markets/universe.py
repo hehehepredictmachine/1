@@ -21,7 +21,6 @@ SEED_FILE = Path(__file__).parent / "data" / "fomo_stock_perps_101_2026-11-04.cs
 SEED_DATE = "2026-11-04"
 TIMEFRAMES = ("1d", "8h", "4h", "1h", "30m", "15m", "10m", "5m", "3m", "1m")
 TF_SECONDS = {"1d": 86400, "8h": 28800, "4h": 14400, "1h": 3600, "30m": 1800, "15m": 900, "10m": 600, "5m": 300, "3m": 180, "1m": 60}
-HL_NATIVE_TF = {"1d", "8h", "4h", "1h", "30m", "15m", "5m", "3m", "1m"}          # Hyperliquid candleSnapshot intervals; 10m = resampled from 5m
 RESAMPLE_FROM = {"10m": "5m"}
 CAP_STATES = ("SUPPORTED", "UNSUPPORTED", "NOT_VERIFIED", "RESTRICTED", "DEGRADED")
 INDEX_SYMBOLS = {"XYZ100", "SP500", "JP225", "KR200", "NIFTY", "IBOV", "VIX", "DXY", "VOL"}       # xyz synthetic index perps (by name)

@@ -168,8 +168,21 @@ class IndicatorService:
         self.book.ensure(sym)
         b = self.book.poll()
         cfg = self._cfg()
-        self.ofi.period_s, self.ofi.max_gap_s = cfg.book_period_s, cfg.book_max_gap_s
-        self.ofi.add(b, key=(sym, self.book.epoch))
+        with self._lock:                              # 1.46 arch (I0191): microstructure_now() reads the accumulator from other threads
+            self.ofi.period_s, self.ofi.max_gap_s = cfg.book_period_s, cfg.book_max_gap_s
+            self.ofi.add(b, key=(sym, self.book.epoch))
+
+    def microstructure_now(self) -> dict | None:
+        """1.46 arch (I0191): the market-depth measurement of the CURRENT book (polled every book_period_s). The snapshot recomputes it
+        only on a new closed M1 bar, so the 10 s reaction classifier of the MICROSTRUCTURE family read a book up to ~60 s old. Cheap (no
+        bars); the snapshot and its id are unchanged. None when the module or the book is switched off (callers use the snapshot)."""
+        cfg = self._cfg()
+        if not cfg.enabled or not cfg.book_enabled:
+            return None
+        inst, sym, _, _ = self._inst()
+        with self._lock:
+            return OF.compute(self.book.last, self.ofi, instrument=inst, broker_symbol=sym, status=self.book.status, reason=self.book.reason,
+                              levels=cfg.book_levels, now=self.clock(), max_age_s=max(5.0, 5 * cfg.book_period_s))
 
     def _archive_dxy(self, sym: str, bars: list[dict]) -> None:
         with self._lock:
@@ -262,8 +275,10 @@ class IndicatorService:
         m5 = [b for b in self.bridge.bars("M5", include_forming=False) if b.get("open_utc")]
         out["profile"] = PF.compute(zm, price, AV.atr(m5), instrument=inst, broker_symbol=sym)
         if cfg.book_enabled:
-            out["microstructure"] = OF.compute(self.book.last, self.ofi, instrument=inst, broker_symbol=sym, status=self.book.status,
-                                               reason=self.book.reason, levels=cfg.book_levels, now=as_of, max_age_s=max(5.0, 5 * cfg.book_period_s))
+            with self._lock:                          # 1.46 arch (I0191): the accumulator is shared with poll_book / microstructure_now
+                out["microstructure"] = OF.compute(self.book.last, self.ofi, instrument=inst, broker_symbol=sym, status=self.book.status,
+                                                   reason=self.book.reason, levels=cfg.book_levels, now=as_of,
+                                                   max_age_s=max(5.0, 5 * cfg.book_period_s))
         else:
             out["microstructure"] = C.result("MICROSTRUCTURE", OF.VERSION, instrument=inst, broker_symbol=sym, source="MT5_MARKET_BOOK(broker)",
                                              timeframe=None, status="DISABLED", reason="book_enabled=false")
@@ -354,7 +369,9 @@ class IndicatorService:
         return {"version": s.get("version"), "as_of": s.get("as_of"), "snapshot_id": s.get("snapshot_id"), "avwap": av,
                 "semivar": sv(s.get("semivar"), ("downside_share_20", "downside_share_60", "rv_20", "rv_60")),
                 "spread": sv(s.get("spread"), ("spread_price", "spread_ticks", "spread_atr", "percentile", "quote_age_s", "unusual")),
-                "dxy": sv(s.get("dxy"), ("corr_24", "corr_72", "corr_240", "beta_72", "resid_z_72", "joint_obs", "age_s", "sign")),
+                # 1.46 arch (I0613, information): the DXY relation's own data time (last joint H1 bar) next to the snapshot as_of
+                "dxy": dict(sv(s.get("dxy"), ("corr_24", "corr_72", "corr_240", "beta_72", "resid_z_72", "joint_obs", "age_s", "sign")),
+                            data_time=s["dxy"].get("data_time"), available_at=s["dxy"].get("available_at")) if s.get("dxy") else None,
                 "profile": sv(s.get("profile"), ("dev_dist_poc_atr", "dev_va_position", "prev_va_position", "relative_volume",
                                                  "interval_relative_volume", "poc_migration_bins", "dev_shape")),
                 "microstructure": sv(s.get("microstructure"), ("best_imbalance", "depth_imbalance", "ofi_window", "microprice_dev"))}

@@ -1,5 +1,4 @@
 """PMW-UPD-08 R18 SEW merge operators ADD / AND / IAND - T72-T79."""
-import math
 import unittest
 
 import numpy as np

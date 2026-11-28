@@ -371,6 +371,8 @@ class BotSignalService:
         d["synthetic"] = bool(d.get("synthetic"))
         for k in ("run_id", "model_id", "prompt_version", "confidence", "est_cost_usd", "valid_until"):
             d.pop(k, None)
+        # w2 (I0031): outcome definition of bot signals (evaluate(): closed M15 Bid bars, SL/TP touch, R without costs) - view field only
+        d["label_policy"] = "SIGNAL_M15_GROSS"
         return d
 
     def get(self, signal_id: str) -> dict | None:
