@@ -98,8 +98,17 @@ class TestDeclarations(unittest.TestCase):
             C.POLICIES["SH"] = C.POLICIES["ACTIVE"]                       # type: ignore[index]
         src = "\n".join((_env.ROOT / "backend" / "masterquo" / "costs" / f).read_text(encoding="utf-8")
                         for f in ("__init__.py", "policy.py", "resolver.py", "commission.py"))
-        for word in ("unified_v2", "environ", "cfg_store", "ConfigStore", "def set_", "global "):
-            self.assertNotIn(word, src, word)                            # no flag, no settings read, no policy switch
+        # nothing in costs/ can switch a policy: no settings / environment read, no setter, no module state (review: the check is
+        # about a switch that changes a result, not about a name - the D2 flag `costs.unified_v2` is not_done, see policy.py)
+        for word in ("environ", "getenv", "cfg_store", "ConfigStore", "settings_store", "def set_", "global ", "open("):
+            self.assertNotIn(word, src, word)
+        from masterquo.costs import policy as P
+        self.assertIn("costs.unified_v2", P.__doc__)                     # the not-done O7 / D2(b) flag is stated, with its reason
+        for t in C.TRACKS:                                                # every profile = the declaration, whatever the instrument
+            for inst in (None, "XAUUSD", "XAUUSD-", "BTC"):
+                pr = dataclasses.asdict(C.profile(t, inst))
+                self.assertEqual((pr.pop("track"), pr.pop("instrument"), pr.pop("schema")), (t, inst, P.SCHEMA))
+                self.assertEqual(pr, dataclasses.asdict(C.POLICIES[t]), (t, inst))
         bad = dataclasses.replace(C.profile("SH"), spread_policy="SOMETHING")
         with self.assertRaises(ValueError):
             C.resolve(bad, spread=0.2, commission_per_lot_side=0.5, slippage=0.05, money_per_price=100.0)

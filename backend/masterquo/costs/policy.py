@@ -18,6 +18,13 @@ flag and NO setter that changes a policy. Changing one is a trading decision of 
     (in round_trip_price AND again as 2 x commission per lot);
   * D3 - one sizing function and one `cost_price` semantics of SetupCandidate (cost outside the price + cost_includes_spread).
 The resolver accepts only the values declared below; any other value raises ValueError (no silent fallback to another policy).
+
+Not done in Etap 4 (not_done): the O7 flag of ETAP2 §6 pkt 4 / D2(b) - `costs.unified_v2`, to be prepared OFF. It would add a
+config.json key (the config keys are a frozen public contract of Etap 4) and put the (b) variant - the spread outside the SH cost, the
+commission once in the SH sizing - into the decision code, where the neutrality proof (golden replay, old-vs-new equality) can only
+show that it is unreachable, not that it is right. It belongs to the D2 decision (switched on together with O2, ETAP2 §7). The guard
+in tests/test_arch146_e4_costs.py checks that nothing in costs/ can switch a policy (no settings read, no setter, profiles = the
+declarations), not a name: a D2 flag passed in by a track later keeps costs/ a settings-free leaf and needs no change of the guard.
 """
 from __future__ import annotations
 
