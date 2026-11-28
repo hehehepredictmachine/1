@@ -56,6 +56,9 @@ Pogrubione = nowe moduły; *kursywa* = moduły, które zostają, ale zmieniają 
 backend/masterquo/
 ├── runtime.py                  JEDYNY composition root: compose(cfg_dir, demo) -> Services + Runtime(start/stop, Lifecycle wątków)
 │                               (przejmuje obiekty tworzone dziś w api/app.py, api/wf32_routes.py, studio, CLI – §5)
+│                               (Etap 4 krok A: `compose_api_services(port)` / `Runtime.compose_api` budują LocalSecurity, rejestry
+│                               procesów treningu i NSS, PresetStore i IndicatorEngine – API czyta `rt.api_services`; usługi wf32 =
+│                               `rt.wf32_services` (I0088); Studio i CLI to osobne procesy – bez Runtime, bez zmian)
 ├── **registry_io.py**          strict read / blokada OS (jak trainhub/registry.reg_lock) / unikalny tmp + os.replace
 │                               dla WSZYSTKICH rejestrów aktywacji i wskaźników (lab ACTIVE.json, mm SHADOW_ACTIVE.json,
 │                               Monte Carlo registry.json, quant pointer, trainhub registry.json, rodziny, gold_candles, forecast)
