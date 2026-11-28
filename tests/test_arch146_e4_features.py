@@ -306,7 +306,7 @@ ETAP2_STORES = {"evaluation": {"evaluation"}, "quant/ledger": {"quant_rows", "qu
                 "decision/ledger": {"decision_records", "execution_intents", "risk_reservations"},
                 "scalp": {"scalp_shadow", "ml_scalp_predictions", "ml_scalp_samples", "nss_inferences", "forecast_shadow"},
                 "ml": {"ml_predictions", "ml_samples", "eval_ledger"},
-                "pliki": {"asge_trials", "structure_intelligence_holdout", "flow_context_holdout", "context_ind_events"}}
+                "pliki": {"asge_trials", "structure_intelligence_holdout", "flow_context_holdout", "context_ind_events", "context_ind_calibration"}}
 
 
 def _iso(t: float) -> str:
@@ -369,6 +369,9 @@ class TestLedgerViewStores(_Data):
             self.assertEqual(st[f"flow_context:{inst}"].path, FT.root(inst) / "registry.json")
             self.assertEqual(st[f"context_ind:{inst}"].path, CT.root(inst) / "ledger")
             self.assertEqual((st[f"context_ind:{inst}"].fmt, st[f"flow_context:{inst}"].fmt), ("jsonl_dir", "json"))
+            self.assertEqual(st[f"context_ind_calibration:{inst}"].path, CT.root(inst) / "calibration_trials.jsonl")   # CT.calibrate
+            self.assertEqual(st[f"context_ind_calibration:{inst}"].fmt, "jsonl")
+        self.assertEqual(LV.HOLDOUT_TASK["flow_context"], FT.TASK)
 
     def _fill(self):
         """Rows written by the owners' own writers where they can run offline (RiskBook / IntentLedger, reserve_holdout, TrialLedger,
@@ -397,6 +400,9 @@ class TestLedgerViewStores(_Data):
         b = il.open(path="SH", mode="PAPER", account_key=None, subject="PL-2", symbol="XAUUSD-", side="SELL", volume=0.2, risk_money=30.0,
                     record_id="DR-2", equity=10_000.0)
         il.outcome(b["intent"]["intent_id"], {"status": "REJECTED", "reason": "INVALID_STOPS"})
+        c = il.open(path="ACTIVE", mode="PAPER", account_key=None, subject="SU-3", symbol="XAUUSD-", side="BUY", volume=0.1, risk_money=20.0,
+                    record_id="DR-3", equity=10_000.0)
+        il.outcome(c["intent"]["intent_id"], {"status": "DUPLICATE", "reason": "ENTRY_ALREADY_ATTEMPTED_FOR_THIS_SETUP"})   # gateway.py
         _insert(db, "execution_intents", intent_id="INT-X", dedup_key="k-x", created_at=_iso(T0), updated_at=_iso(T0), path="ACTIVE",
                 kind="ENTRY", mode="PAPER", state="WEIRD")
         _insert(db, "decision_records", record_id="DR-1", created_at=_iso(T0), path="ACTIVE", source_id="D-1", strategy_id="XAU-S01",
@@ -413,21 +419,33 @@ class TestLedgerViewStores(_Data):
         led = Wf32Services(None).trials
         led.add({"ir": {"k": 1}, "ir_hash": "IR1", "data_hash": "DH1", "status": "SHADOW_CHALLENGER", "reasons": [], "dev_trades": 40,
                  "dev_mean_net_r": 0.12, "positive_folds": 2, "holdout_mean_net_r": 0.05, "hurdle_net_r": 0.03, "version": ASG.VERSION})
-        with open(led.path, "a", encoding="utf-8") as fh:
-            fh.write('{"torn": ')                                            # a crash while writing: skipped by the writer and the view
+        with open(led.path, "a", encoding="utf-8") as fh:                   # a row of another version / a restored backup: allowed = true
+            fh.write(json.dumps({"trial_id": "T00002", "created_at": T0, "ir_hash": "IR2", "data_hash": "DH1", "status": "SHADOW_CHALLENGER",
+                                 "reasons": [], "execution_allowed": True, "note": "zażółć"}, ensure_ascii=False) + "\n")
+        with open(led.path, "ab") as fh:
+            fh.write('{"torn": "zaż'.encode()[:-1])                           # a crash inside a 2-byte UTF-8 character: the line is skipped
         STK._update_reg("XAUUSD", lambda reg: reg.setdefault("holdout_access", {}).update(
             {"RUN1-LOGREG": {"candidate_id": "RUN1-LOGREG", "protocol_id": "SI-PROTO-1.0.0", "ledger": {"status": "FRESH"}, "metrics": [],
                              "at": _iso(T0), "model_hash": "smh", "role": "SHADOW"}}))
+        STK._update_reg("XAUUSD", lambda reg: reg.setdefault("runs", {}).update(
+            {"RUN1": {"run_dir": "x", "task": STK.TASK_MOVE, "status": "EVALUATED_DEV", "role": "RESEARCH", "created_at": _iso(T0)}}))
         FT._save_reg("BTC", {"runs": {}, "shadow": {}, "history": [], "holdout_access": {
             "R2-XGB": {"candidate_id": "R2-XGB", "ledger": {"status": "REUSED_PERIOD_EXPLORATORY"}, "metrics": {"m": 1}, "at": _iso(T0 + 60)}}})
         d = CT.root("XAUUSD") / "ledger"
         d.mkdir(parents=True, exist_ok=True)
         e = {"event_id": "EV-1", "seq": 1, "kind": "BOS_UP", "bar": 40, "available_at": T0 + 300, "price": 2651.2}
-        (d / "M5_ph1.jsonl").write_text(json.dumps(dict(e, ledger_id="XAUUSD|M5|ph1|E1|EV-1", epoch=1, event_key="k#1")) + "\n", encoding="utf-8")
+        (d / "M5_ph1.jsonl").write_bytes((json.dumps(dict(e, ledger_id="XAUUSD|M5|ph1|E1|EV-1", epoch=1, event_key="k#1")) + "\n").encode()
+                                         + '{"event_id": "EV-2", "note": "ż'.encode()[:-1])
         (d / "epochs.json").write_text('{"M5": 1}', encoding="utf-8")
+        # lab/context_ind/task.calibrate: one line per calibration {at, trials, chosen} (the documented format; calibrate needs a dataset)
+        (CT.root("XAUUSD") / "calibration_trials.jsonl").write_text(json.dumps(
+            {"at": _iso(T0 + 120), "trials": [{"module": "VAMD", "config": {"P": 5, "base_decay": 0.1}, "status": "OK", "value": 0.03},
+                                             {"module": "FD", "config": {"N": 20, "S": 3}, "status": "FAILED", "error": "ValueError"}],
+             "chosen": {"VAMD": {"P": 5, "base_decay": 0.1}}}) + "\n", encoding="utf-8")
         db.close()
 
     def test_every_aux_adapter_maps_writer_rows_to_the_canonical_record(self):
+        from masterquo.apollo import asge as ASG
         from masterquo.ledgers import view as LV
         self._fill()
         by = {}
@@ -446,25 +464,38 @@ class TestLedgerViewStores(_Data):
         self.assertEqual(it["ACTIVE:FILLED"]["link_ids"]["source_ref"], "ATT-1")
         self.assertEqual(it["ACTIVE:FILLED"]["outcome"]["status"], "FILLED")
         self.assertEqual((it["ACTIVE:WEIRD"]["outcome_status"], it["ACTIVE:WEIRD"]["status_note"]), ("INVALID", "UNKNOWN_STATUS:WEIRD"))
-        rs = {r["prediction"]["path"]: r for r in by["risk_reservations"]}
+        self.assertEqual((it["ACTIVE:DUPLICATE"]["outcome_status"], it["ACTIVE:DUPLICATE"]["status_note"]), ("EXCLUDED", None))
+        from masterquo.decision import contracts as K
+        self.assertEqual(set(LV.INTENT_STATUS), set(K.INTENT_STATES))       # every state of the writer has a canonical meaning
+        rs = {r["link_ids"]["subject"]: r for r in by["risk_reservations"]}
         self.assertEqual({k: (v["status_raw"], v["outcome_status"]) for k, v in rs.items()},
-                         {"ACTIVE": ("CONSUMED", "SCORED"), "SH": ("RELEASED", "EXCLUDED")})
-        self.assertEqual(rs["ACTIVE"]["decision_ts"], T0)
+                         {"SU-1": ("CONSUMED", "SCORED"), "PL-2": ("RELEASED", "EXCLUDED"), "SU-3": ("RELEASED", "EXCLUDED")})
+        self.assertEqual(rs["SU-1"]["decision_ts"], T0)
         dr = by["decision_records"][0]
         self.assertEqual((dr["side"], dr["run_mode"], dr["prediction"]["models"][0]["model_id"]), ("LONG", "LIVE", "ml:legacy"))
         self.assertEqual({r["instrument"]: r["status_raw"] for r in by["eval_ledger"]}, {"XAUUSD": "FRESH", "BTC": "FRESH"})
         self.assertEqual([r["instrument"] for r in LV.records("eval_ledger", instrument="BTC")], ["BTC"])
-        self.assertEqual([r["source_key"] for r in by["asge_trials"]], ["T00001"])          # the torn line is skipped
+        self.assertEqual([r["source_key"] for r in by["asge_trials"]], ["T00001", "T00002"])   # the torn line is skipped, not the file
         self.assertEqual(by["asge_trials"][0]["metrics"]["dev_trades"], 40)
-        self.assertEqual([(r["instrument"], r["status_raw"]) for r in by["structure_intelligence_holdout"]], [("XAUUSD", "FRESH")])
+        # rows as the owner exposes them (apollo/asge._sealed): execution_allowed is the constant False, a file `true` is flagged
+        self.assertEqual([(r["prediction"]["execution_allowed"], r["prediction"]["integrity"]) for r in by["asge_trials"]],
+                         [(False, None), (False, ASG.TAMPERED_FLAG)])
+        self.assertEqual([(r["instrument"], r["status_raw"], r["task"]) for r in by["structure_intelligence_holdout"]],
+                         [("XAUUSD", "FRESH", "STRUCTURE_MOVE_M1_V1")])                 # task of the run (registry runs[<run>].task)
+        self.assertEqual([r["task"] for r in by["flow_context_holdout"]], ["FLOW_CONTEXT_MOVE_M1_V1"])
         self.assertEqual([r["source_key"] for r in LV.records("flow_context_holdout", instrument="BTC")], ["R2-XGB"])
         self.assertEqual(list(LV.records("flow_context_holdout", instrument="XAUUSD")), [])
         ev = by["context_ind_events"][0]
         self.assertEqual((ev["timeframe"], ev["fingerprint"], ev["decision_ts"], ev["task"]), ("M5", "ph1", T0 + 300, "STRUCTURE_EVENT_BOS_UP"))
         self.assertEqual(by["lab_trials"][0]["metrics"], {"logloss": 0.69})
+        self.assertEqual([r["source_key"] for r in by["context_ind_events"]], ["XAUUSD|M5|ph1|E1|EV-1"])   # torn multi-byte line skipped
+        cal = by["context_ind_calibration"]
+        self.assertEqual([(r["instrument"], r["decision_ts"], r["metrics"], r["run_mode"]) for r in cal],
+                         [("XAUUSD", T0 + 120, {"trials": 2, "failed": 1}, "OFFLINE_VALIDATION")])
+        self.assertEqual(cal[0]["prediction"]["chosen"], {"VAMD": {"P": 5, "base_decay": 0.1}})
         st = LV.status()
         self.assertEqual(set(st["ledgers"]), set(LV.ALL_ADAPTERS))
-        self.assertEqual(st["ledgers"]["execution_intents"], {"SCORED": 1, "EXCLUDED": 1, "INVALID": 1})
+        self.assertEqual(st["ledgers"]["execution_intents"], {"SCORED": 1, "EXCLUDED": 2, "INVALID": 1})
 
     def test_reading_never_changes_a_store(self):
         import sqlite3

@@ -8,7 +8,8 @@ Etap 4 (ETAP2 §5 'ledgery: evaluation, quant/ledger, mm ledger, decision/ledger
 well, the decision ledger of PMW-ARC-1 (decision_records, execution_intents, risk_reservations - decision/coordinator.py, decision/ledger.py),
 the holdout / trial registries (eval_ledger - ml/scalp_task.reserve_holdout, lab_holdout_access / lab_trials - lab/protocol.py) and the
 file ledgers outside the databases (apollo/asge_trials.jsonl - apollo/asge.TrialLedger; holdout_access of structure_intelligence/<I> and
-flow_context/<I>/registry.json; context_ind/<I>/ledger/*.jsonl - structure events). ADAPTERS keeps the 19 prediction / outcome ledgers.
+flow_context/<I>/registry.json; context_ind/<I>/ledger/*.jsonl - structure events; context_ind/<I>/calibration_trials.jsonl - calibration
+trials). ADAPTERS keeps the 19 prediction / outcome ledgers.
 
 This module changes NOTHING in the writers or the data:
 * stores()   the registry of stores; the paths use the writers' own building blocks (paths.data_dir, the expression of
@@ -110,6 +111,7 @@ def _kind(data_kind=None, synthetic=None) -> str:
 class Store:
     id: str                   # e.g. main, ml:BTC, mm:XAUUSD, evaluation, quant, apollo_trials, context_ind:XAUUSD
     kind: str                 # main | ml | mm | evaluation | quant | apollo_trials | structure_intelligence | flow_context | context_ind
+                              # | context_ind_calibration
     path: Path
     instrument: str | None    # the store's instrument when the store is per instrument
     fmt: str = "sqlite"       # sqlite | jsonl | json | jsonl_dir (a folder of .jsonl files)
@@ -149,6 +151,9 @@ def stores(insts: list[str] | None = None) -> list[Store]:
         for area in ("structure_intelligence", "flow_context"):               # lab/structure_task.root, lab/flow_context/task.root
             out.append(Store(f"{area}:{inst}", area, mi.data_dir() / area / inst / "registry.json", inst, "json"))
         out.append(Store(f"context_ind:{inst}", "context_ind", mi.data_dir() / "context_ind" / inst / "ledger", inst, "jsonl_dir"))
+    for inst in insts or instruments():                                       # lab/context_ind/task.calibrate (appended last: order kept)
+        out.append(Store(f"context_ind_calibration:{inst}", "context_ind_calibration",
+                         mi.data_dir() / "context_ind" / inst / "calibration_trials.jsonl", inst, "jsonl"))
     return out
 
 
@@ -370,7 +375,8 @@ ML_STORE_TABLES = ("ml_predictions", "ml_scalp_predictions", "ml_samples", "ml_s
 # maps, never added to STATUS_MAP - a raw value of another writer must not change its meaning); an unknown state = INVALID + note.
 INTENT_STATUS = {"NEW": "PENDING", "RESERVED": "PENDING", "SENT": "PENDING", "UNKNOWN": "PENDING",
                  "FILLED": "SCORED", "PARTIAL": "SCORED", "RECONCILED_FILLED": "SCORED",
-                 "REJECTED": "EXCLUDED", "BLOCKED": "EXCLUDED", "RECONCILED_NOT_FOUND": "EXCLUDED"}       # decision/ledger.IntentLedger
+                 "REJECTED": "EXCLUDED", "BLOCKED": "EXCLUDED", "RECONCILED_NOT_FOUND": "EXCLUDED",
+                 "DUPLICATE": "EXCLUDED"}    # decision/contracts.INTENT_STATES (DUPLICATE: execution/gateway -> IntentLedger.outcome, not sent)
 RESERVATION_STATUS = {"HELD": "PENDING", "UNKNOWN": "PENDING", "CONSUMED": "SCORED", "RELEASED": "EXCLUDED", "EXPIRED": "EXCLUDED"}
 
 
@@ -447,10 +453,16 @@ def _asge_trials(r):
             "outcome_status": "NOT_APPLICABLE", "status_note": "ledger prób generatora strategii (lineage, holdout raz na kandydata) - nie prognoza"}
 
 
+# task of a holdout entry: the entries carry no task_id - structure_intelligence keeps it in registry.json runs[<run>].task (_read_holdout
+# adds it as _run_task); flow_context has one task (lab/flow_context/task.TASK - kept equal to it by a test)
+HOLDOUT_TASK = {"structure_intelligence": None, "flow_context": "FLOW_CONTEXT_MOVE_M1_V1"}
+
+
 def _holdout_registry(area: str):
     def fn(r):
         led = r["ledger"] if isinstance(r["ledger"], dict) else {}
-        return {"model_id": f"lab:{area}", "artifact": r["model_hash"] or r["candidate_id"], "task": r["task_id"],
+        return {"model_id": f"lab:{area}", "artifact": r["model_hash"] or r["candidate_id"],
+                "task": r["task_id"] or r["_run_task"] or HOLDOUT_TASK.get(area),
                 "link_ids": {"candidate_id": r["candidate_id"]}, "decision_ts": r["at"], "predicted_at": r["at"], "run_mode": "OFFLINE_VALIDATION",
                 "prediction": {"protocol_id": r["protocol_id"], "role": r["role"], "edge_status": r["edge_status"], "ledger": r["ledger"]},
                 "status_raw": led.get("status"), "outcome": {"metrics": r["metrics"]}, "outcome_status": "NOT_APPLICABLE",
@@ -467,16 +479,36 @@ def _context_ind_events(r):
             "status_note": "zdarzenie struktury (SMC), nie prognoza - zapis append-only lab/context_ind/service.py"}
 
 
+def _context_ind_calibration(r):
+    trials = r["trials"] if isinstance(r["trials"], list) else []
+    return {"model_id": "lab:context_ind/calibration", "task": "CONTEXT_MODULE_CALIBRATION", "decision_ts": r["at"], "predicted_at": r["at"],
+            "link_ids": {"line": r["_line"]}, "run_mode": "OFFLINE_VALIDATION",
+            "prediction": {"chosen": r["chosen"], "grid": [{k: t.get(k) for k in ("module", "config", "status")} for t in trials
+                                                           if isinstance(t, dict)]},
+            "metrics": {"trials": len(trials), "failed": sum(1 for t in trials if isinstance(t, dict) and t.get("status") == "FAILED")},
+            "outcome_status": "NOT_APPLICABLE",
+            "status_note": "ledger prób kalibracji VAMD / FD / SMC na DEV (<= 24 konfiguracje, lab/context_ind/task.py) - nie prognoza"}
+
+
 def _read_jsonl(path: Path) -> Iterator[dict]:
-    """Rows of one JSONL file (read-only); a torn / unreadable line is skipped, as apollo/asge.TrialLedger skips it."""
-    with open(path, encoding="utf-8") as fh:
+    """Rows of one JSONL file (read-only); a torn / unreadable line is skipped, as apollo/asge.TrialLedger skips it. Bytes are decoded
+    per line inside the try: a torn multi-byte UTF-8 character (writers use ensure_ascii=False) skips that line, not the whole file."""
+    with open(path, "rb") as fh:
         for n, line in enumerate(fh, 1):
             try:
-                row = json.loads(line)
-            except ValueError:
+                row = json.loads(line.decode("utf-8"))
+            except ValueError:                                             # JSONDecodeError and UnicodeDecodeError
                 continue
             if isinstance(row, dict):
                 yield {**row, "_file": path.name, "_line": n}
+
+
+def _read_asge(path: Path) -> Iterator[dict]:
+    """asge_trials.jsonl as the owner exposes it: every row through apollo/asge._sealed (read-only) - execution_allowed is the constant
+    False and a file row with another value carries integrity = EXECUTION_ALLOWED_TAMPERED (1.46); the file is never rewritten."""
+    from ..apollo import asge as ASG
+    for row in _read_jsonl(path):
+        yield ASG._sealed(row)
 
 
 def _read_jsonl_dir(path: Path) -> Iterator[dict]:
@@ -491,9 +523,13 @@ def _read_holdout(path: Path) -> Iterator[dict]:
     except (OSError, ValueError):
         return
     acc = reg.get("holdout_access") if isinstance(reg, dict) else None
+    runs = reg.get("runs") if isinstance(reg, dict) and isinstance(reg.get("runs"), dict) else {}
     for cid, v in (acc or {}).items():
         if isinstance(v, dict):
-            yield {**v, "candidate_id": v.get("candidate_id") or cid}
+            c = v.get("candidate_id") or cid
+            rid = next((r for r in runs if str(c).startswith(r + "-")), None)        # the owners' rule (structure_task._candidate_dir)
+            run = runs.get(rid) if rid is not None else None
+            yield {**v, "candidate_id": c, "_run_task": run.get("task") if isinstance(run, dict) else None}
 
 
 _AUX = [
@@ -503,12 +539,14 @@ _AUX = [
     Adapter("eval_ledger", ("main", "ml"), "eval_ledger", ("id",), _eval_ledger, group="holdout"),
     Adapter("lab_holdout_access", ("main",), "lab_holdout_access", ("id",), _lab_holdout_access, group="holdout"),
     Adapter("lab_trials", ("main",), "lab_trials", ("trial_id",), _lab_trials, group="trials"),
-    Adapter("asge_trials", ("apollo_trials",), "asge_trials.jsonl", ("trial_id",), _asge_trials, _read_jsonl, "trials"),
+    Adapter("asge_trials", ("apollo_trials",), "asge_trials.jsonl", ("trial_id",), _asge_trials, _read_asge, "trials"),
     Adapter("structure_intelligence_holdout", ("structure_intelligence",), "registry.json:holdout_access", ("candidate_id",),
             _holdout_registry("structure_intelligence"), _read_holdout, "holdout"),
     Adapter("flow_context_holdout", ("flow_context",), "registry.json:holdout_access", ("candidate_id",), _holdout_registry("flow_context"),
             _read_holdout, "holdout"),
     Adapter("context_ind_events", ("context_ind",), "ledger/*.jsonl", ("ledger_id",), _context_ind_events, _read_jsonl_dir, "events"),
+    Adapter("context_ind_calibration", ("context_ind_calibration",), "calibration_trials.jsonl", ("at", "_line"), _context_ind_calibration,
+            _read_jsonl, "trials"),
 ]
 AUX_ADAPTERS: dict[str, Adapter] = {a.name: a for a in _AUX}
 ALL_ADAPTERS: dict[str, Adapter] = {**ADAPTERS, **AUX_ADAPTERS}
