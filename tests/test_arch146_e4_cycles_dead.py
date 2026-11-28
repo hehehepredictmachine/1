@@ -401,5 +401,60 @@ class TestRetiredOtcCodeReconfirmed(unittest.TestCase):
             self.assertIn(k, paths)                              # public contract: answered 410 / RETIRED, never removed
 
 
+# ======================================================================================================== part 3: dead code (frontend)
+_EXPORT = re.compile(r"^export\s+(?:default\s+)?(?:async\s+)?(?:function|const|let|class|interface|type|enum)\s+([A-Za-z_$][\w$]*)", re.MULTILINE)
+FE_ALLOW: dict[str, str] = {}             # "<file>:<name>" -> reason (empty: every export has a user)
+
+
+def dead_exports(root: Path = ROOT) -> list[str]:
+    """Exports of frontend/src (.ts / .tsx) whose name occurs once in their own file and in no other file of frontend/src, the html entry
+    points or tests/js (martwy_kod_konfig#19, I0126 - extended in Etap 4 to every export)."""
+    src = root / "frontend" / "src"
+    files = sorted(p for p in src.rglob("*") if p.suffix in (".ts", ".tsx") and not _skipped(p))
+    others = files + sorted((root / "frontend").glob("*.html")) + sorted((root / "tests" / "js").rglob("*.mjs"))
+    texts = {p: p.read_text(encoding="utf-8", errors="replace") for p in others}
+    out = []
+    for f in files:
+        for m in _EXPORT.finditer(texts[f]):
+            name = m.group(1)
+            w = re.compile(r"(?<![\w$])" + re.escape(name) + r"(?![\w$])")
+            if len(w.findall(texts[f])) <= 1 and not any(w.search(t) for p, t in texts.items() if p != f):
+                key = f"{f.relative_to(root).as_posix()}:{name}"
+                if key not in FE_ALLOW:
+                    out.append(f"{key} (linia {texts[f][:m.start()].count(chr(10)) + 1})")
+    return out
+
+
+class TestFrontendNoDeadExports(unittest.TestCase):
+    def test_no_export_without_a_user(self):
+        dead = dead_exports()
+        self.assertEqual(dead, [], "nieużywane eksporty frontendu: usuń je albo dopisz do FE_ALLOW z powodem\n" + "\n".join(dead))
+
+    def test_etap4_removed_and_kept(self):
+        src = ROOT / "frontend" / "src"
+        theme = (src / "theme.tsx").read_text(encoding="utf-8")
+        poll = (src / "features" / "pmw133" / "usePoll.ts").read_text(encoding="utf-8")
+        for name, text in (("GROUPS", theme), ("hsvToRgb", theme), ("rgbToHsl", theme), ("rgbToHsv", theme), ("STATUS_PL", poll)):
+            self.assertIsNone(re.search(r"\b(?:const|function)\s+" + name + r"\b", text), name)
+        # kept: used by the panel or by tests/js (theme_parse_*, theme_gold_migration_persisted, ...)
+        for name in ("parseThemeFile", "hslToRgb", "parseColor", "toHex", "CHART_GROUPS"):
+            self.assertRegex(theme, r"export (?:function|const) " + name + r"\b")
+        self.assertFalse((src / "components" / "ChartToolbar.tsx").exists())         # I0126 (wave 2)
+
+    def test_scan_sees_a_planted_dead_export(self):
+        import shutil
+        import tempfile
+        tmp = Path(tempfile.mkdtemp(prefix="mq_t_fe_dead_"))
+        try:
+            (tmp / "frontend" / "src").mkdir(parents=True)
+            (tmp / "frontend" / "src" / "a.ts").write_text("export const used = 1;\nexport function zzOrphan() { return 2; }\n",
+                                                            encoding="utf-8")
+            (tmp / "frontend" / "src" / "b.ts").write_text('import { used } from "./a";\nexport const z = used;\n', encoding="utf-8")
+            (tmp / "frontend" / "index.html").write_text('<script type="module" src="/src/b.ts"></script>', encoding="utf-8")
+            self.assertEqual(dead_exports(tmp), ["frontend/src/a.ts:zzOrphan (linia 2)", "frontend/src/b.ts:z (linia 2)"])
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+
+
 if __name__ == "__main__":
     unittest.main()

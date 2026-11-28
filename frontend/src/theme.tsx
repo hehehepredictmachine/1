@@ -16,9 +16,6 @@ const C = (key: string, label: string, group: string, css?: string): TokenDef =>
 const N = (key: string, label: string, group: string, min: number, max: number, step: number, css?: string): TokenDef =>
   ({ key, label, group, kind: "number", min, max, step, css });
 
-export const GROUPS = ["Tło i panele", "Teksty i liczby", "Ramki i akcenty", "Przyciski", "Statusy", "Wykres", "Świece i wolumen", "Wskaźniki",
-  "Poziomy i strefy", "Checklista", "Dekoracje (GIF)"];
-
 export const TOKENS: TokenDef[] = [
   C("bg", "Tło aplikacji", "Tło i panele", "--bg"), C("bgGlow", "Poświata tła", "Tło i panele", "--bg-glow"),
   C("gridLine", "Siatka tła", "Tło i panele", "--grid-line"), C("panel", "Panele", "Tło i panele", "--panel"),
@@ -198,25 +195,6 @@ export function parseColor(s: string): RGBA | null {
 export function toHex(c: RGBA): string {
   const h = (x: number) => Math.round(clamp(x, 0, 255)).toString(16).padStart(2, "0");
   return "#" + h(c.r) + h(c.g) + h(c.b) + (c.a >= 0.999 ? "" : h(c.a * 255));
-}
-export function rgbToHsv({ r, g, b }: RGBA) {
-  const R = r / 255, G = g / 255, B = b / 255;
-  const mx = Math.max(R, G, B), mn = Math.min(R, G, B), d = mx - mn;
-  let h = 0;
-  if (d) h = mx === R ? ((G - B) / d) % 6 : mx === G ? (B - R) / d + 2 : (R - G) / d + 4;
-  return { h: (h * 60 + 360) % 360, s: mx ? d / mx : 0, v: mx };
-}
-export function hsvToRgb(h: number, s: number, v: number) {
-  const c = v * s, x = c * (1 - Math.abs(((h / 60) % 2) - 1)), m = v - c;
-  const [r, g, b] = h < 60 ? [c, x, 0] : h < 120 ? [x, c, 0] : h < 180 ? [0, c, x] : h < 240 ? [0, x, c] : h < 300 ? [x, 0, c] : [c, 0, x];
-  return { r: (r + m) * 255, g: (g + m) * 255, b: (b + m) * 255 };
-}
-export function rgbToHsl({ r, g, b }: RGBA) {
-  const R = r / 255, G = g / 255, B = b / 255;
-  const mx = Math.max(R, G, B), mn = Math.min(R, G, B), l = (mx + mn) / 2, d = mx - mn;
-  const s = d ? d / (1 - Math.abs(2 * l - 1)) : 0;
-  const { h } = rgbToHsv({ r, g, b, a: 1 });
-  return { h, s, l };
 }
 export function hslToRgb(h: number, s: number, l: number) {
   const c = (1 - Math.abs(2 * l - 1)) * s, x = c * (1 - Math.abs(((h / 60) % 2) - 1)), m = l - c / 2;
