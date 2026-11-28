@@ -105,6 +105,10 @@ class EventSpec:
     def task_hash(self) -> str:
         return hashlib.sha256(json.dumps(self.task_dict(), sort_keys=True).encode()).hexdigest()[:16]
 
+    def task_group(self) -> str:
+        """1.46 arch (I0528 / I0798): the MetaModel TRAINING key (task_group_of) - the task without its continuous plan geometry."""
+        return task_group_of(self.to_dict())
+
     def plan_hash(self) -> str:
         d = {**self.task_dict(), "direction": self.direction, "entry": self.entry, "sl": self.sl, "targets": [list(map(float, t)) for t in self.targets],
              "cost_price": self.cost_price, "be_offset_price": self.be_offset_price}
@@ -115,6 +119,31 @@ class EventSpec:
         d["targets"] = [list(map(float, t)) for t in self.targets]
         d["task_hash"], d["plan_hash"] = self.task_hash(), self.plan_hash()
         return d
+
+
+TASK_GROUP_PREFIX = "G"                 # a group key never looks like a task_hash (hex): G + 15 hex
+
+
+def task_group_dict(spec: dict) -> dict:
+    """1.46 arch (I0528 / I0798): the definition of the MetaModel TRAINING task - task_dict WITHOUT the continuous plan geometry
+    (targets_r in R and horizon_s). The SH solver / natural levels quantised to the tick make nearly every candidate its own task_hash
+    (SL 1998.0 vs 1998.1 with the same TPs -> another hash), so training grouped by task_hash never reached the 300 / 100 / 100 rows of a
+    task and the MetaModel stayed INSUFFICIENT_EVIDENCE. The plan shape is a FEATURE of every row (plan:gain_r / tp1_r / n_targets /
+    horizon_min, ctx:risk_atr - features.plan_features). The event, the label rule, BE / timeout / ambiguity policy, the number of targets
+    and their weights stay part of the key. task_hash stays the identifier of the exact task (rows, assessments, TabICL, older artifacts).
+    spec: EventSpec.to_dict() or the stored ledger spec_json (missing fields -> None, never a guess)."""
+    tg = spec.get("targets") or []
+    try:
+        w = [round(float(t[1]), 4) for t in tg]
+    except (TypeError, ValueError, IndexError):
+        w = None
+    return {"instrument": spec.get("instrument"), "strategy": spec.get("strategy"), "entry_rule": spec.get("entry_rule"), "n_targets": len(tg),
+            "weights": w, "be_after": spec.get("be_after"), "ambiguity": spec.get("ambiguity"), "timeout_rule": spec.get("timeout_rule"),
+            "event_id": spec.get("event_id"), "label_version": spec.get("label_version"), "spread_in_prices": spec.get("spread_in_prices")}
+
+
+def task_group_of(spec: dict) -> str:
+    return TASK_GROUP_PREFIX + hashlib.sha256(json.dumps(task_group_dict(spec or {}), sort_keys=True, default=str).encode()).hexdigest()[:15]
 
 
 def _exit_side(bar: dict, direction: str) -> tuple[float, float, float, float, bool]:

@@ -55,6 +55,27 @@ class MetaError(ValueError):
 INPUTS_REV = ("D21",)
 GOLD_FC_PREFIXES = ("fc:forecast:gold_candles:", "fc:gold_candles_")
 
+# QFENCE (1.46 arch, wave 2b): the producer fixes of 1.46 (D10 frozen HTF, D18 data_kind, D21 rejected horizons, wave 2: DXY / indicators /
+# zones / Kalman warm-up states not READY, Event GRU point / schema / NaN, lab fixture_only = SYNTHETIC, scalp A of another instrument,
+# ...) change the values / masks of the records a MetaModel reads (fc:* / st:* / ctx:dxy_*). An artifact trained before them was fitted on
+# the OLD producer semantics; giving it the new inputs silently could lift a HOLD it gives today, and invalidating it would switch ASSIST
+# off (validated_active() empty) and lift every Quant HOLD - both looser. Fail-CLOSED instead: save() stamps the producer semantics of
+# the code that TRAINED the artifact (the stamp is the training time, not the logging time of its rows - the ledger has no per-row producer
+# marker: rows of the current feature version (features.CURRENT) logged by a 1.46 build before these fixes still enter the training of a
+# new artifact; only rows of an older feature version are filtered, by feature_version); an active artifact without it (= PRODUCERS_LEGACY) keeps being loaded and served in SHADOW
+# exactly as before, but in an activated ASSIST QuantService.coordinator_entry HOLDs every new SH / ACTIVE entry
+# (QUANT_REVALIDATION_REQUIRED) until a model trained by the current code is activated and the old keys are rolled back out of `active`
+# (or the user switches Quant back to SHADOW / OFF).
+PRODUCERS = "PMW-QUANT-PRODUCERS-2"
+PRODUCERS_LEGACY = "PMW-QUANT-PRODUCERS-1"
+REVALIDATION_REASON = "QUANT_REVALIDATION_REQUIRED"
+
+
+def producer_semantics(man: dict | None) -> str:
+    """The producer semantics a MetaModel manifest was trained under; a manifest without the field = PRODUCERS_LEGACY (before QFENCE)."""
+    v = (man or {}).get("producer_semantics") if isinstance(man, dict) else None
+    return str(v) if v else PRODUCERS_LEGACY
+
 
 # ------------------------------------------------------------------------------------------------ data
 def matrix(rows: list[dict], names: list[str]) -> np.ndarray:
@@ -485,7 +506,10 @@ def save(inst: str, res: dict, *, spec: dict) -> str:
     (d / "model.json").write_text(blob, encoding="utf-8")
     man = {"model": "quant:metamodel", "version": ver, "instrument": inst, "status": res["status"], "task_hash": th, "event_spec": spec,
            "feature_schema": res["model"]["feature_schema"], "sha256": hashlib.sha256(blob.encode()).hexdigest(), "created_at": time.time(),
-           "report": res["report"], "runtime": {"numpy": np.__version__, "meta_version": VERSION}, "inputs_rev": list(INPUTS_REV)}
+           "report": res["report"], "runtime": {"numpy": np.__version__, "meta_version": VERSION}, "inputs_rev": list(INPUTS_REV),
+           "producer_semantics": PRODUCERS}                       # QFENCE: trained by the current producer code (training time, not row time)
+    if spec.get("task_group"):                                    # 1.46 arch (I0528 / I0798): trained per group (task_hash = group key)
+        man.update(train_key="TASK_GROUP", task_group=spec["task_group"], member_task_hashes=list(spec.get("member_task_hashes") or [])[:200])
     write_json_atomic(d / "manifest.json", man)
     return ver
 
@@ -574,10 +598,47 @@ SEMANTICS_NOTE = {
 def feature_semantics(inst: str, task_hash: str, ver: str) -> dict:
     """1.46: which feature semantics an artifact gets when served (for the activation answer of the API / CLI): FEAT-1 = the pre-1.46
     input, FEAT-3 = the fixed meaning (D4 regime in the SH coordinator candidate - tightening only, D8, D9), FEAT-4 = FEAT-3 with the
-    regime in the vocabulary of its source (I0561 / I0566)."""
-    model, _ = load(inst, task_hash, ver)
+    regime in the vocabulary of its source (I0561 / I0566); producer_semantics / revalidation_required = QFENCE."""
+    model, man = load(inst, task_hash, ver)
     fv = F.version_of(model.get("feature_schema"))
-    return {"feature_version": fv, "feature_schema": model.get("feature_schema"), "note": SEMANTICS_NOTE.get(fv)}
+    ps = producer_semantics(man)
+    out = {"feature_version": fv, "feature_schema": model.get("feature_schema"), "note": SEMANTICS_NOTE.get(fv),
+           "producer_semantics": ps, "revalidation_required": ps != PRODUCERS}
+    if ps != PRODUCERS:
+        out["revalidation_note"] = REVALIDATION_NOTE
+    return out
+
+
+REVALIDATION_NOTE = ("QFENCE: model wytrenowano przed poprawkami producentów 1.46 (wejścia fc:* / st:* / ctx:dxy_* mają dziś inne wartości "
+                     "lub maski). W SHADOW działa jak dotąd; w aktywnym ASSIST Quant wstrzymuje (HOLD) każde nowe wejście SH i ACTIVE "
+                     "(QUANT_REVALIDATION_REQUIRED), dopóki choć jeden aktywny zwalidowany artefakt ma starą semantykę. Wyjście: quant train "
+                     "--instrument <I> (artefakt pod kluczem grupy G…), quant activate --instrument <I> --task <G…> --version <V>, a potem "
+                     "zdjęcie STARYCH kluczy z listy revalidation_required (nowy model ich nie zastępuje): quant rollback --instrument <I> --task "
+                     "<task_hash> – powtarzać, aż klucz zniknie z active (rollback przywraca poprzednią wersję z historii). Zdjęcie wstrzymania "
+                     "bez retreningu: quant mode SHADOW.")
+
+
+def revalidation_notices(inst: str) -> list[dict]:
+    """QFENCE: active VALIDATED_SHADOW versions trained before the producer fixes (manifest without producer_semantics = PRODUCERS) - in
+    an activated ASSIST they hold every new entry (QuantService.coordinator_entry). Read from the files (CLI offline, status)."""
+    out: list[dict] = []
+    try:
+        act = pointer(inst).get("active") or {}
+    except (OSError, ValueError):
+        return out
+    for th, ver in sorted(act.items()):
+        try:
+            d = root(inst) / _part(th, "TASK_HASH") / _part(ver, "VERSION")
+            man = json.loads((d / "manifest.json").read_text(encoding="utf-8"))
+        except (OSError, ValueError, AttributeError):
+            continue
+        if not isinstance(man, dict) or man.get("status") != "VALIDATED_SHADOW":
+            continue
+        ps = producer_semantics(man)
+        if ps != PRODUCERS:
+            out.append({"task_hash": th, "version": ver, "reason": REVALIDATION_REASON, "producer_semantics": ps, "required": PRODUCERS,
+                        "message": "[UWAGA] " + REVALIDATION_NOTE.replace("<I>", inst)})
+    return out
 
 
 def rollback(inst: str, task_hash: str) -> dict:
@@ -637,7 +698,8 @@ def list_versions(inst: str) -> list[dict]:
         rep = man.get("report") or {}
         out.append({"task_hash": man["task_hash"], "version": man["version"], "status": man["status"], "created_at": man.get("created_at"),
                     "n_rows": rep.get("n_rows"), "failed_gates": rep.get("failed_gates"), "test": {k: (rep.get("test_once") or {}).get(k) for k in
-                                                                                                  ("log_loss", "prior_log_loss", "ece", "n")}})
+                                                                                                  ("log_loss", "prior_log_loss", "ece", "n")},
+                    "producer_semantics": producer_semantics(man)})
     # 1.46: the list was in path order (task_hash / version), so 'the last N' in status / CLI cut off the newest versions of tasks with a
     # 'lower' hash - oldest first by creation time (a manifest without created_at first), the newest at the end
     out.sort(key=lambda r: float(r["created_at"]) if isinstance(r["created_at"], (int, float)) and not isinstance(r["created_at"], bool)

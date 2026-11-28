@@ -95,7 +95,9 @@ def main(argv=None) -> int:
         cnt = led.counts(inst)
         _p({"mode": st["mode"], "assist": st.get("assist"), "ledger": cnt, "training_evidence": SV.training_evidence(cnt),
             "active": {i: M.pointer(i).get("active") for i in insts}, "versions": {i: M.list_versions(i)[-10:] for i in insts},
-            "retrain_required": {i: M.retrain_notices(i) for i in insts}, "bot": "działa" if live else "nie działa (stan offline z plików)",
+            "retrain_required": {i: M.retrain_notices(i) for i in insts},
+            "revalidation_required": {i: M.revalidation_notices(i) for i in insts},     # QFENCE: ASSIST holds every entry until retrained
+            "bot": "działa" if live else "nie działa (stan offline z plików)",
             "live": {k: (live or {}).get(k) for k in ("generation", "complete", "models", "snapshot", "timings")} if live else None})
         return 0
     if a.cmd == "train":
@@ -118,7 +120,8 @@ def main(argv=None) -> int:
         _p(res)
         return 2 if all(r["status"] == "INSUFFICIENT_EVIDENCE" for r in res) else 0
     if a.cmd == "list":
-        _p({"active": M.pointer(inst).get("active"), "versions": M.list_versions(inst), "retrain_required": M.retrain_notices(inst)})
+        _p({"active": M.pointer(inst).get("active"), "versions": M.list_versions(inst), "retrain_required": M.retrain_notices(inst),
+            "revalidation_required": M.revalidation_notices(inst)})
         return 0
     if a.cmd == "activate":
         if not (a.task and a.version):
@@ -132,6 +135,8 @@ def main(argv=None) -> int:
         try:                                  # 1.46: which feature semantics the activated MetaModel gets (FEAT-1 / FEAT-3)
             sem = M.feature_semantics(inst, a.task, a.version)
             print(f"[QUANT] semantyka cech: {sem['feature_version']} – {sem['note']}")
+            if sem.get("revalidation_required"):             # QFENCE: an artifact of the old producer semantics
+                print(f"[UWAGA] semantyka producentów {sem.get('producer_semantics')} ≠ {M.PRODUCERS}: {sem.get('revalidation_note')}")
         except (M.MetaError, OSError, ValueError) as exc:
             print(f"[QUANT] semantyka cech: nieznana ({exc})")
         return 0

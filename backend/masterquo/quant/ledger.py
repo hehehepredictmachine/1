@@ -39,6 +39,9 @@ class QuantLedger:
         self.path = Path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self._lock = threading.Lock()
+        # task_hash -> training group (events.task_group_of): the group fields are a subset of the task definition hashed into task_hash,
+        # so the mapping never changes - computed once per task, not on every counts() (every NOT_TRAINED assessment calls it; review I0528)
+        self._groups: dict[str, str | None] = {}
         self.c = sqlite3.connect(str(self.path), check_same_thread=False, timeout=10)
         self.c.row_factory = sqlite3.Row
         with self._lock:
@@ -104,7 +107,35 @@ class QuantLedger:
         for v in vs:
             if v["task_hash"] in tasks:
                 tasks[v["task_hash"]]["labelled_by_feature_version"][v["fv"]] = v["n"]
-        return {"tasks": list(tasks.values()), "total": sum(r["n"] for r in rs)}
+        # 1.46 arch (I0528 / I0798): the training group of every task (events.task_group_of - task_hash without the plan geometry) and the
+        # counts per group - training runs per group now; the per-task fields above stay as they were
+        missing = [th for th in tasks if th not in self._groups]
+        if missing:
+            from .events import task_group_of
+            specs: dict = {}
+            for i in range(0, len(missing), 500):                 # only tasks not seen before (SQLite parameter limit: chunks)
+                part = missing[i:i + 500]
+                qs = "SELECT task_hash, spec_json FROM rows WHERE task_hash IN (" + ",".join("?" * len(part)) + ") GROUP BY task_hash"
+                with self._lock:
+                    specs.update({x["task_hash"]: x["spec_json"] for x in self.c.execute(qs, part).fetchall()})
+            for th in missing:
+                try:
+                    self._groups[th] = task_group_of(json.loads(specs.get(th) or "{}") or {})
+                except (TypeError, ValueError):
+                    self._groups[th] = None
+        groups: dict = {}
+        for th, t in tasks.items():
+            g = self._groups.get(th)
+            t["task_group"] = g
+            gr = groups.setdefault(g, {"task_group": g, "event_id": t["event_id"], "engine": t["engine"], "tasks": 0, "by_status": {}, "positives": 0,
+                                       "labelled_by_feature_version": {}})
+            gr["tasks"] += 1
+            gr["positives"] += t["positives"]
+            for k, n in t["by_status"].items():
+                gr["by_status"][k] = gr["by_status"].get(k, 0) + n
+            for k, n in t["labelled_by_feature_version"].items():
+                gr["labelled_by_feature_version"][k] = gr["labelled_by_feature_version"].get(k, 0) + n
+        return {"tasks": list(tasks.values()), "groups": list(groups.values()), "total": sum(r["n"] for r in rs)}
 
     def add_assessment(self, a: dict) -> None:
         with self._lock:

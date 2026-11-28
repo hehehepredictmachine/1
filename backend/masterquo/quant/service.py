@@ -41,6 +41,7 @@ from .ledger import QuantLedger
 from .scheduler import Dag, Publisher, write_json_atomic
 
 VERSION = "PMW-QUANT-SERVICE-1"
+CONFIDENCE_INFLUENCE = "PRESENTATION"           # 1.46 arch (I0537): TabICL confidence is shown, never ranked / gated (was RANKING_AND_PRESENTATION)
 
 
 def iso_ts(t: float) -> str:
@@ -149,21 +150,50 @@ class QuantService:
         except Exception:  # noqa: BLE001
             return "XAUUSD"
 
-    def validated_active(self, inst: str) -> dict:
+    def _validated(self, inst: str) -> dict:
+        """task key -> (version, manifest) of the active artifacts that load and are VALIDATED_SHADOW."""
         p = M.pointer(inst)
         out = {}
         for th, ver in (p.get("active") or {}).items():
             try:
                 _, man = M.load(inst, th, ver)
                 if man["status"] == "VALIDATED_SHADOW":
-                    out[th] = ver
+                    out[th] = (ver, man)
             except Exception:  # noqa: BLE001 - an incompatible / broken artifact is not active evidence
                 continue
         return out
 
+    def validated_active(self, inst: str) -> dict:
+        return {th: ver for th, (ver, _) in self._validated(inst).items()}
+
     def assist_active(self) -> bool:
         s = self.settings.get()
         return s["mode"] == "ASSIST" and bool((s.get("assist") or {}).get("activated")) and bool(self.validated_active(self.instrument()))
+
+    def revalidation_required(self, inst: str | None = None) -> list[dict]:
+        """QFENCE: the validated active artifacts (the ones that make ASSIST active) trained before the producer fixes (metamodel.PRODUCERS)."""
+        inst = inst or self.instrument()
+        return [{"task_hash": th, "version": ver, "reason": M.REVALIDATION_REASON, "producer_semantics": M.producer_semantics(man),
+                 "required": M.PRODUCERS} for th, (ver, man) in sorted(self._validated(inst).items()) if M.producer_semantics(man) != M.PRODUCERS]
+
+    def fence_entry(self) -> dict | None:
+        """QFENCE (fail-closed, tightening only): Quant in an activated ASSIST with an active MetaModel trained before the producer fixes ->
+        one READY ASSIST entry with quant_hold for EVERY new entry of both paths (the coordinator gives MODEL_QUANT_HOLD: SH READY -> WAIT,
+        ACTIVE ENTER -> BLOCKED; with quant:metamodel in decision.required_models MODEL_QUANT_HOLD too (REQUIRED) - the entry is READY with
+        result None, so a REQUIRED role must never PASS it) instead of an assessment on inputs whose meaning changed under it.
+        assist_active() is NOT turned off for it (that would lift every Quant HOLD). None otherwise (SHADOW / OFF / not activated / every
+        active artifact current)."""
+        s = self.settings.get()
+        if s.get("mode") != "ASSIST" or not (s.get("assist") or {}).get("activated"):
+            return None
+        rv = self.revalidation_required(self.instrument())
+        if not rv:
+            return None
+        names = ", ".join(f"{r['task_hash']}/{r['version']}" for r in rv[:3]) + (" …" if len(rv) > 3 else "")
+        return {"family": "quant:metamodel", "use": "ASSIST", "task_type": "EVENT_PROBABILITY", "data_time": iso_ts(self.clock()), "state": "READY",
+                "result": None, "revalidation_required": rv,
+                "quant_hold": f"{M.REVALIDATION_REASON}: MetaModel wytrenowany przed poprawkami producentów ({names}) – wytrenuj i aktywuj "
+                              f"nowy model, potem quant rollback --task <stary klucz> aż zniknie z active (albo Quant SHADOW)"}
 
     def set_mode(self, mode: str, *, confirm: bool = False, by: str = "CLI") -> dict:
         mode = str(mode).upper()
@@ -186,7 +216,12 @@ class QuantService:
                 s["assist"] = {"activated": False, "activated_at": None, "activated_by": None}
             s["mode"] = mode
             self.settings.put(s)
-        return {"ok": True, "mode": mode, "assist": s["assist"]}
+        out = {"ok": True, "mode": mode, "assist": s["assist"]}
+        if mode == "ASSIST":
+            rv = self.revalidation_required(self.instrument())
+            if rv:                                  # QFENCE: activated, but it holds every new entry until a current model is active
+                out.update(revalidation_required=rv, warning=M.REVALIDATION_NOTE.replace("<I>", self.instrument()))
+        return out
 
     def set_estimator(self, kind: str, *, by: str = "panel") -> dict:
         """1.41: tabicl_v2 (raw TabICLv2 confidence, DIRECT_USER_REQUEST) or legacy_logistic (1.35 artifacts, original meaning) -
@@ -210,7 +245,11 @@ class QuantService:
         d.add("snapshot", lambda c, _: S.build(c["rt"].bridge, instrument=c["inst"], now=c["now"]), owner="quant.snapshot", deadline_s=5.0)
         d.add("base_predictions", lambda c, _: MA.all_predictions(c["rt"], c["inst"]), deps=("snapshot",), owner="modelhub.adapters", deadline_s=20.0)
         d.add("extended_predictions", self._extended, deps=("snapshot",), owner="quant.adapters", deadline_s=25.0)
-        d.add("contract_checks", self._checks, deps=("snapshot", "base_predictions", "extended_predictions"), owner="quant.checks", deadline_s=5.0)
+        # 1.46 arch (I0799, part): the prediction branches are SOFT dependencies - a failed / timed-out branch no longer throws away the
+        # records of the other one for the features / ledger / status. Such a generation stays complete=False and the coordinator reads no
+        # records from it (coordinator_predictions), exactly as when contract_checks was BLOCKED_DEPENDENCY: no REQUIRED block is lifted.
+        d.add("contract_checks", self._checks, deps=("snapshot",), soft_deps=("base_predictions", "extended_predictions"), owner="quant.checks",
+              deadline_s=5.0)
         return d
 
     def _extended(self, c, deps) -> list[dict]:
@@ -222,14 +261,22 @@ class QuantService:
             self._last_m1 = m1["t"]
             self._last_scalp = [p for p in out if p.get("canonical_id") == "scalp:A_direction"]
         else:
-            out += self._last_scalp                       # scalp A: one inference per closed M1 bar (cached between bars)
+            # scalp A: one inference per closed M1 bar (cached between bars). 1.46 arch (I0800): only records of THIS instrument - after a
+            # switch in the same minute the previous instrument's forecast went into the new generation; the new instrument gets its own
+            # at the next closed M1 bar (until then no record: REQUIRED stricter, never a forecast of another instrument)
+            out += [p for p in self._last_scalp if p.get("instrument") == c["inst"]]
         return out
 
     def _checks(self, c, deps) -> dict:
         snap = deps["snapshot"]
         floor = {tf: (bs[-1]["t"] if bs else None) for tf, bs in (snap.get("bars") or {}).items()}
-        return CK.screen(deps["base_predictions"] + deps["extended_predictions"], now=c["now"], snapshot_kind=snap.get("data_kind"),
-                         generation_floor=floor)
+        base, ext = list(deps.get("base_predictions") or []), list(deps.get("extended_predictions") or [])
+        out = CK.screen(base + ext, now=c["now"], snapshot_kind=snap.get("data_kind"), generation_floor=floor)
+        # 1.46 arch (I0366 / I0801): ids.dedup keeps the FIRST record of one identity - base (families SEQ_GRU_EVENT = event_gru.latest of
+        # the previous cycle) before extended (this cycle's Event GRU), so the fresh answer was dropped as an alias. The eligible list (what
+        # the coordinator reads) stays exactly the same; the fresher alias is published separately and used for the features only
+        out["fresh_for_features"] = _fresher_aliases(base, ext, now=c["now"], snapshot_kind=snap.get("data_kind"), floor=floor)
+        return out
 
     def cycle(self) -> dict:
         inst = self.instrument()
@@ -245,10 +292,16 @@ class QuantService:
         self.timings["_cycle"] = self.timings["_cycle"][-500:]
         snap = (r["tasks"].get("snapshot") or {}).get("value")
         chk = (r["tasks"].get("contract_checks") or {}).get("value") or {"eligible": [], "excluded": [], "aliases_dropped": []}
-        payload = {"version": VERSION, "generation": gen, "instrument": inst, "computed_at": now, "complete": r["complete"], "cycle_ms": r["cycle_ms"],
+        # 1.46 arch (I0796): an Event GRU failure that used to abort the whole extended branch now yields an ERROR record - the generation
+        # stays incomplete as it was then (the coordinator reads no records from it), the other records serve the features / ledger
+        ext = (r["tasks"].get("extended_predictions") or {}).get("value") or []
+        inc = sorted({str(p.get(A.INCOMPLETE_KEY)) for p in ext if isinstance(p, dict) and p.get(A.INCOMPLETE_KEY)})
+        complete = bool(r["complete"]) and not inc
+        payload = {"version": VERSION, "generation": gen, "instrument": inst, "computed_at": now, "complete": complete, "cycle_ms": r["cycle_ms"],
                    "tasks": {k: {x: v.get(x) for x in ("status", "reason", "ms", "owner")} for k, v in r["tasks"].items()},
                    "snapshot": S.summary(snap) if snap else None, "eligible": chk["eligible"], "excluded": chk["excluded"],
-                   "aliases_dropped": chk["aliases_dropped"], "mode": self.mode(), "execution_allowed": False}
+                   "aliases_dropped": chk["aliases_dropped"], "fresh_for_features": chk.get("fresh_for_features") or [],
+                   "incomplete_reasons": inc, "mode": self.mode(), "execution_allowed": False}
         self.pub.publish(payload)
         self.loop["cycles"] += 1
         self.loop["last_cycle_at"] = now
@@ -301,28 +354,32 @@ class QuantService:
         if not pub:
             return [], None
         out = []
-        for p in pub["eligible"]:
+        for p in _with_fresh(pub["eligible"], pub.get("fresh_for_features")):
             av = CK.ts(p.get("available_at")) or CK.ts(p.get("data_time"))
             if av is not None and av <= t + CK.CLOCK_TOLERANCE_S:            # only what was available at the decision
                 out.append(p)
         return out, pub
 
-    def _model(self, inst: str, th: str):
-        ver = (M.pointer(inst).get("active") or {}).get(th)
+    def _model(self, inst: str, th: str, tg: str | None = None):
+        """The active artifact for a candidate: its training group first (1.46 arch I0528 / I0798 - train_from_ledger trains per group),
+        else the exact task_hash (an artifact trained before, with its original meaning)."""
+        act = M.pointer(inst).get("active") or {}
+        key = tg if tg and act.get(tg) else th
+        ver = act.get(key)
         if not ver:
             return None, None, None
         with self._lock:
-            hit = self._models.get((inst, th))
+            hit = self._models.get((inst, key))
             if hit and hit[0] == ver:
                 return hit
         try:
-            model, man = M.load(inst, th, ver)
+            model, man = M.load(inst, key, ver)
         except Exception as exc:  # noqa: BLE001
             return ver, None, {"status": "INCOMPATIBLE", "reason": str(exc)[:200]}
         if man["status"] != "VALIDATED_SHADOW":
             return ver, None, {"status": man["status"], "reason": "artefakt bez zaakceptowanej walidacji"}
         with self._lock:
-            self._models[(inst, th)] = (ver, model, man)
+            self._models[(inst, key)] = (ver, model, man)
         return ver, model, man
 
     def assess(self, cd: dict, *, mode: str | None = None, log_row: bool = False, evidence: dict | None = None,
@@ -366,19 +423,28 @@ class QuantService:
         # 1.41 TabICLv2: asynchronous, keyed by THIS plan_hash; the legacy meta-model path below is unchanged
         tb = self.tabicl.submit(cd, spec, feats, (pub or {}).get("generation"))
         a["tabicl"] = tb
+        # 1.46 arch (I0532): the estimator that really answers - tabicl_v2 only while TabICL is active; estimator = legacy_logistic -> that
+        # name, TabICL switched off by tabicl.enabled = false -> tabicl_v2_disabled (the label said tabicl_v2 in every case). Label only:
+        # the MetaModel path below is the same for every estimator setting (switching it off would lift a possible ASSIST HOLD).
+        # 1.46 arch (I0537): influence PRESENTATION - no consumer ranks by the confidence (baskets sort by setup_score; DecisionRecord keeps
+        # it outside the verdict and the hash), RANKING_AND_PRESENTATION overstated its role
         a["confidence"] = {"heuristic_score": cd.get("score"), "confidence_score": tb.get("confidence_score") if tb.get("state") == "READY" else None,
                            "p_event_raw": tb.get("p_event_raw") if tb.get("state") == "READY" else None, "event_id": spec.event_id,
-                           "task_hash": th, "plan_hash": a["plan_hash"], "estimator_kind": "tabicl_v2", "state": tb.get("state"),
+                           "task_hash": th, "plan_hash": a["plan_hash"], "estimator_kind": self._estimator_kind(), "state": tb.get("state"),
                            "reason": tb.get("reason"), "context_id": tb.get("context_id"), "calibration_status": "UNCALIBRATED",
-                           "computed_at": tb.get("computed_at"), "influence": "RANKING_AND_PRESENTATION" if tb.get("state") == "READY" else "NONE",
+                           "computed_at": tb.get("computed_at"), "influence": CONFIDENCE_INFLUENCE if tb.get("state") == "READY" else "NONE",
                            "note": "surowy wynik modelu (nie zmierzony win rate); bez stałych premii; brak wyniku ≠ 50 %"}
-        ver, model, man = self._model(inst, th)
+        tg = spec.task_group()
+        a["task_group"] = tg
+        ver, model, man = self._model(inst, th, tg)
         if model is None:
             n = self.ledger.counts(inst)
             task = next((t for t in n["tasks"] if t["task_hash"] == th), None)
+            grp = next((g for g in n.get("groups") or [] if g.get("task_group") == tg), None)
             a.update(status="NOT_TRAINED" if not ver else (man or {}).get("status", "INCOMPATIBLE"),
                      reason=("brak wytrenowanego modelu dla tego zdarzenia" if not ver else (man or {}).get("reason")),
-                     probability=None, ev=None, evidence={"ledger_rows_for_task": (task or {}).get("by_status", {}), "positives": (task or {}).get("positives")})
+                     probability=None, ev=None, evidence={"ledger_rows_for_task": (task or {}).get("by_status", {}), "positives": (task or {}).get("positives"),
+                                                          "ledger_rows_for_group": (grp or {}).get("by_status", {}), "task_group": tg})
         else:
             fv = F.version_of(model.get("feature_schema")) or F.VERSION
             nfeats = None
@@ -467,6 +533,13 @@ class QuantService:
                 self.recent = ([a] + self.recent)[:200]
         return a
 
+    def _estimator_kind(self) -> str:
+        """I0532: the confidence estimator in effect (label of assess()['confidence'])."""
+        if self.tabicl.active():
+            return "tabicl_v2"
+        est = self.settings.get().get("estimator")
+        return "tabicl_v2_disabled" if est in (None, "tabicl_v2") else str(est)
+
     def _bridge_kind(self) -> str:
         """1.46: data kind of a row logged before the first published generation (bot start, failed snapshot) - from the bridge itself
         (an explicit synthetic flag only), else UNKNOWN. Such rows were always UNKNOWN and blocked the data_real gate of the task."""
@@ -492,9 +565,17 @@ class QuantService:
         pub = self.pub.current() or {}
         if pub.get("instrument") != inst:
             return []
+        if pub.get("complete") is False:
+            # 1.46 arch (I0796 / I0799): an incomplete generation published no eligible record before (contract_checks blocked by the
+            # failed branch); it now keeps the other branch for the features, but the coordinator reads what it read then - nothing
+            # (REQUIRED -> MISSING as before, never lifted by the fix)
+            return []
         return [dict(p, model_id=p.get("family") or p.get("canonical_id")) for p in pub.get("eligible") or []]
 
     def coordinator_entry(self, path: str, *, cand: dict | None = None, setup: dict | None = None) -> dict | None:
+        fence = self.fence_entry()                 # QFENCE: an artifact of the old producer semantics holds every entry, no assessment
+        if fence is not None:
+            return fence
         base = {"family": "quant:metamodel", "use": "ASSIST", "task_type": "EVENT_PROBABILITY", "data_time": iso_ts(self.clock())}
         if cand is not None:
             # 1.46 (D4): the coordinator's SH candidate now carries the regime of its SH cycle (evaluation.contract.sh_candidate - as the
@@ -514,7 +595,7 @@ class QuantService:
             cur = self.tabicl.lookup(conf["plan_hash"])          # the result may have arrived after the assessment - same plan only
             if cur and cur.get("state") == "READY":
                 conf = {**conf, "confidence_score": cur["confidence_score"], "p_event_raw": cur["p_event_raw"], "state": "READY",
-                        "context_id": cur.get("context_id"), "computed_at": cur.get("computed_at"), "influence": "RANKING_AND_PRESENTATION"}
+                        "context_id": cur.get("context_id"), "computed_at": cur.get("computed_at"), "influence": CONFIDENCE_INFLUENCE}
         base["confidence"] = conf
         if a.get("status") != "READY":
             return {**base, "state": "NOT_TRAINED" if a.get("status") == "NOT_TRAINED" else "BLOCKED_DATA", "result": None,
@@ -549,7 +630,7 @@ class QuantService:
             cur = self.tabicl.lookup(conf.get("plan_hash") or "")
             if cur and cur.get("state") == "READY":
                 conf = {**conf, "confidence_score": cur["confidence_score"], "p_event_raw": cur["p_event_raw"], "state": "READY",
-                        "context_id": cur.get("context_id"), "computed_at": cur.get("computed_at"), "influence": "RANKING_AND_PRESENTATION"}
+                        "context_id": cur.get("context_id"), "computed_at": cur.get("computed_at"), "influence": CONFIDENCE_INFLUENCE}
             elif cur:
                 conf = {**conf, "state": cur.get("state"), "reason": cur.get("reason")}
             return {k: conf.get(k) for k in ("estimator_kind", "state", "confidence_score", "p_event_raw", "event_id", "plan_hash", "task_hash",
@@ -704,14 +785,18 @@ class QuantService:
             by_reason[k] = by_reason.get(k, 0) + 1
         s = self.settings.get()
         counts = self.ledger.counts(inst)
+        rv = _safe(lambda: self.revalidation_required(inst), [])
         return {"version": VERSION, "instrument": inst, "mode": s["mode"], "assist": s.get("assist"), "assist_active": self.assist_active(),
+                # QFENCE: True = an active MetaModel of the old producer semantics; in an activated ASSIST every new entry is held
+                "revalidation_required": bool(rv), "assist_fail_closed": bool(rv) and s["mode"] == "ASSIST" and bool((s.get("assist") or {}).get("activated")),
                 "settings_error": self.settings.error, "generation": pub.get("generation"), "complete": pub.get("complete"),
                 "computed_at": pub.get("computed_at"), "cycle_ms": pub.get("cycle_ms"), "tasks": pub.get("tasks"), "snapshot": pub.get("snapshot"),
                 "models": {"eligible": len(el), "excluded": len(ex), "excluded_by_reason": by_reason, "aliases_dropped": len(pub.get("aliases_dropped") or []),
                            "ready_ids": sorted({p.get("canonical_id") for p in el})},
                 "setup_scoped": _safe(lambda: A.setup_scoped(self.rt, inst), []),
                 "metamodel": {"active": M.pointer(inst).get("active"), "validated_active": self.validated_active(inst), "versions": M.list_versions(inst)[-20:],
-                              "retrain_required": _safe(lambda: M.retrain_notices(inst), [])},          # D21: presentation only
+                              "retrain_required": _safe(lambda: M.retrain_notices(inst), []),          # D21: presentation only
+                              "revalidation_required": rv, "producer_semantics": M.PRODUCERS},
                 "ledger": counts, "training_evidence": training_evidence(counts), "loop": dict(self.loop),
                 "jobs": [{k: j.get(k) for k in ("job_id", "state", "started_at", "finished_at", "error")} for j in self.jobs.values()][-10:],
                 "timings": percentiles(self.timings), "execution_allowed": False,
@@ -719,7 +804,8 @@ class QuantService:
 
     def predictions(self) -> dict:
         pub = self.pub.current() or {}
-        return {k: pub.get(k) for k in ("generation", "instrument", "computed_at", "eligible", "excluded", "aliases_dropped")}
+        return {k: pub.get(k) for k in ("generation", "instrument", "computed_at", "complete", "eligible", "excluded", "aliases_dropped",
+                                        "fresh_for_features", "incomplete_reasons")}
 
 
 def training_evidence(counts: dict) -> dict:
@@ -734,12 +820,61 @@ def training_evidence(counts: dict) -> dict:
         tasks.append({"task_hash": t.get("task_hash"), "event_id": t.get("event_id"), "engine": t.get("engine"), "labelled_current": cur,
                       "labelled_older_versions": sum(int(n) for v, n in byv.items() if v != F.CURRENT), "required_min_labelled": need,
                       "missing": max(0, need - cur)})
+    groups = []                                     # 1.46 arch (I0528 / I0798): training runs per group - the evidence that counts
+    for g in (counts or {}).get("groups") or []:
+        byv = g.get("labelled_by_feature_version") or {}
+        cur = int(byv.get(F.CURRENT, 0))
+        groups.append({"task_group": g.get("task_group"), "event_id": g.get("event_id"), "engine": g.get("engine"), "tasks": g.get("tasks"),
+                       "labelled_current": cur, "required_min_labelled": need, "missing": max(0, need - cur)})
     return {"feature_version": F.CURRENT, "required_min_labelled": need,
             "required_basis": f"DEV {M.CRITERIA['min_dev']} + CAL {M.CRITERIA['min_cal']} + TEST {M.CRITERIA['min_test']} (bloki czasowe z "
-                              "embargiem – faktycznie potrzeba nieco więcej)", "tasks": tasks,
+                              "embargiem – faktycznie potrzeba nieco więcej)", "tasks": tasks, "groups": groups,
             "note": f"Nowe MetaModele uczą się tylko na wierszach {F.CURRENT}; wiersze starszych wersji cech (sprzed 1.46: FEAT-1, wcześniejsze "
                     "1.46: FEAT-3) zostają w ledgerze, ale nie trenują. Do czasu zebrania wierszy działa dotychczasowy aktywny artefakt "
                     "(dostaje wejście swojej wersji)."}
+
+
+def _fresher(a: dict, b: dict) -> bool:
+    """a was computed later than b (computed_at, then data_time); an unknown time never wins."""
+    for k in ("computed_at", "data_time"):
+        ta, tb = CK.ts(a.get(k)), CK.ts(b.get(k))
+        if ta is not None and tb is not None and ta != tb:
+            return ta > tb
+    return False
+
+
+def _fresher_aliases(base: list[dict], ext: list[dict], *, now: float, snapshot_kind, floor) -> list[dict]:
+    """1.46 arch (I0366 / I0801): extended records that ids.dedup drops as an alias of an OLDER base record of the same identity (Event GRU:
+    the family SEQ_GRU_EVENT reads event_gru.latest of the previous cycle) - screened alone; the eligible ones replace the older alias in the
+    features (_with_fresh), never in the coordinator list."""
+    from . import ids as I
+    first: dict = {}
+    for p in base:
+        first.setdefault(I.identity({**p, "canonical_id": I.canonical(p)}), p)
+    out = []
+    for q in ext:
+        q = {**q, "canonical_id": I.canonical(q)}
+        p = first.get(I.identity(q))
+        if p is None or not _fresher(q, p):
+            continue
+        r = CK.check(q, now=now, snapshot_kind=snapshot_kind, generation_floor=floor)
+        if r["eligible"]:
+            out.append({**q, "eligibility": {"eligible": True, "reason": None, "replaces_alias_of": p.get("family") or p.get("model_key")},
+                        "age_s": None if r["age_s"] is None else round(r["age_s"], 2)})
+    return out
+
+
+def _with_fresh(eligible: list[dict], fresh: list[dict] | None) -> list[dict]:
+    """The eligible list with the fresher alias (fresh_for_features) in place of the older record of the same identity (features only)."""
+    if not fresh:
+        return list(eligible or [])
+    from . import ids as I
+    fr = {I.identity(q): q for q in fresh}
+    out = []
+    for p in eligible or []:
+        q = fr.pop(I.identity(p), None)
+        out.append(q if q is not None else p)
+    return out + list(fr.values())                  # the older alias was excluded (e.g. STALE): the fresh one is a feature input
 
 
 def percentiles(tim: dict) -> dict:
@@ -759,6 +894,10 @@ def _safe(fn, default):
         return default
 
 
+def _group_of_row(r: dict) -> str:
+    return EV.task_group_of(r.get("spec") or {})
+
+
 def _log_tail(p: Path, n: int = 40) -> list[str]:
     """Last non-empty lines of a training child's log file (arch146 I0069: job['log'] when the child left no result)."""
     try:
@@ -769,7 +908,15 @@ def _log_tail(p: Path, n: int = 40) -> list[str]:
 
 
 def train_from_ledger(ledger: QuantLedger, inst: str, task_hash: str | None = None, *, crit: dict | None = None, log=print) -> list[dict]:
-    rows = ledger.training_rows(inst, task_hash)
+    """1.46 arch (I0528 / I0798): one MetaModel per TRAINING GROUP (events.task_group_of = the task without targets_r / horizon_s; the plan
+    shape is a feature) - per task_hash practically every SH candidate was its own task and no task reached the 300 / 100 / 100 rows.
+    task_hash (argument kept for the API / CLI): a group key (G...) trains that group, a task_hash trains the group of that task; the
+    artifact is stored and activated under the group key (QuantService._model looks the group up first, then the task_hash of an older
+    artifact)."""
+    rows = ledger.training_rows(inst)
+    if task_hash:
+        want = {_group_of_row(r) for r in rows if r.get("task_hash") == task_hash} | ({task_hash} if task_hash.startswith(EV.TASK_GROUP_PREFIX) else set())
+        rows = [r for r in rows if _group_of_row(r) in want]
     # 1.46: a new MetaModel learns from rows of the CURRENT feature semantics only (features.CURRENT); rows of an older version (same
     # column names, another meaning - Kalman candidate, stale DXY) stay in the ledger but are never mixed into the training set
     older: dict[str, int] = {}
@@ -778,7 +925,8 @@ def train_from_ledger(ledger: QuantLedger, inst: str, task_hash: str | None = No
         if r.get("feature_version", F.CURRENT) == F.CURRENT:
             cur.append(r)
         else:
-            older[r["task_hash"]] = older.get(r["task_hash"], 0) + 1
+            g = _group_of_row(r)
+            older[g] = older.get(g, 0) + 1
     if older:
         log(f"[QUANT] {inst}: pominięto {sum(older.values())} wierszy starszej wersji cech (≠ {F.CURRENT}) – nowe modele uczą się tylko na "
             f"wierszach bieżącej wersji")
@@ -792,13 +940,14 @@ def train_from_ledger(ledger: QuantLedger, inst: str, task_hash: str | None = No
         if r.get("data_kind") in ("REAL", "SYNTHETIC"):
             known.append(r)
         else:
-            unknown[r["task_hash"]] = unknown.get(r["task_hash"], 0) + 1
+            g = _group_of_row(r)
+            unknown[g] = unknown.get(g, 0) + 1
     if unknown:
         log(f"[QUANT] {inst}: pominięto {sum(unknown.values())} wierszy o nieznanym rodzaju danych (UNKNOWN) – nie są dowodem do treningu")
     rows = known
     by: dict[str, list] = {}
     for r in rows:
-        by.setdefault(r["task_hash"], []).append(r)
+        by.setdefault(_group_of_row(r), []).append(r)
     if not by:
         log(f"[QUANT] {inst}: brak oznaczonych wierszy w ledgerze – trening nieuruchomiony (INSUFFICIENT_EVIDENCE)")
         return [{"task_hash": task_hash, "status": "INSUFFICIENT_EVIDENCE",
@@ -807,16 +956,22 @@ def train_from_ledger(ledger: QuantLedger, inst: str, task_hash: str | None = No
                  "feature_version": F.CURRENT}]
     out = []
     for th, rs in sorted(by.items()):
+        rs.sort(key=lambda r: (r["decision_ts"], r["row_id"]))        # one group = many tasks: one time order for the blocks
         spec = rs[0]["spec"]
-        seen = (M.pointer(inst).get("seen_tests") or {}).get(th, [])
-        log(f"[QUANT] {inst} zadanie {th} ({spec.get('event_id')}): {len(rs)} wierszy")
-        res = M.train(rs, task={"task_hash": th, "event_id": spec.get("event_id")}, crit=crit, seen_tests=seen, feature_version=F.CURRENT)
-        item = {"task_hash": th, "event_id": spec.get("event_id"), "status": res["status"], "n_rows": len(rs),
-                "reason": res["report"].get("reason"), "failed_gates": res["report"].get("failed_gates"),
+        members = sorted({r.get("task_hash") for r in rs if r.get("task_hash")})
+        # review (I0528): the TEST blocks seen by models of the member tasks (per task_hash, before the groups) count too - a group whose
+        # TEST overlaps one of them is not a fresh test ("test once")
+        st = M.pointer(inst).get("seen_tests") or {}
+        seen = list(st.get(th, [])) + [ids for m in members for ids in st.get(m, [])]
+        log(f"[QUANT] {inst} grupa {th} ({spec.get('event_id')}): {len(rs)} wierszy z {len(members)} zadań (task_hash)")
+        res = M.train(rs, task={"task_hash": th, "task_group": th, "train_key": "TASK_GROUP", "event_id": spec.get("event_id"),
+                                "member_tasks": len(members)}, crit=crit, seen_tests=seen, feature_version=F.CURRENT)
+        item = {"task_hash": th, "task_group": th, "member_tasks": len(members), "event_id": spec.get("event_id"), "status": res["status"],
+                "n_rows": len(rs), "reason": res["report"].get("reason"), "failed_gates": res["report"].get("failed_gates"),
                 "excluded_unknown_data_kind": unknown.get(th, 0), "excluded_older_feature_version": older.get(th, 0),
                 "feature_version": F.CURRENT}
         if "model" in res:
-            ver = M.save(inst, res, spec=spec)
+            ver = M.save(inst, res, spec={**spec, "task_hash": th, "task_group": th, "member_task_hashes": members[:200]})
             M.record_test(inst, th, res["report"]["test_row_ids"])
             item["version"] = ver
             item["test"] = {k: res["report"]["test_once"].get(k) for k in ("log_loss", "prior_log_loss", "ece", "n")}

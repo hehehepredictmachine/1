@@ -32,7 +32,7 @@ Wyniki o różnych znaczeniach to osobne cechy i nigdy nie są uśredniane. Brak
 
 ## Procedura (`quant/metamodel.train`)
 
-1. **Zadanie**: wiersze jednego `task_hash` (ten sam EventSpec), posortowane według czasu decyzji.
+1. **Grupa zadania** (1.46 arch, I0528/I0798): wiersze jednej grupy `task_group` (`quant/events.task_group_of`: EventSpec bez ciągłej geometrii planu – bez celów w R i bez horyzontu; zostają instrument, strategia, reguła wejścia, liczba celów i wagi, BE, timeout, niejednoznaczność, zdarzenie, wersja etykiety), posortowane według czasu decyzji. Kształt planu jest cechą wiersza (`plan:*`). Dawniej jeden `task_hash` – przy celach z solvera SH prawie każdy kandydat był osobnym zadaniem i żadne nie zbierało minimum wierszy.
 2. **Bloki** DEV 60% → CAL 20% → TEST 20% według czasu. **Purge**: wiersz wcześniejszego bloku, którego etykieta rozstrzygnęła się po starcie następnego bloku (minus `embargo_s`), wypada.
    `assert_no_future` jest sprawdzane na każdej granicy.
 3. **DEV, walk-forward**: K = 4 rozszerzające się foldy z tym samym purge. W każdym foldzie wybór cech (pokrycie ≥ 5%), skaler i model są dopasowywane tylko na części treningowej.
@@ -75,7 +75,8 @@ ASSIST wymaga osobnej, jawnej decyzji użytkownika.
 
 ## Artefakty
 
-- Format: czysty JSON (współczynniki, skaler, kalibrator), bez pickle. Ścieżka: `<dane>/quant/models/<instrument>/<task_hash>/<wersja>/`.
+- Format: czysty JSON (współczynniki, skaler, kalibrator), bez pickle. Ścieżka: `<dane>/quant/models/<instrument>/<klucz>/<wersja>/` – klucz grupy `G…` (nowe modele, manifest `train_key: TASK_GROUP`) albo `task_hash` (artefakty sprzed 1.46 arch; ocena szuka najpierw grupy kandydata, potem jego `task_hash`).
+- QFENCE: manifest zapisuje `producer_semantics` (`PMW-QUANT-PRODUCERS-2`). Znacznik opisuje kod, który wytrenował artefakt (czas treningu), a nie semantykę wierszy: ledger nie zapisuje semantyki producentów w wierszu, więc wiersze bieżącej wersji cech (`features.CURRENT`, dziś FEAT-4) zalogowane przez wersję 1.46 sprzed poprawek producentów wchodzą do treningu nowego artefaktu. Filtrowane są tylko wiersze starszej wersji cech (`feature_version`). Aktywny artefakt bez tego pola (wytrenowany przed poprawkami producentów 1.46) działa w SHADOW jak dotąd, a w aktywnym ASSIST wstrzymuje każde nowe wejście SH i ACTIVE (`QUANT_REVALIDATION_REQUIRED`, status: `revalidation_required`), dopóki choć jeden aktywny zwalidowany artefakt ma starą semantykę. Wyjście: trening i aktywacja nowego modelu (klucz grupy `G…`), a potem zdjęcie starych kluczy `task_hash` z `revalidation_required` przez `quant rollback --instrument <I> --task <task_hash>` (powtarzać, aż klucz zniknie z `active`; nowy model grupy ich nie zastępuje) – albo powrót do SHADOW. Szczegóły: ROLLBACK.md.
 - Manifest zawiera: zakresy czasowe bloków, hash danych, EventSpec, schemat cech (`PMW-QUANT-FEAT-1:<hash>`), seed, metryki, baseline, kryteria, kalibrator, próbkę odtworzenia (5 wierszy) i status.
 - `load` sprawdza SHA-256, wersję, schemat cech i odtworzenie próbki (tolerancja 1e-9). Niezgodność daje `MetaError` (stan INCOMPATIBLE).
 - Wskaźnik `ACTIVE.json` przechowuje historię i obsługuje `rollback`.
@@ -91,6 +92,6 @@ ASSIST wymaga osobnej, jawnej decyzji użytkownika.
 
 ## Ograniczenia
 
-- Jeden model na `task_hash`. Rzadkie kształty planu długo nie zbiorą 500+ wierszy.
+- Jeden model na grupę zadania (`task_group`). Rzadkie zdarzenia / strategie długo nie zbiorą 500+ wierszy.
 - Purge zakłada, że `resolve_ts` = zamknięcie świecy ostatniego wypełnienia albo koniec horyzontu.
 - HGB/XGBoost jako challenger nie został dodany: nie ma danych pozwalających wykazać korzyść OOS.

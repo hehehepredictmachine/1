@@ -165,7 +165,7 @@ def _metamodel(ctx) -> dict:
         res = (job.get("results") or [{}])[0]
         gate_msg = None
         try:
-            M.activate(INST, th, res.get("version") or "missing")
+            M.activate(INST, res.get("task_hash") or th, res.get("version") or "missing")     # I0528: the key of the trained group
         except M.MetaError as exc:
             gate_msg = str(exc)
         a0 = q.assess(cd)
@@ -191,6 +191,7 @@ def _metamodel(ctx) -> dict:
             return steps
         ctx.step = "artifact"
         ver = r2["version"]
+        th = r2.get("task_hash") or th                           # 1.46 arch (I0528 / I0798): trained and activated under the group key
         model, man = M.load(INST, th, ver)                       # sha256 + schema + reproduction sample are checked by load()
         rep = (man.get("report") or {}).get("reproduction") or []
         diff = max((abs(M.predict(model, s["features"])["p_event"] - s["out"]["p_event"]) for s in rep), default=float("nan"))
@@ -410,7 +411,7 @@ def _tabicl(ctx) -> dict:
                          calibration={"method": None, "status": r2.get("calibration_status")}, compute_ms=r2.get("latency_ms"),
                          data_kind="SYNTHETIC", source="TabICLService -> .venv_tabicl worker")
             errs = ctx.contract_errors(rec)
-            if conf.get("state") != "READY" or conf.get("p_event_raw") != p2 or conf.get("influence") != "RANKING_AND_PRESENTATION":
+            if conf.get("state") != "READY" or conf.get("p_event_raw") != p2 or conf.get("influence") != "PRESENTATION":
                 errs.append(f"assess.confidence {conf}")
             if abs((conf.get("confidence_score") or -1) - round(100.0 * p2, 1)) > 1e-9 or conf.get("calibration_status") != "UNCALIBRATED":
                 errs.append(f"confidence_score {conf.get('confidence_score')} ≠ 100×p / kalibracja {conf.get('calibration_status')}")
@@ -421,7 +422,7 @@ def _tabicl(ctx) -> dict:
             if (ce.get("confidence") or {}).get("p_event_raw") != p2 or a2.get("execution_allowed") is not False:
                 errs.append(f"coordinator_entry.confidence {(ce.get('confidence') or {}).get('state')}, execution_allowed {a2.get('execution_allowed')}")
             steps["contract"] = check(not errs, f"confidence READY u konsumentów (assess / confidence_for / coordinator_entry, wpływ "
-                                                f"RANKING_AND_PRESENTATION, execution_allowed False; inny SL -> brak wartości); widok PMW-PRED-2 "
+                                                f"PRESENTATION, execution_allowed False; inny SL -> brak wartości); widok PMW-PRED-2 "
                                                 f"wyniku READY (EVENT_PROBABILITY p={p2:.4f}, UNCALIBRATED) poprawny",
                                       "; ".join(errs)[:400])
             return steps

@@ -76,6 +76,21 @@ trening **nie filtruje wersji**. Nauczyłby więc model na mieszance wierszy, w 
 Sam reżim w kandydacie SH tylko zaostrza: model FEAT-3 jest oceniany z reżimem i bez niego, HOLD, gdy wstrzymuje którakolwiek ocena.
 Cofnięcie aktywacji: rollback jak wyżej.
 
+**QFENCE (1.46 arch, fala 2b).** Artefakt bez `producer_semantics = PMW-QUANT-PRODUCERS-2` w manifeście (każdy wytrenowany przed
+poprawkami producentów, także FEAT-3 z fali 1 i FEAT-4) w aktywnym Quant ASSIST wstrzymuje każde nowe wejście SH i ACTIVE
+(`MODEL_QUANT_HOLD`, powód `QUANT_REVALIDATION_REQUIRED`); w SHADOW działa jak dotąd. Rollback do takiego artefaktu przywraca to
+wstrzymanie (fail-closed, nie fail-open). Zdjęcie bez retreningu: `quant mode SHADOW`. Nowe modele trenują się per grupa zadania
+(`task_group`, klucz `G…`) – rollback / aktywacja podaje ten klucz w `--task`.
+Wstrzymanie trwa, dopóki choć jeden aktywny zwalidowany artefakt ma starą semantykę. Nowy model grupy (`G…`) NIE zastępuje starych
+artefaktów zapisanych pod `task_hash` – zostają w `ACTIVE.json`. Wyjście z QFENCE bez przechodzenia na SHADOW:
+1. `quant train --instrument XAUUSD`, potem `quant activate --instrument XAUUSD --task <G…> --version <wersja>`;
+2. dla każdego klucza z listy `revalidation_required` (`quant status` / `quant list`):
+   `quant rollback --instrument XAUUSD --task <task_hash>` – powtarzać, aż klucz zniknie z `active` (rollback przywraca poprzednią
+   wersję z historii, a ta też jest sprzed QFENCE);
+3. `quant status`: `revalidation_required` puste.
+Kolejność ma znaczenie: zdjęcie starych kluczy przed aktywacją nowego modelu zostawia ASSIST bez aktywnego modelu (Quant bez wpływu,
+jak w SHADOW).
+
 **Licznik wierszy.** Do czasu zebrania wierszy FEAT-3 (co najmniej DEV 300 + CAL 100 + TEST 100 na zadanie) trening odpowiada
 INSUFFICIENT_EVIDENCE, a działa dotychczasowy artefakt FEAT-1. Stan: pole `training_evidence` w `GET /api/v1/quant/status` i
 `python -m masterquo quant status`.

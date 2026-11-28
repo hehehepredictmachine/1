@@ -687,7 +687,10 @@ class TabICLService:
         ident = {"plan_hash": ph, "task_hash": spec.task_hash(), "event_id": spec.event_id, "event_key": event_key(spec), "generation": gen,
                  "decision_ts": cd.get("decision_ts"), "strategy": cd.get("strategy_id"), "engine": cd.get("engine")}
         if not self.active():
-            return {**ident, "state": "OFF", "reason": "estymator TabICLv2 wyłączony (Quant: estimator = legacy_logistic)"}
+            # 1.46 arch (I0532): the reason names the real cause (estimator setting or tabicl.enabled = false)
+            s = self.q.settings.get()
+            why = (f"Quant: estimator = {s.get('estimator')}" if s.get("estimator") != "tabicl_v2" else "Quant: tabicl.enabled = false")
+            return {**ident, "state": "OFF", "reason": f"estymator TabICLv2 wyłączony ({why})"}
         f = dict(feats)
         f.update(strategy_features(cd.get("engine"), spec.strategy))
         job = {"plan_hash": ph, "instrument": spec.instrument, "event_key": event_key(spec), "features": f, "ident": ident, "enqueued_at": time.time(),

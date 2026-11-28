@@ -9,9 +9,11 @@ Order of evaluation (each step may only make the verdict stricter - nothing afte
    * ASSIST   - a READY direction forecast with P(opposite side) >= families.assist_hold_threshold holds the entry
                 (ACTIVE: ENTER -> BLOCKED "MODEL_ASSIST_HOLD"; SH: READY -> WAIT, the existing SH receiver) - never upgrades;
    * REQUIRED - decision.required_models: the model must be READY, fresh (age <= required_max_age_s) and must not contradict the side,
-                otherwise MODEL_REQUIRED_UNAVAILABLE / _STALE / _CONTRARY blocks the entry; a REQUIRED Quant MetaModel entry with its own
-                hold blocks with MODEL_QUANT_HOLD (w2 I0771 - before it passed what the same entry holds in ASSIST). Default: no REQUIRED
-                model. status()['required_models_check'] lists REQUIRED ids no producer delivered (information only - matching unchanged).
+                otherwise MODEL_REQUIRED_UNAVAILABLE / _STALE / _CONTRARY blocks the entry; a STATE record in an active event window
+                (rule:news blackout) blocks with MODEL_REQUIRED_BLACKOUT (I0558); a REQUIRED Quant MetaModel entry with its own hold (or the
+                QFENCE fail-closed entry) blocks with MODEL_QUANT_HOLD (w2 I0771 - before it passed what the same entry holds in ASSIST).
+                Default: no REQUIRED model. status()['required_models_check'] lists REQUIRED ids no producer delivered (information
+                only - matching unchanged).
    * QUANT (1.35, PMW Quant Core) - only in mode ASSIST after validation AND explicit user activation: the Quant MetaModel entry
                 (family "quant:metamodel", EVENT_PROBABILITY) may HOLD an entry (MODEL_QUANT_HOLD) when its validated E[net R] <= 0 or
                 P(event) is below the plan break-even; it never upgrades, never sizes, never sends. In OFF / SHADOW no entry is added and
@@ -132,9 +134,18 @@ def evaluate_models(preds: list[dict], side: str, *, required: set[str], assist_
             elif rdir == "FLAT" or (rdir is not None and side not in ("BUY", "SELL")):
                 influence, why = "BLOCK", "prognoza bocznie – nie potwierdza strony" if rdir == "FLAT" else "brak strony setupu"
                 reasons.append(f"MODEL_REQUIRED_NOT_CONFIRMING:{mid}")
+            elif p.get("task_type") == "STATE" and isinstance(res, dict) and res.get("blackout") in (True, "TAK"):
+                # 1.46 arch (I0558): a REQUIRED state record in an active event window (rule:news: HIGH / EXTREME event of macro()) blocks
+                # a new entry - the record carried blackout since D17, but REQUIRED only checked READY / age (always PASS). Tightening only;
+                # clean() turns the bool into 'TAK' / 'NIE'
+                influence, why = "BLOCK", "aktywne okno wydarzenia (blackout)"
+                reasons.append(f"MODEL_REQUIRED_BLACKOUT:{mid}")
             elif p.get("quant_hold"):
-                # w2 (I0771): the Quant MetaModel entry with its own hold (E[net R] <= 0 / P below break-even) - REQUIRED passed it while
-                # ASSIST held the same entry; only tightens (after every earlier REQUIRED block)
+                # w2 (I0771) + 1.46 arch (QFENCE, review): a READY record carrying a Quant hold - an assessment that would hold (E[net R] <= 0
+                # / P below break-even; REQUIRED passed it while ASSIST held the same entry) or the QFENCE fail-closed entry of a MetaModel
+                # trained before the producer fixes (READY, result None) - never PASSes a REQUIRED role. Without it the fence entry turned
+                # today's MODEL_REQUIRED_UNAVAILABLE (NOT_TRAINED / no ACTIVE assessment / SH outside the contract) into PASS. Tightening
+                # only, after every earlier REQUIRED block; the code is the ASSIST one (MODEL_QUANT_HOLD - the SH receiver holds on it too)
                 influence, why = "BLOCK", str(p["quant_hold"])[:200]
                 reasons.append(f"MODEL_QUANT_HOLD:{mid}")
             else:
@@ -352,8 +363,15 @@ class DecisionCoordinator:
                     from ..evaluation import contract as EK
                     preds = preds + self._quant_entry("SH", cand=EK.sh_candidate(su, regime=regime).to_dict())
                 except Exception as exc:  # noqa: BLE001 - not a candidate the evaluation contract accepts -> Quant has no entry
-                    preds = preds + [{"family": "quant:metamodel", "state": "BLOCKED_DATA", "use": "ASSIST", "task_type": "EVENT_PROBABILITY",
-                                      "result": None, "unavailable_reason": f"kandydat SH poza kontraktem oceny: {type(exc).__name__}"}]
+                    # QFENCE: an active MetaModel of the old producer semantics holds every SH entry - this one too (tightening only)
+                    fence = None
+                    try:
+                        fe = getattr(self.quant, "fence_entry", None)
+                        fence = fe() if callable(fe) else None
+                    except Exception:  # noqa: BLE001
+                        fence = None
+                    preds = preds + [fence or {"family": "quant:metamodel", "state": "BLOCKED_DATA", "use": "ASSIST", "task_type": "EVENT_PROBABILITY",
+                                               "result": None, "unavailable_reason": f"kandydat SH poza kontraktem oceny: {type(exc).__name__}"}]
             return self.decide(self.sh_candidate(su, risk), gates=gates, mode=mode, account_key=account_key, preds=[_finite_record(p) for p in preds])
         except K.ContractViolation:
             # w2 (I0772): with REQUIRED models configured a candidate that cannot be recorded is no entry - the SH receiver turns the

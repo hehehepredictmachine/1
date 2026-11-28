@@ -14,7 +14,7 @@
 |---|---|---|
 | OBSERVE | rodzina `use = SHADOW`, Kronos OBSERVE, wskaźniki PMW-IND-1, DXY, SVP | zapis w rekordzie, `influence = NONE` |
 | ASSIST | rodzina `use = ASSIST` (tylko APPROVED i dane REAL – PMW-FAM-1) | READY‑owa prognoza kierunku z P(strony przeciwnej) ≥ `families.assist_hold_threshold` (domyślnie 0,60) **wstrzymuje** wejście: `MODEL_ASSIST_HOLD:<rodzina>`. Nigdy nie tworzy wejścia ani nie podnosi WAIT |
-| REQUIRED | `decision.required_models` (domyślnie puste) | model musi być READY (inaczej `MODEL_REQUIRED_UNAVAILABLE`), świeży, tj. wiek danych ≤ `decision.required_max_age_s` (inaczej `MODEL_REQUIRED_STALE`), i nie może być przeciwny, czyli P(przeciwny) ≥ 0,5 (inaczej `MODEL_REQUIRED_CONTRARY`). Model, który nie zwrócił prognozy, liczy się jako niedostępny |
+| REQUIRED | `decision.required_models` (domyślnie puste) | model musi być READY (inaczej `MODEL_REQUIRED_UNAVAILABLE`), świeży, tj. wiek danych ≤ `decision.required_max_age_s` (inaczej `MODEL_REQUIRED_STALE`), i nie może być przeciwny, czyli P(przeciwny) ≥ 0,5 (inaczej `MODEL_REQUIRED_CONTRARY`). Rekord stanu w aktywnym oknie wydarzenia (`rule:news`, blackout) daje `MODEL_REQUIRED_BLACKOUT`, a rekord Quant ze wstrzymaniem (`quant_hold`: ocena HOLD albo wpis QFENCE – MetaModel sprzed poprawek producentów) daje `MODEL_QUANT_HOLD` (ten sam kod co w ASSIST). Model, który nie zwrócił prognozy, liczy się jako niedostępny |
 
 4. **Werdykt końcowy** (`final_verdict`)
    * Jeśli kandydat nie jest ENTER, werdykt pozostaje bez zmian.
