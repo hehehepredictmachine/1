@@ -56,8 +56,8 @@ class QualityTests(unittest.TestCase):
 
 class KnowledgeTests(unittest.TestCase):
     def test_k25_k35_loaded_and_bounded(self):
+        from masterquo.agent import structure_knowledge as sk
         from masterquo.agent.service import load_prompt
-        from masterquo.analysis import structure_knowledge as sk
         text, ver = load_prompt()
         for k in ("K25", "K28", "K31", "K34", "K35"):
             self.assertIn(k, text)

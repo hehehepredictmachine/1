@@ -24,6 +24,7 @@ from pathlib import Path
 
 import numpy as np
 
+from ..quant import numeric as N
 from . import engine as E
 
 DEFAULT_EVENTS = [{"side": s, "tp": tp, "sl": 3.0} for s in ("BUY", "SELL") for tp in (2.5, 5.0)]
@@ -33,6 +34,23 @@ EVENTS_BY_INSTRUMENT = {"XAUUSD": DEFAULT_EVENTS}
 
 
 # ------------------------------------------------------------------ data
+POINT_UNKNOWN_REASON = "brak point / tick_size w metadanych eksportu (spec.point, spec.trade_tick_size, tick_size) – nie zgaduję"
+
+
+def _point(meta: dict) -> float | None:
+    """1.46 w2 (I0687): the price unit of the export - spec.point, then spec.trade_tick_size, then the top-level tick_size; None when none
+    is a positive finite number (was: 0.01 guessed - spread_points x 0.01 for any instrument / broker)."""
+    spec = meta.get("spec") or {}
+    for v in (spec.get("point"), spec.get("trade_tick_size"), meta.get("tick_size")):
+        try:
+            f = float(v)
+        except (TypeError, ValueError):
+            continue
+        if math.isfinite(f) and f > 0:
+            return f
+    return None
+
+
 def load_dataset(ds: Path, tf: str = "M1") -> tuple[list[dict], dict]:
     from ..forecast.export import dataset_state
     ds = Path(ds)
@@ -40,7 +58,9 @@ def load_dataset(ds: Path, tf: str = "M1") -> tuple[list[dict], dict]:
     if not st["usable"]:
         raise ValueError(f"DATASET_NOT_COMPLETE:{st['state']}")
     meta = json.loads((ds / "source_metadata.json").read_text(encoding="utf-8"))
-    point = float((meta.get("spec") or {}).get("point") or meta.get("tick_size") or 0.01)
+    point = _point(meta)
+    if point is None:
+        raise ValueError(f"DATASET_POINT_UNKNOWN: {POINT_UNKNOWN_REASON}")
     rows = []
     with (ds / f"{meta.get('file_prefix') or 'XAUUSD'}_{tf}.csv").open(encoding="utf-8") as fh:
         for r in csv.DictReader(fh):
@@ -155,9 +175,7 @@ def brier(p, y) -> float:
 
 
 def logloss(p, y) -> float:
-    p = np.clip(np.asarray(p, float), 1e-4, 1 - 1e-4)
-    y = np.asarray(y, float)
-    return float(-np.mean(y * np.log(p) + (1 - y) * np.log(1 - p)))
+    return N.log_loss_clipped(p, y, 1e-4)              # 1.46 arch (I0054): the shared implementation (clip 1e-4), bit-for-bit
 
 
 def reliability(p, y, bins: int = 10) -> list[dict]:
@@ -194,9 +212,20 @@ def apply_calibrator(cal: dict, p: float) -> float:
 def validate(ds: Path, *, events=None, horizon: int = 60, window: int = 3000, stride: int = 30, n_paths: int = 500, max_points: int = 600,
              variants=E.VARIANTS, seed: int = 7, log=print) -> dict:
     t_start = time.time()
-    bars, meta = load_dataset(ds)
+    try:
+        bars, meta = load_dataset(ds)
+    except ValueError as exc:
+        if not str(exc).startswith("DATASET_POINT_UNKNOWN"):
+            raise
+        # 1.46 w2 (I0687): explicit block instead of a spread computed with a guessed point 0.01 (never an active calibrator)
+        try:
+            meta = json.loads((Path(ds) / "source_metadata.json").read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            meta = {}
+        return {"version": E.VERSION, "dataset": str(Path(ds).resolve()), "dataset_id": meta.get("dataset_id"), "data_kind": meta.get("data_kind"),
+                "instrument": meta.get("instrument"), "symbol": meta.get("symbol"), "status": "BLOCKED_DATA", "reason": POINT_UNKNOWN_REASON}
     synthetic = meta.get("data_kind") != "REAL_USER_DATA"
-    point = float((meta.get("spec") or {}).get("point") or meta.get("tick_size") or 0.01)
+    point = _point(meta)
     inst = meta.get("instrument") or "XAUUSD"                                     # exports without the key: gold only (file prefix XAUUSD)
     if not events and inst not in EVENTS_BY_INSTRUMENT:
         return {"version": E.VERSION, "dataset": str(Path(ds).resolve()), "dataset_id": meta.get("dataset_id"), "data_kind": meta.get("data_kind"),

@@ -18,6 +18,7 @@ from . import task as CT
 from . import vamd as VM
 
 TF_S = {"M1": 60, "M5": 300, "M15": 900, "H1": 3600}
+SH_LABEL = "SH używa profilu DEFAULT (stałego) – kalibracja context_ind dotyczy panelu i badań, nie filtrów SCALPING / HEDGING"
 WINDOW = 800
 SERIES_KEEP = 600
 _EVENT_ABS = ("side", "price", "level", "wick", "ref", "ref_kind", "reason")   # window-independent event fields (no bar index / point id)
@@ -47,6 +48,7 @@ class _Key:
         self.ledgered = 0
         self.ledger_keys: set | None = None       # 1.46: event keys already in the ledger file (loaded once per epoch)
         self.key_counts: dict = {}
+        self.sh_cache: tuple | None = None        # 1.46 w2 (I0315): (last closed bar, values SH reads with the DEFAULT profile)
 
 
 class ContextSections:
@@ -193,6 +195,34 @@ class ContextSections:
                        "pending": bool(sm.pending), "last_events": last, "state_hash": sm.state_hash(), "profile": sm.profile}}
         out["would_block"] = self.would_block(out)
         out["mode"] = "OBSERVE_SHADOW"
+        try:
+            out["sh"] = self.sh_default(k)
+        except Exception as exc:  # noqa: BLE001 - presentation only
+            out["sh"] = {"profile": "DEFAULT", "label": SH_LABEL, "status": "ERROR", "reason": f"{type(exc).__name__}: {exc}"[:160]}
+        return out
+
+    @staticmethod
+    def sh_default(k: _Key) -> dict:
+        """1.46 w2 (I0315, safe variant): the values SCALPING / HEDGING really read for the same closed bars - sh/context.py, frozen DEFAULT
+        profile, SH windows - next to this panel's (possibly calibrated) profile. Cached per closed bar. Presentation only: the SH computation
+        is unchanged (switching SH to a calibrated profile would be a new, unvalidated entry filter)."""
+        from ...sh import context as SHX
+        key = (k.bars[-1]["open_utc"], len(k.bars)) if k.bars else None
+        if k.sh_cache is not None and k.sh_cache[0] == key:
+            return k.sh_cache[1]
+        differs = (k.vamd.cfg != VM.validate(None) or k.fd.cfg != FD.validate(None) or k.smc.profile != SM.SMC(tick=k.tick).profile)
+        out = {"profile": "DEFAULT", "label": SH_LABEL, "panel_profile_source": k.profile.get("source"), "panel_profile_hash": k.profile_hash,
+               "differs": bool(differs), "values": None}
+        if k.tf == "M5":
+            c = SHX._ctx_m5(k.bars, k.tick)
+            out["values"] = {x: c.get(x) for x in ("vamd_m5", "fd_zone_m5", "smc_trend_m5", "smc_high_m5", "smc_low_m5", "pb_last_low_m5",
+                                                    "pb_last_high_m5")}
+        elif k.tf == "M1":
+            c = SHX._ctx_m1(k.bars, k.tick)
+            out["values"] = {x: c.get(x) for x in ("vamd_m1", "smc_trend_m1", "smc_last_m1")}
+        else:
+            out["note"] = "SH czyta VAMD / FD / SMC tylko z zamkniętych świec M1 i M5"
+        k.sh_cache = (key, out)
         return out
 
     @staticmethod

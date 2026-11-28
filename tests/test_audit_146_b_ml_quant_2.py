@@ -13,25 +13,12 @@ from unittest import mock
 
 import _env  # noqa: F401
 from _env import TempData
-from test_quant_core import NOW, StubBridge, StubRt, bar, cand, pred
+from test_quant_core import NOW, StubBridge, StubRt, bar, cand
 
-
-# =============================================================================================== checks: 1.45 gating kept (rule 1)
-class TestChecksGatingAsIn145(unittest.TestCase):
-    """chunk_26#5 (data_time basis of trainhub / Kronos / TSFM records) changes which records are eligible - it is on the owner's decision
-    list; TTL and LATE_GENERATION stay measured from data_time exactly as in 1.45.0."""
-
-    def test_close_producers_keep_145_ttl_and_late_generation(self):
-        from masterquo.quant import checks as CK
-        floor = {"M5": NOW - 300}                               # newest closed M5 bar opened 300 s ago
-        self.assertTrue(CK.check(pred(age=300), now=NOW, generation_floor=floor)["eligible"])
-        self.assertTrue(CK.check(pred(age=600), now=NOW, generation_floor=floor)["eligible"])
-        self.assertEqual(CK.check(pred(age=700), now=NOW, generation_floor=floor)["reason"], "LATE_GENERATION:M5")
-        for age in (650, 850):                                  # TTL = 3 bars from data_time
-            self.assertTrue(CK.check(pred(age=age), now=NOW)["eligible"], age)
-        self.assertEqual(CK.check(pred(age=950), now=NOW)["reason"].split(":")[0], "STALE")
-        kr = pred(name="Kronos-small", task="KRONOS_CLOSE_PATH_H6_M5", age=850)
-        self.assertTrue(CK.check(kr, now=NOW)["eligible"])
+# =============================================================================================== checks: data_time basis
+# 1.46 arch I0797 (chunk_26#5): TestChecksGatingAsIn145 pinned the 1.45 rule (TTL / LATE_GENERATION from data_time also for the
+# close-basis producers trainhub / Kronos / TSFM). The item changes exactly that rule (tightening only) - the replacement is
+# tests/test_arch146_w2_quant_core.py::TestChecksDataTimeBasis.
 
 
 # =============================================================================================== events (chunk_26#8, #16)

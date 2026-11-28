@@ -118,16 +118,27 @@ def strategies(cfg_store=None) -> list[dict]:
     return out
 
 
-def models(cfg_store=None) -> list[dict]:
-    """Every model of the installation with its install / artifact / use state (read, never assumed)."""
+def _rt_store(rt, service: str):
+    """1.46 arch (I0097): the Runtime's own settings store (rt.tsfm.settings / rt.kronos.settings - policy OWNER_CACHED, settings_store.py)
+    when the bot runs; None before the services exist (the 'before' report) -> the caller reads the file with its own store."""
+    st = getattr(getattr(rt, service, None), "settings", None)
+    return st if st is not None and callable(getattr(st, "get", None)) else None
+
+
+def models(cfg_store=None, rt=None) -> list[dict]:
+    """Every model of the installation with its install / artifact / use state (read, never assumed).
+    1.46 arch (I0097): with `rt` the Runtime's stores are read (1.45 built separate TS/KS SettingsStore instances next to rt.tsfm.settings /
+    rt.kronos.settings - TSFM's twice per model)."""
     out: list[dict] = []
     # foundation models (TSFM)
     try:
         from ..tsfm import settings as TS
-        st = TS.SettingsStore().get().model_dump(mode="json")
+        ts_store = _rt_store(rt, "tsfm") or TS.SettingsStore()
+        ts_cfg = ts_store.get()
+        st = ts_cfg.model_dump(mode="json")
         for mid in TS.MODEL_IDS:
             c = (st.get("models") or {}).get(mid) or {}
-            py = TS.find_python(mid, TS.SettingsStore().get().models[mid]) if hasattr(TS, "find_python") else None
+            py = TS.find_python(mid, ts_cfg.models[mid]) if hasattr(TS, "find_python") else None
             out.append({"model_id": f"tsfm:{mid}", "kind": "PRETRAINED_FORECASTER", "settings": c, "python": py, "installed_env": bool(py),
                         "retired": False})
         for mid, r in (st.get("retired") or {}).items():
@@ -137,7 +148,8 @@ def models(cfg_store=None) -> list[dict]:
     # Kronos
     try:
         from ..kronos import settings as KS
-        ks = KS.SettingsStore().get().model_dump(mode="json") if hasattr(KS, "SettingsStore") else {}
+        ks_store = _rt_store(rt, "kronos") or (KS.SettingsStore() if hasattr(KS, "SettingsStore") else None)
+        ks = ks_store.get().model_dump(mode="json") if ks_store is not None else {}
         out.append({"model_id": "kronos", "kind": "PRETRAINED_FORECASTER", "settings": ks})
     except Exception as exc:  # noqa: BLE001
         out.append({"model_id": "kronos", "error": f"{type(exc).__name__}: {exc}"[:200]})
@@ -170,8 +182,9 @@ def models(cfg_store=None) -> list[dict]:
     return out
 
 
-def write_reports(kind: str, cfg_store=None, out_dir: Path | None = None) -> dict:
-    """kind = 'before' | 'after'. Reports go to <data>/reports (the 'before' report is written once and never overwritten)."""
+def write_reports(kind: str, cfg_store=None, out_dir: Path | None = None, rt=None) -> dict:
+    """kind = 'before' | 'after'. Reports go to <data>/reports (the 'before' report is written once and never overwritten).
+    rt (1.46 arch I0097): the Runtime of the 'after' report - its settings stores are read instead of new instances."""
     d = out_dir or (paths.data_dir() / "reports")
     d.mkdir(parents=True, exist_ok=True)
     res = {}
@@ -180,7 +193,7 @@ def write_reports(kind: str, cfg_store=None, out_dir: Path | None = None) -> dic
         if kind == "before" and p.exists():
             res[name] = str(p)
             continue
-        items = fn(cfg_store)
+        items = fn(cfg_store, rt=rt) if fn is models else fn(cfg_store)
         p.write_text(json.dumps({"schema": SCHEMA, "kind": kind, "generated_at": _now(), "count": len(items), "items": items},
                                 indent=2, ensure_ascii=False, default=str), encoding="utf-8")
         res[name] = str(p)

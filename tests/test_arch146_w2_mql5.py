@@ -237,18 +237,13 @@ class TestI0485MR2ExportTrainBounds(unittest.TestCase):
 
 # ---------------------------------------------------------------------------------------------------------------- I0488 / I0501
 def _native_from_references(ref: Path) -> dict:
-    """PMW_MM_NATIVE.txt as a perfect native run would write it (built from the reference CSVs)."""
-    def rows(n):
-        return [ln.split(",") for ln in (ref / n).read_text().splitlines()[1:] if ln]
-
-    def num(x):
-        return None if x in ("", "nan") else float(x)
+    """PMW_MM_NATIVE.txt as a perfect native run would write it (built from the reference CSVs). Merge with group mm: every section of
+    that group (gpr_tune, hdc words, hdc_acc, breakout_modes, tsvp, stack) is a gate too, so the perfect native is the format contract
+    fixtures.expected_native (which carries the align section of I0501); the align entries are checked against the reference here."""
+    nat = FX.expected_native(ref)
     al = FX._align_ref(ref / "mm_ref_align.csv")
-    return {"version": "PMW-MM-NATIVE-1", "kalman": [[int(r[0])] + [num(x) for x in r[1:7]] + [r[7]] for r in rows("mm_ref_kalman.csv")],
-            "gpr": [[int(r[0])] + [num(x) for x in r[1:]] for r in rows("mm_ref_gpr.csv")], "hdc": {"all_pass": True},
-            "breakout": [[int(r[0]), r[1], num(r[2]), num(r[3])] for r in rows("mm_ref_breakout.csv")],
-            "align": [{"k": k, "atr": num(v["atr"]), "mean": [num(x) for x in v["mean"]]} for k, v in al.items()],
-            "terminal": {"build": 0, "opencl": False}}
+    assert [x["k"] for x in nat["align"]] == list(al) and all(len(x["mean"]) == len(al[x["k"]]["mean"]) for x in nat["align"])
+    return nat
 
 
 class TestI0501MMAlignParity(unittest.TestCase):
@@ -347,7 +342,10 @@ class TestI0488MMNativeStatus(unittest.TestCase):
     def test_status_file_and_inventory(self):
         files = str(self.mql / "Files")
         rows = {r["id"]: r for r in INV.merge_run(None, files_dir=files)}
-        self.assertTrue(rows["kalman"]["native"].startswith("NOT_COMPILED"))    # no status file yet
+        # merge with group mm (I0499): `native` = declared scope + this evidence, `native_evidence` = the evidence alone
+        self.assertTrue(rows["kalman"]["native_evidence"].startswith("NOT_COMPILED"))    # no status file yet
+        self.assertTrue(rows["kalman"]["native"].endswith(" – " + rows["kalman"]["native_evidence"]), rows["kalman"]["native"])
+        self.assertIn("MQL5 PMW_Kalman.mqh", rows["kalman"]["native"])
         self.assertIsNone(rows["buzoa"]["native"])                             # no MQL5 port at all
         st = self._compile()
         self.assertEqual(st["compile_errors"], 0)
@@ -357,7 +355,10 @@ class TestI0488MMNativeStatus(unittest.TestCase):
         self.assertIn("COMPILED (PMW_KalmanCross.ex5, PMW_KalmanShadowEA.ex5)", rows["kalman"]["native"])
         self.assertIn("NATIVE_NOT_EXECUTED", rows["kalman"]["native"])
         self.assertIn("COMPILED (nagłówek w PMW_MM_SelfTest.ex5)", rows["hdc"]["native"])
-        self.assertTrue(rows["event_engine"]["native"].startswith("NOT_COMPILED"))   # PMW_StateStack.mqh: no program includes it
+        self.assertIn("PRIMITIVES_ONLY", rows["hdc"]["native"])
+        # merge with group mm (I0508): PMW_MM_SelfTest includes PMW_StateStack.mqh now - the header is compiled through it
+        self.assertTrue(rows["event_engine"]["native_evidence"].startswith("COMPILED (nagłówek w PMW_MM_SelfTest.ex5)"))
+        self.assertIn("HEADER_ONLY", rows["event_engine"]["native"])
         self.assertIn("COMPILED", rows["mathbench"]["native"])
         # a fresh self-test output (written after the compilation) is compared with the references exported next to it
         FX.export(self.mql / "Files" / "PMW_MM")
@@ -377,11 +378,13 @@ class TestI0488MMNativeStatus(unittest.TestCase):
     def test_missing_ex5_and_compile_errors(self):
         self._compile(skip=("PMW_KalmanShadowEA",))
         rows = {r["id"]: r for r in INV.merge_run(None, files_dir=str(self.mql / "Files"))}
-        self.assertEqual(rows["kalman"]["native"], "NOT_COMPILED (brak EX5: PMW_KalmanShadowEA)")
+        self.assertEqual(rows["kalman"]["native_evidence"], "NOT_COMPILED (brak EX5: PMW_KalmanShadowEA)")
+        self.assertTrue(rows["kalman"]["native"].endswith(" – NOT_COMPILED (brak EX5: PMW_KalmanShadowEA)"))
         with redirect_stdout(io.StringIO()):
             self.ns.main(str(self.tmp), "2", "log", mm=True)
         rows = {r["id"]: r for r in INV.merge_run(None, files_dir=str(self.mql / "Files"))}
-        self.assertTrue(rows["gpr"]["native"].startswith("COMPILE_FAIL"))
+        self.assertTrue(rows["gpr"]["native_evidence"].startswith("COMPILE_FAIL"))
+        self.assertIn(" – COMPILE_FAIL", rows["gpr"]["native"])
 
     def test_bat_is_ascii_crlf_and_only_installs_and_compiles(self):
         bat = ROOT / "44_MASTERMODELS_NATIVE.bat"
@@ -394,6 +397,87 @@ class TestI0488MMNativeStatus(unittest.TestCase):
             self.assertIn(s, txt)
         for bad in ("terminal64", "AutoTrading", "start_mode", "live_autobind", "OrderSend"):
             self.assertNotIn(bad.lower(), "\n".join(ln for ln in txt.lower().splitlines() if not ln.startswith("rem ")), bad)
+
+
+# ---------------------------------------------------------------------------------------------------------------- merge mql5 x mm
+class TestMergeNativeContractMqlMm(unittest.TestCase):
+    """Merge of the groups mql5 (I0488 evidence, I0501 align) and mm (I0490/I0497/I0499/I0505/I0506/I0508/I0511): one native contract -
+    the self-test writes every section parity() gates, the inventory maps every gate to its module and never shows a PASS without it."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.tmp = Path(tempfile.mkdtemp(prefix="mq_t_merge_"))
+        FX.export(cls.tmp)
+
+    @classmethod
+    def tearDownClass(cls):
+        shutil.rmtree(cls.tmp, ignore_errors=True)
+
+    def _parity(self, nat: dict) -> dict:
+        p = self.tmp / "PMW_MM_NATIVE.txt"
+        p.write_text(json.dumps(nat), encoding="utf-8")
+        return FX.parity(p, self.tmp)
+
+    def test_export_writes_every_reference_of_both_groups(self):
+        names = {p.name for p in self.tmp.iterdir()}
+        self.assertLessEqual(set(FX.REF_FILES), names)
+        for f in ("mm_ref_hdc_acc.csv", "mm_ref_breakout_SESSION_VWAP.csv", "mm_fixture_ticks.csv", "mm_ref_tsvp.csv", "mm_ref_stack.csv",
+                  "mm_ref_align.csv"):
+            self.assertIn(f, FX.REF_FILES)
+
+    def test_selftest_reads_and_writes_every_section(self):
+        src = _src(MM / "Scripts" / "PMW_MM_SelfTest.mq5")
+        nat = FX.expected_native(self.tmp)
+        for key in set(nat) - {"version", "bars", "terminal"}:
+            self.assertIn(f'\\"{key}\\":', src, key)
+        for f in ("mm_fixture_bars.csv", "mm_ref_hdc.csv", "mm_ref_hdc_acc.csv", "mm_fixture_ticks.csv", "mm_ref_tsvp.csv", "mm_ref_stack.csv",
+                  "mm_ref_align.csv"):
+            self.assertIn(f'ReadLines("{f}"', src, f)
+        heads = set(re.findall(r"#include\s*<PMW\\(PMW_\w+\.mqh)>", _code(src)))
+        self.assertEqual(heads, INV.SELFTEST_HEADERS)                         # "COMPILED (nagłówek w PMW_MM_SelfTest.ex5)" only for these
+        # the align rows the script parses: C rows with 11 fields (StringSplit(...) < 11 -> skipped), the header row is not a C row
+        rows = (self.tmp / "mm_ref_align.csv").read_text(encoding="ascii").splitlines()
+        c_rows = [r for r in rows if r.startswith("C,")]
+        self.assertEqual(len(c_rows), len(FX.ALIGN_FIXTURE_CONFIGS))
+        self.assertTrue(all(len(r.split(",")) == 11 for r in c_rows))
+        self.assertFalse(rows[0].startswith("C,"))
+
+    def test_every_gate_belongs_to_a_module(self):
+        res = self._parity(FX.expected_native(self.tmp))
+        self.assertEqual(res["status"], "NATIVE_PARITY_PASS", res["gates"])
+        expected = {"kalman", "gpr", "gpr_tune", "hdc", "hdc_acc", "breakout", "tsvp", "stack", "align"} | {f"breakout_{m}" for m in
+                                                                                                          ("SESSION_VWAP", "SMA", "SMMA", "NONE")}
+        self.assertEqual(set(res["gates"]), expected)                           # stack_opencl only with an OpenCL device
+        mapped = {g for v in INV.PARITY_GATE.values() for g in v}
+        self.assertLessEqual(set(res["gates"]) | {"stack_opencl"}, mapped)
+        for nat_key in ("align", "tsvp", "stack", "hdc_acc", "breakout_modes", "gpr_tune"):   # a missing section of either group fails
+            nat = FX.expected_native(self.tmp)
+            nat.pop(nat_key)
+            self.assertEqual(self._parity(nat)["status"], "NATIVE_PARITY_FAIL", nat_key)
+
+    def _row(self, mid: str, gates: dict) -> str:
+        m = INV.by_id()[mid]
+        ex5 = ["PMW_MM_SelfTest.ex5"] + [Path(f).stem + ".ex5" for f in m["files"] if f.endswith(".mq5")]
+        ev = {"status": {"compile_errors": 0, "ex5_files": ex5}, "parity": {"status": "NATIVE_PARITY_FAIL", "gates": gates}}
+        return INV.native_status(m, ev)
+
+    def test_module_verdict_needs_every_gate_of_the_module(self):
+        ok = {g: True for v in INV.PARITY_GATE.values() for g in v if g not in INV.PARITY_OPTIONAL}
+        for mid in INV.PARITY_GATE:
+            self.assertTrue(self._row(mid, ok).endswith("NATIVE_PARITY_PASS"), mid)
+        self.assertTrue(self._row("breakout_zones", {**ok, "breakout_SMMA": False}).endswith("NATIVE_PARITY_FAIL"))
+        self.assertTrue(self._row("hdc", {**ok, "hdc_acc": False}).endswith("NATIVE_PARITY_FAIL"))
+        self.assertTrue(self._row("gpr", {k: v for k, v in ok.items() if k != "gpr_tune"}).endswith("NATIVE_PARITY_FAIL"))   # never compared
+        self.assertTrue(self._row("event_engine", {**ok, "stack_opencl": False}).endswith("NATIVE_PARITY_FAIL"))
+        self.assertTrue(self._row("event_engine", {**ok, "stack_opencl": True}).endswith("NATIVE_PARITY_PASS"))
+        self.assertTrue(self._row("kalman", {**ok, "align": False}).endswith("NATIVE_PARITY_PASS"))   # another module's gate
+        # the row: declared scope (I0499) + this evidence (I0488), never the old flat IMPLEMENTED
+        rows = {r["id"]: r for r in INV.merge_run(None, files_dir="")}
+        for r in rows.values():
+            if r.get("native") is not None:
+                self.assertNotIn("IMPLEMENTED", r["native"], r["id"])
+                self.assertIn("NOT_COMPILED", r["native_evidence"], r["id"])
+                self.assertTrue(r["native"].endswith(" – " + r["native_evidence"]), r["id"])
 
 
 # ---------------------------------------------------------------------------------------------------------------- I0491

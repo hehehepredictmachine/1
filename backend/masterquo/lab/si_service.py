@@ -141,8 +141,11 @@ class StructureIntelligenceService:
                 cells[tf] = self.cell(tf, bars.get(tf) or [], tick, zones, instrument)
             except Exception as exc:                            # noqa: BLE001
                 cells[tf] = {"tf": tf, "status": "ERROR", "error": type(exc).__name__}
+        # w2 (I0041): the id depends on the cells only - known before the forecast, so its si_forecasts rows carry it (was always NULL)
+        sid = "SIS-" + hashlib.sha256(json.dumps({"i": instrument, "a": as_of, "c": {k: v.get("last_closed_open") for k, v in cells.items()}},
+                                                 sort_keys=True).encode()).hexdigest()[:16]
         try:
-            fc = self.forecast(bars, instrument, tick, as_of)
+            fc = self.forecast(bars, instrument, tick, as_of, snapshot_id=sid)
         except Exception as exc:                                # noqa: BLE001 - 1.46: a failing SHADOW forecast lost every TF cell
             fc = {"forecast_status": "ABSTAIN", "reason": f"FORECAST_ERROR: {type(exc).__name__}: {exc}"[:200]}
         try:
@@ -152,8 +155,6 @@ class StructureIntelligenceService:
         with self._lock:
             self.seq += 1
             seq = self.seq
-        sid = "SIS-" + hashlib.sha256(json.dumps({"i": instrument, "a": as_of, "c": {k: v.get("last_closed_open") for k, v in cells.items()}},
-                                                 sort_keys=True).encode()).hexdigest()[:16]
         snap = {"snapshot_id": sid, "seq": seq, "instrument": instrument, "as_of": as_of, "computed_at": iso(utcnow()), "cells": cells,
                 "divergences": self.divergences(cells), "forecast": fc, "neutralization": neu,
                 "quotes": self.quotes_public(compact=True), "native": self.native_status(instrument, poll=False),
@@ -335,7 +336,7 @@ class StructureIntelligenceService:
                 "collector": self.quote_status, "note": "estymacja SE ≠ trafność prognozy; R² względem persistence, null przy stałym celu"}
 
     # ------------------------------------------------------------ forecast (SHADOW artefact only) + archive + maturation
-    def forecast(self, bars: dict, instrument: str, tick: float, as_of: str | None) -> dict:
+    def forecast(self, bars: dict, instrument: str, tick: float, as_of: str | None, snapshot_id: str | None = None) -> dict:
         from . import structure_task as T
         try:
             reg = T._reg(instrument)
@@ -356,7 +357,7 @@ class StructureIntelligenceService:
             for hd in out["heads"]:
                 try:
                     self.db.execute("INSERT OR IGNORE INTO si_forecasts(instrument, task_id, model_id, as_of, horizon, snapshot_id, emitted_at, payload) "
-                                    "VALUES (?,?,?,?,?,?,?,?)", (instrument, T.TASK_MOVE, out["artifact_id"], out["as_of"], hd["h_bars"], None, iso(utcnow()),
+                                    "VALUES (?,?,?,?,?,?,?,?)", (instrument, T.TASK_MOVE, out["artifact_id"], out["as_of"], hd["h_bars"], snapshot_id, iso(utcnow()),
                                                                  json.dumps(dict(hd, anchor_close=out["anchor_close"], anchor_atr=out["anchor_atr"]))))
                 except Exception:                               # noqa: BLE001
                     pass

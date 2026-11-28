@@ -126,11 +126,26 @@ def _ptr_lock(inst: str):
     return RIO.file_lock(RIO.lock_for(_ptr_path(inst)))
 
 
-def promote_shadow(inst: str, model_id: str, aid: str, reason: str) -> dict:
-    """Only an artifact whose manifest says VALIDATED_SHADOW (all gates passed) can become the SHADOW pointer."""
-    _, man = load(inst, model_id, aid)
+def promotable(man: dict) -> str | None:
+    """None when the manifest backs its VALIDATED_SHADOW claim, else the refusal reason. 1.46 arch (I0545): the store checked only the status
+    string the caller wrote (a technical artifact re-saved as VALIDATED_SHADOW moved the pointer); now it also needs a non-empty gates dict
+    with every gate True (JSON true, not a truthy text) on REAL_USER_DATA - exactly what mm/jobs.py writes when it promotes."""
     if man.get("status") != "VALIDATED_SHADOW":
-        raise ArtifactError(f"NOT_VALIDATED:{man.get('status')}")
+        return f"NOT_VALIDATED:{man.get('status')}"
+    g = man.get("gates")
+    if not isinstance(g, dict) or not g or not all(v is True for v in g.values()):
+        return f"NOT_VALIDATED_GATES:{g if not isinstance(g, dict) else sorted(k for k, v in g.items() if v is not True)}"
+    if man.get("data_kind") != "REAL_USER_DATA":
+        return f"NOT_VALIDATED_GATES:data_kind={man.get('data_kind')}"
+    return None
+
+
+def promote_shadow(inst: str, model_id: str, aid: str, reason: str) -> dict:
+    """Only an artifact whose manifest says VALIDATED_SHADOW with all gates passed on REAL_USER_DATA can become the SHADOW pointer."""
+    _, man = load(inst, model_id, aid)
+    why = promotable(man)
+    if why:
+        raise ArtifactError(why)
     with _ptr_lock(inst):
         ptr = read_pointer(inst, strict=True)
         prev = ptr["active"].get(model_id)

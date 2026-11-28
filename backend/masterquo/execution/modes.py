@@ -29,6 +29,7 @@ from __future__ import annotations
 import threading
 import time
 
+from ..config import ALLOWED_ASSETS
 from ..db.database import dumps
 from ..risk.engine import limits_configured
 from ..timeutil import iso, utcnow
@@ -98,7 +99,7 @@ class ModeManager:
                     "bound_account": self.bound_account, "kill_switch": self.kill_switch, "kill_reason": self.kill_reason,
                     "changed_at": self.changed_at, "strategy_mode": cfg.active.strategy_mode, "ml_mode": cfg.ml.mode,
                     "instrument": cfg.assets.active, "primary_path": prim, "primary_path_label": PATH_LABEL[prim],
-                    "primary_paths": {k: cfg.execution.primary_path.get(k, "UNSET") for k in ("XAUUSD", "BTC")},
+                    "primary_paths": {k: cfg.execution.primary_path.get(k, "UNSET") for k in ALLOWED_ASSETS},
                     "mode_note": cfg.execution.mode_note, **self._start_mode_status(cfg)}
 
     def _start_mode_status(self, cfg) -> dict:
@@ -117,7 +118,7 @@ class ModeManager:
         return cfg.execution.primary_path.get(instrument or cfg.assets.active, "UNSET")
 
     def set_primary_path(self, instrument: str, path: str) -> dict:
-        if instrument not in ("XAUUSD", "BTC"):
+        if instrument not in ALLOWED_ASSETS:                 # 1.46 arch (I0087): the constant from config.py (same values)
             raise ModeError("ASSET_NOT_ALLOWED")
         if path not in PATHS + ("UNSET",):
             raise ModeError("UNKNOWN_PATH")

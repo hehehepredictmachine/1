@@ -30,6 +30,9 @@ log = logging.getLogger("masterquo.manager")
 
 
 class PositionManager:
+    # w2 (I0095): optional dependency wired by runtime.py after construction - class default (None = absent), read as self.x
+    arc = None
+
     def __init__(self, cfg_store, bridge, db, bus, applog, modes, paper):
         self.cfg_store = cfg_store
         self.bridge = bridge
@@ -75,7 +78,7 @@ class PositionManager:
                 self.reconciled_epoch = b.session_epoch
                 self.log.info("EXECUTION", "RECONCILED", "Stan pozycji uzgodniony z terminalem po połączeniu.")
         self._manage_paper()
-        arc = getattr(self, "arc", None)
+        arc = self.arc
         if arc is not None:                     # PMW-ARC-1: settle UNKNOWN/SENT intents from both paths' reconciliation (never re-sent)
             arc.sync()
         if time.monotonic() - self._last_equity >= 60:

@@ -121,12 +121,36 @@ def native_status(status_file: Path | None) -> dict:
         return {"NATIVE_COMPILED": "NOT_EXECUTED_METAEDITOR_UNAVAILABLE", "NATIVE_EXECUTED": "NATIVE_NOT_EXECUTED"}
     st = json.loads(Path(status_file).read_text(encoding="utf-8"))
     res = st.get("selftest_result", "NATIVE_NOT_EXECUTED")
+    compiled = "PASS" if st.get("compile_errors") == 0 and st.get("ex5_sha256") else "FAIL"
     live = Path(status_file).parent / "ctx_selftest.txt"                  # self-test runs in the terminal AFTER compilation
+    stale = None
     if live.exists():
-        txt = live.read_text(errors="replace")
-        res = "PASS" if "RESULT=PASS" in txt else ("FAIL" if "RESULT=FAIL" in txt else res)
-    return {"NATIVE_COMPILED": "PASS" if st.get("compile_errors") == 0 and st.get("ex5_sha256") else "FAIL",
-            "NATIVE_EXECUTED": res, "metaeditor": st.get("log"), "ex5_sha256": st.get("ex5_sha256")}
+        # 1.46: as tools/mr2_native_status.py - a self-test file older than this build (newest EX5 listed in the status, else the status
+        # write time) belongs to a previous build and is not evidence; it used to give PASS even with compile_errors > 0
+        stale = live.stat().st_mtime < _build_time(Path(status_file), st)
+        if not stale:
+            txt = live.read_text(errors="replace")
+            res = "PASS" if "RESULT=PASS" in txt else ("FAIL" if "RESULT=FAIL" in txt else res)
+    if compiled == "FAIL":
+        res = "NATIVE_NOT_EXECUTED_COMPILE_FAILED"                         # no EX5 of this build -> nothing of it was executed
+    return {"NATIVE_COMPILED": compiled, "NATIVE_EXECUTED": res, "selftest_stale": stale, "metaeditor": st.get("log"),
+            "ex5_sha256": st.get("ex5_sha256")}
+
+
+def _build_time(status_file: Path, st: dict) -> float:
+    """mtime of the newest EX5 named in the status (MQL5/Scripts|Indicators/PMW), else written_at of the status (written right after
+    compilation, before the terminal self-test), else the status file mtime."""
+    import calendar
+    import time as _t
+    mql5 = status_file.parent.parent.parent
+    ex5 = [d / "PMW" / n for n in st.get("ex5_files") or [] for d in (mql5 / "Scripts", mql5 / "Indicators")]
+    ts = [p.stat().st_mtime for p in ex5 if p.exists()]
+    if ts:
+        return max(ts)
+    try:
+        return float(calendar.timegm(_t.strptime(str(st.get("written_at")), "%Y-%m-%dT%H:%M:%SZ")))
+    except ValueError:
+        return status_file.stat().st_mtime
 
 
 def frozen_inputs(n: int = 400, seed: int = 14) -> list[dict]:

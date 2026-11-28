@@ -49,6 +49,11 @@ MAX_RESULT_BYTES = 64 * 1024
 DUAL_MAX_N = 2048
 PARITY_STATES = ("ALGORITHM_VALIDATED", "FROZEN_STATE_PARITY", "FIT_LAYOUT_PARITY", "FIT_RANDOM_SELECTION_PARITY", "HEAD_PARITY",
                  "NATIVE_COMPILED", "NATIVE_EXECUTED")
+# 1.46: what each parity result compares (the self-test PMW_MR2_SelfTest prints its NATIVE_FROZEN_STATE_PARITY line - a Python PASS
+# of FROZEN_STATE_PARITY is NOT native evidence)
+PARITY_SCOPE = {"ALGORITHM_VALIDATED": "PYTHON_VS_NAIVE_ORACLE", "FROZEN_STATE_PARITY": "PYTHON_VS_SKTIME_1.2.0",
+                "FIT_LAYOUT_PARITY": "PYTHON_VS_SKTIME_1.2.0", "FIT_RANDOM_SELECTION_PARITY": "PYTHON_VS_SKTIME_1.2.0",
+                "HEAD_PARITY": "MQL5_INFER_VS_PYTHON", "NATIVE_COMPILED": "MQL5_TERMINAL", "NATIVE_EXECUTED": "MQL5_TERMINAL"}
 
 
 class MRError(ValueError):
@@ -812,5 +817,5 @@ def _parity(fixtures: Path, reference_python: str | None, native_scores: Path | 
     ns = native_status(native_status_file)
     out["NATIVE_COMPILED"], out["NATIVE_EXECUTED"] = ns["NATIVE_COMPILED"], ns["NATIVE_EXECUTED"]
     details["native"] = ns
-    return {"transform_id": TRANSFORM_ID, "version": VERSION, "results": out, "details": details,
+    return {"transform_id": TRANSFORM_ID, "version": VERSION, "results": out, "scope": dict(PARITY_SCOPE), "details": details,
             "note": "bit-exact dotyczy wyłącznie sprawdzonego fixture/dtype/buildu; brak gwarancji globalnej zgodności float32/float64"}

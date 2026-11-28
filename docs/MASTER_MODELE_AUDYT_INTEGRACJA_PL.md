@@ -233,6 +233,8 @@ python -m masterquo mm buzoa-bench
 python -m masterquo mm mathbench-export --out <dir>      # → MQL5\Files\PMW_MathFidelity\
 python -m masterquo mm export-fixtures --out <dir>       # → MQL5\Files\PMW_MM\ ; po PMW_MM_SelfTest:
 python -m masterquo mm export-fixtures --out <dir> --parity <PMW_MM_NATIVE.txt>
+#   kod wyjścia: 0 = NATIVE_PARITY_PASS, 3 = NATIVE_NOT_EXECUTED (brak pliku z terminala – parytet NIE sprawdzony),
+#   1 = NATIVE_PARITY_FAIL / NATIVE_OUTPUT_INVALID
 # rollback wskaźnika SHADOW
 python -m masterquo mm rollback --instrument XAUUSD --model <model_id>
 # testy

@@ -9,6 +9,7 @@ import json
 
 import numpy as np
 
+from ...mm import events as EV
 from . import base as B
 from . import deep as D
 from . import seqdata as SD
@@ -94,9 +95,13 @@ class EventGRU(B.Family):
     UNIT = "probability"
     TASK = "EVENT_UNITS_DIR3"
     TF = "EVENT"
-    HORIZONS = (1,)
+    # 1.46 arch (I0007): 2 event units - the label of mm/jobs.py (EV.unit_targets(u, 2)) and the Quant adapter record (horizon_bars=2);
+    # was (1,). Metadata only (capabilities / cards / inventory): the SEQ_GRU_EVENT record comes from the Quant provider, never Family.pred.
+    HORIZONS = (2,)
     RECEIVERS = ("PANEL:model_status", "MM_BOARD:evidence")
-    DATA = {"kind": "EVENTS", "schema": "EVENT_UNITS_V1", "note": "jednostki zdarzeń (inne niż świece) – wagi niezamienne z SEQ_GRU"}
+    # 1.46 (I0023): feature_schema = the label of the MM artifact (mm/events.FEATURE_SCHEMA, checked on load); "schema" = data kind
+    DATA = {"kind": "EVENTS", "schema": "EVENT_UNITS_V1", "feature_schema": EV.FEATURE_SCHEMA,
+            "note": "jednostki zdarzeń (inne niż świece) – wagi niezamienne z SEQ_GRU"}
 
     def status_from_mm(self, inst: str) -> dict:
         try:

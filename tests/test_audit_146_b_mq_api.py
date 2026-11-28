@@ -354,7 +354,7 @@ class MmLedgerNewest(_Base):
             led.log(pred_id=f"p{i}", model_id="m", artifact_id=None, feature_schema=None, symbol="XAUUSD", timeframe="M5", source_ts=1000.0 + i,
                     available_at=1000.0 + i, matures_at=2000.0 + i, horizon="1", kind="k", payload={"i": i}, quality="OK")
         rt = make_rt()
-        rt.mm._ledger.return_value = led
+        rt.mm.ledger.return_value = led                                 # 1.46 arch I0089: public MMService.ledger()
         st, body, _ = call(make_app(rt), rt, "GET", "/api/v1/mm/ledger", qs={"instrument": "XAUUSD", "model": "m", "limit": 200})
         self.assertEqual(st, 200, body[:200])
         rows = json.loads(body)["rows"]

@@ -31,6 +31,15 @@ MT5 bridge → walidacja danych (EngineService) → skan S01–S10 (ActiveEngine
   (`realized_json`, atrybucja UNIQUE / MULTIPLE_POSITIONS_FOR_SETUP) – nie nadpisują etykiety hipotetycznej.
 * Backfill z historii (MT5 lub symulator) = ta sama logika, tylko dane dostępne w danym momencie; jakość **APPROX**, domyślnie
   wyłączony z treningu (`ml.use_backfill_approx`). Dane syntetyczne i rzeczywiste nigdy się nie mieszają.
+* Koszty etykiet (od MQ-COST-1.2.0, 1.46): **jedna funkcja** (`ml/labels.label_cost`) dla kolektora bota i backfillu treningu
+  offline – poślizg `costs.slippage_stress_points` × point przy wejściu i stopie, prowizja (waluta rachunku / lot / stronę) przeliczana
+  wartością ruchu 1.0 ceny na lot (kalkulator brokera albo `trade_tick_value / trade_tick_size`; wielkość kontraktu tylko jako
+  oznaczony zapas). Próbki starego kosztu offline (`BACKFILL_OFFLINE_*` z MQ-COST-1.0/1.1: poślizg 0, prowizja / wielkość kontraktu)
+  nie trafiają do snapshotu (`legacy_cost_basis_excluded` w licznikach).
+* Trening offline (`training ml-offline`) uczy na **zbiorze tego runu**: tylko próbki jego feedu `BACKFILL:OFFLINE_<dataset_id>` w
+  oknie czasu wczytanych świec (`scope` w wyniku i w manifeście snapshotu, skład `composition`: feed / źródło / jakość). Próbki HIGH
+  bota uczy zadanie treningu w bocie. Ten sam setup odtworzony z kilku nakładających się eksportów trafia do snapshotu raz
+  (`duplicates_dropped`).
 
 ## Cechy (MQ-FEAT-1.0.0)
 Per TF M5/M15/H1: zwroty w ATR, ATR%, ATR5/ATR50, RSI (dla SHORT odbite), MACD-hist/ATR, nachylenie EMA20, odległość od EMA20/50,

@@ -260,6 +260,7 @@ class ExecutionGateway:
                 if intent:
                     self.arc.intents.outcome(intent, {"status": "DUPLICATE", "reason": "ENTRY_ALREADY_ATTEMPTED_FOR_THIS_SETUP"})
                 return {"status": "DUPLICATE", "reason": "ENTRY_ALREADY_ATTEMPTED_FOR_THIS_SETUP", "attempt": ex}
+            self._record_decision_copy(attempt_id, d, side, risk, tp_final)      # 1.46 arch (I0777): audit only, never raises
             if intent:
                 self.arc.intents.sent(intent, attempt_id)
             self.log.info("EXECUTION", "PREPARED", f"{mode}: {side} {risk['lots']} {d['symbol']} SL {risk['stop_loss']} TP {tp_final} ({initiated_by})",
@@ -287,6 +288,31 @@ class ExecutionGateway:
         return exit_policy.from_plan(side=d["analysis_direction"], stop_loss=float(risk["stop_loss"]), targets=risk.get("targets") or [],
                                      exit_rules=lv.get("exit_rules"), timeframe=(d.get("setup") or {}).get("setup_tf"),
                                      tp1_weight_default=cfg.strategy.tp1_weight, be_default=cfg.strategy.move_sl_to_breakeven_after_tp1, entry=fill)
+
+    def _record_decision_copy(self, attempt_id: str, d: dict, side: str, risk: dict, tp_final: float) -> None:
+        """1.46 arch (I0777): order_attempts.decision_json = a copy of the decision used for THIS attempt. The decision id / content hash
+        do not cover SL / TP / volume / setup version and decisions keeps its first record (INSERT OR IGNORE), so decisions.record_json may
+        show other levels than the order. Audit only: the MT5 request, _validate and the dedup (entry_key / intents) are untouched; a
+        serialisation or write error stores an error marker (or nothing) and never blocks, delays past the write or changes the send."""
+        try:
+            setup = d.get("setup") or {}
+            lv = d.get("levels") or {}
+            snap = {"decision_id": d.get("decision_id"), "content_hash": d.get("content_hash"), "snapshot_id": d.get("snapshot_id"),
+                    "as_of_utc": d.get("as_of_utc"), "expires_at_utc": d.get("expires_at_utc"),
+                    "setup": {k: setup.get(k) for k in ("setup_id", "version", "state", "state_changed_at", "strategy_id", "profile")},
+                    "levels": {k: lv.get(k) for k in ("entry", "stop_loss", "targets")} if isinstance(lv, dict) else None,
+                    "risk": {k: risk.get(k) for k in ("lots", "entry", "stop_loss", "targets", "modeled_loss", "risk_gate")},
+                    "sent": {"side": side, "volume": risk.get("lots"), "price_requested": risk.get("entry"), "sl": risk.get("stop_loss"),
+                             "tp": tp_final}}
+            text = dumps(snap)
+        except Exception as exc:  # noqa: BLE001 - audit copy only (e.g. NaN in a plan level)
+            text = dumps({"status": "DECISION_COPY_FAILED", "error": type(exc).__name__, "decision_id": d.get("decision_id")})
+        try:
+            self.db.execute("UPDATE order_attempts SET decision_json=? WHERE attempt_id=?", (text, attempt_id))
+        except Exception as exc:  # noqa: BLE001 - an audit write never stops the order path
+            import contextlib
+            with contextlib.suppress(Exception):                   # the log may sit on the same broken database
+                self.log.write("WARNING", "EXECUTION", "DECISION_COPY_FAILED", f"{type(exc).__name__}: {exc}"[:200])
 
     def _set(self, attempt_id: str, **fields) -> None:
         fields["updated_at"] = iso(utcnow())

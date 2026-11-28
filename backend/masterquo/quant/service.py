@@ -25,6 +25,7 @@ from pathlib import Path
 import numpy as np
 
 from .. import paths
+from ..settings_store import RELOAD_ALWAYS, JsonSettingsStore
 from ..timeutil import from_epoch, iso
 from . import adapters as A
 from . import checks as CK
@@ -60,14 +61,26 @@ def qdir() -> Path:
     return p
 
 
-class Settings:
+def with_label_policy(items: list[dict]) -> list[dict]:
+    """w2 (I0031): the outcome definition of Quant ledger rows in the API view (never stored): the EventSpec simulation of the
+    assessment's task (quant/events.simulate - BE after TP2, candle spread), named by its task hash."""
+    return [{**x, "label_policy": "QUANT_EVENTSPEC" + (f"/{x['task_hash']}" if x.get("task_hash") else "")} for x in items]
+
+
+class Settings(JsonSettingsStore):
+    """data/quant/settings.json - policy RELOAD_ALWAYS (settings_store.py): every get() reads the disk, so `quant mode` from the CLI (another
+    process) is seen by the running bot at once. 1.46 arch (I0097): reads / writes and the read-modify-write sequences of set_mode /
+    set_estimator run under self.lock (RLock) - before, two threads could lose each other's change."""
+
+    policy = RELOAD_ALWAYS
+
     def __init__(self, path: Path):
-        self.path = path
+        super().__init__(path)
         self.error = None
 
     def get(self) -> dict:
         try:
-            d = json.loads(self.path.read_text(encoding="utf-8"))
+            d = self.read_raw()
         except FileNotFoundError:
             return json.loads(json.dumps(DEFAULT_SETTINGS))
         except (OSError, ValueError) as exc:
@@ -95,7 +108,7 @@ class Settings:
         return out
 
     def put(self, d: dict) -> None:
-        write_json_atomic(self.path, d)
+        self.write_raw(d)                     # same bytes as scheduler.write_json_atomic (tmp + os.replace), under self.lock
 
 
 class QuantService:
@@ -153,18 +166,23 @@ class QuantService:
         mode = str(mode).upper()
         if mode not in MODES:
             return {"ok": False, "reason": f"nieznany tryb {mode}"}
-        s = self.settings.get()
+        act = None
         if mode == "ASSIST":
+            # 1.46 arch (I0097, review): the MetaModel artifacts are loaded BEFORE taking settings.lock - every settings.get() (Quant loop,
+            # ASSIST reads in the decision path) waits on that lock. Same checks, same order of the two refusals, nothing written on refusal.
             act = self.validated_active(self.instrument())
             if not act:
                 return {"ok": False, "reason": "ASSIST wymaga aktywnego, zwalidowanego (VALIDATED_SHADOW) meta-modelu dla instrumentu – brak"}
             if not confirm:
                 return {"ok": False, "reason": "ASSIST wymaga jawnego potwierdzenia użytkownika (confirm=true / --confirm)"}
-            s["assist"] = {"activated": True, "activated_at": iso_ts(self.clock()), "activated_by": by, "models": act}
-        else:
-            s["assist"] = {"activated": False, "activated_at": None, "activated_by": None}
-        s["mode"] = mode
-        self.settings.put(s)
+        with self.settings.lock:                        # 1.46 arch (I0097): read-modify-write never loses a concurrent change
+            s = self.settings.get()
+            if mode == "ASSIST":
+                s["assist"] = {"activated": True, "activated_at": iso_ts(self.clock()), "activated_by": by, "models": act}
+            else:
+                s["assist"] = {"activated": False, "activated_at": None, "activated_by": None}
+            s["mode"] = mode
+            self.settings.put(s)
         return {"ok": True, "mode": mode, "assist": s["assist"]}
 
     def set_estimator(self, kind: str, *, by: str = "panel") -> dict:
@@ -172,11 +190,12 @@ class QuantService:
         the rollback to the previous estimator. Stored in settings.json; the upgrade never overwrites a stored choice."""
         if kind not in ("tabicl_v2", "legacy_logistic"):
             return {"ok": False, "reason": f"nieznany estymator {kind}"}
-        s = self.settings.get()
-        hist = list(s.get("estimator_history") or [])[-49:]
-        hist.append({"at": iso_ts(self.clock()), "from": s.get("estimator"), "to": kind, "by": by})
-        s.update(estimator=kind, estimator_history=hist)
-        self.settings.put(s)
+        with self.settings.lock:                        # 1.46 arch (I0097): read-modify-write never loses a concurrent change
+            s = self.settings.get()
+            hist = list(s.get("estimator_history") or [])[-49:]
+            hist.append({"at": iso_ts(self.clock()), "from": s.get("estimator"), "to": kind, "by": by})
+            s.update(estimator=kind, estimator_history=hist)
+            self.settings.put(s)
         if kind == "tabicl_v2":
             self.tabicl.start()
         return {"ok": True, "estimator": kind}
@@ -307,9 +326,10 @@ class QuantService:
                legacy_without_regime: bool = False) -> dict:
         """Assessment of one candidate dict (evaluation SetupCandidate.to_dict()). Cheap: dot products on the published snapshot.
         1.46: features of the CURRENT semantics (features.CURRENT) go to the ledger row / TabICL; a MetaModel gets the input of ITS feature
-        version (features.build_for) - a FEAT-1 artifact exactly the 1.41 build2 input. legacy_without_regime (coordinator SH candidate):
-        before 1.46 that candidate had no regime, so a FEAT-1 artifact keeps getting it without one (D4 applies to FEAT-3 only); a FEAT-3
-        artifact gets it with the regime AND is evaluated without it too - HOLD when either evaluation holds (the regime only tightens)."""
+        version (features.build_for) - a FEAT-1 artifact exactly the 1.41 build2 input, a FEAT-3 artifact exactly build3. legacy_without_regime
+        (coordinator SH candidate): before 1.46 that candidate had no regime, so a FEAT-1 artifact keeps getting it without one (D4 applies to
+        FEAT-3 / FEAT-4 only - features.REGIME_IN_SH_CANDIDATE); such an artifact gets it with the regime AND is evaluated without it too -
+        HOLD when either evaluation holds (the regime only tightens)."""
         mode = mode or self.mode()
         now = self.clock()
         inst = str(cd.get("instrument") or self.instrument())
@@ -331,7 +351,7 @@ class QuantService:
                 cd = {**cd, "research_features": rs.features_for(inst, float(cd.get("decision_ts") or now))}
             except Exception:  # noqa: BLE001 - missing research features = missing columns, never invented values
                 pass
-        feats = F.build_for(F.CURRENT, cd, preds)       # 1.46 FEAT-3 = FEAT-2 columns (1.41: + price-forecast + research) with D8 / D9 meaning
+        feats = F.build_for(F.CURRENT, cd, preds)       # 1.46 FEAT-4 = FEAT-3 (D8 / D9) with the regime of the candidate's own source
         a["sources"] = {"generation": (pub or {}).get("generation"), "eligible": len(preds), "excluded": len((pub or {}).get("excluded") or []),
                         "snapshot_status": ((pub or {}).get("snapshot") or {}).get("status"), "features": len(feats)}
         edges = [v for k, v in feats.items() if k.endswith(":edge")]
@@ -359,8 +379,8 @@ class QuantService:
         else:
             fv = F.version_of(model.get("feature_schema")) or F.VERSION
             nfeats = None
-            if fv == F.CURRENT:
-                mfeats = feats
+            if fv in F.REGIME_IN_SH_CANDIDATE:
+                mfeats = feats if fv == F.CURRENT else F.build_for(fv, cd, preds)      # a FEAT-3 artifact: exactly its own input (build3)
                 if legacy_without_regime and (cd.get("market_regime") or {}).get("state") is not None:
                     # 1.46 D4, tightening only (safety verdicts I0015 / I0143): the regime of the coordinator SH candidate may ADD a HOLD,
                     # never remove one - the same artifact is also evaluated on that candidate without the regime (no ledger row, no
@@ -379,8 +399,10 @@ class QuantService:
                 a["status"] = "READY"
                 a["model"] = {"version": ver, "calibrator": model["calibrator"]["kind"], "feature_schema": model["feature_schema"], "feature_version": fv,
                               "test": {k: ((man.get("report") or {}).get("test_once") or {}).get(k) for k in ("log_loss", "prior_log_loss", "ece", "n")}}
-                a["probability"] = {"p": out["p_event"], "event_id": spec.event_id, "status": "CALIBRATED_VALIDATED", "coverage": out["coverage"],
-                                    "missing_features": out["missing_features"][:20], "interval": None,
+                never = list(out.get("missing_never_seen") or [])
+                a["probability"] = {"p": out["p_event"], "event_id": spec.event_id, "coverage": out["coverage"],
+                                    "status": "DEGRADED_MISSING_FEATURES" if never else "CALIBRATED_VALIDATED",
+                                    "missing_features": out["missing_features"][:20], "missing_never_seen": never[:20], "interval": None,
                                     "interval_reason": "brak zwalidowanej metody przedziału dla pojedynczej predykcji"}
                 R = spec.R
                 tg = [(float(p), float(w)) for p, w in spec.targets]
@@ -409,9 +431,17 @@ class QuantService:
                         return f"Quant: P({spec.event_id}) = {o['p_event']:.3f} < próg {be_p:.3f}"
                     return None
                 hold = hold_of(out)
+                if never:
+                    # 1.46 arch (I0530), fail-closed only: a feature present in every training row is missing now - the model never
+                    # learned that case (mask coefficient 0), the value is the training mean, the estimate is not trustworthy -> HOLD
+                    # (ASSIST); every candidate held before stays held (this replaces nothing, it only adds a hold)
+                    forced = (f"Quant: brak cech obecnych w każdym wierszu treningu ({', '.join(never[:5])}"
+                              f"{' …' if len(never) > 5 else ''}) – ocena niewiarygodna (model {ver})")
+                    hold = f"{hold}; {forced}" if hold else forced
                 if out_nr is not None:
-                    hold_nr = hold_of(out_nr)
-                    a["without_regime"] = {"p": out_nr["p_event"], "e_net_r": out_nr["e_net_r"], "would_hold": hold_nr,
+                    o_nr = out_nr.get("legacy") or out_nr       # D4 floor: exactly the pre-change evaluation (missing = 0, I0530)
+                    hold_nr = hold_of(o_nr)
+                    a["without_regime"] = {"p": o_nr["p_event"], "e_net_r": o_nr["e_net_r"], "would_hold": hold_nr,
                                            "rule": "D4: reżim w kandydacie SH tylko zaostrza – HOLD, gdy wstrzymuje którakolwiek ocena"}
                     if hold is None and hold_nr:
                         hold = f"{hold_nr} – ocena bez reżimu (D4: reżim tylko zaostrza)"
@@ -651,8 +681,9 @@ def training_evidence(counts: dict) -> dict:
     return {"feature_version": F.CURRENT, "required_min_labelled": need,
             "required_basis": f"DEV {M.CRITERIA['min_dev']} + CAL {M.CRITERIA['min_cal']} + TEST {M.CRITERIA['min_test']} (bloki czasowe z "
                               "embargiem – faktycznie potrzeba nieco więcej)", "tasks": tasks,
-            "note": f"Nowe MetaModele uczą się tylko na wierszach {F.CURRENT}; wiersze sprzed 1.46 (FEAT-1) zostają w ledgerze, ale nie trenują. "
-                    "Do czasu zebrania wierszy działa dotychczasowy aktywny artefakt FEAT-1."}
+            "note": f"Nowe MetaModele uczą się tylko na wierszach {F.CURRENT}; wiersze starszych wersji cech (sprzed 1.46: FEAT-1, wcześniejsze "
+                    "1.46: FEAT-3) zostają w ledgerze, ale nie trenują. Do czasu zebrania wierszy działa dotychczasowy aktywny artefakt "
+                    "(dostaje wejście swojej wersji)."}
 
 
 def percentiles(tim: dict) -> dict:

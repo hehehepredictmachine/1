@@ -12,6 +12,7 @@ import math
 
 OBJECTIVE_VERSION = "PMW-PELT-FLOORED-GAUSS-1"
 INF = float("inf")
+SENSITIVITY_MAX_RETURNS = 2000          # detect(sensitivity=True): above this the robustness runs are skipped (sensitivity_skipped)
 
 
 class Moments:
@@ -55,7 +56,7 @@ def solve(r: list[float], m: int = 10, beta: float | None = None, use_pruning: b
     eps = 1e-8 * var_all
     if beta is None or beta <= 0:
         beta = 2 * math.log(n)
-    C, M = segment_cost_table(r, eps)
+    _, M = segment_cost_table(r, eps)
     g = guard(M, m, eps)
     prune = g if use_pruning is None else (use_pruning and (g or use_pruning == "FORCE"))
     F = [INF] * (n + 1)
@@ -64,24 +65,35 @@ def solve(r: list[float], m: int = 10, beta: float | None = None, use_pruning: b
     active = [0]
     prune_at: dict[int, int] = {}
     evals = 0
+    # 1.46 (performance, identical result): the cost is computed inline from the prefix lists with exactly the arithmetic of
+    # Moments.var / segment_cost_table and reused by the pruning test (it was evaluated twice through a lambda + method call);
+    # `active` stays ascending and unique by construction (the filter keeps the order, appended starts t-m+1 grow), so the
+    # sorted(set(active)) of every step is gone
+    S, Q, log = M.S, M.Q, math.log
     for t in range(m, n + 1):
         best, arg = INF, -1
+        St, Qt = S[t], Q[t]
+        costs: dict[int, float] = {}
         for tau in active:
             if t - tau < m or F[tau] == INF:
                 continue
-            v = F[tau] + C(tau, t) + beta
+            k = t - tau
+            mean = (St - S[tau]) / k
+            var = (Qt - Q[tau]) / k - mean * mean
+            c = k * log(max(0.0 if var < 0 else var, eps))
+            costs[tau] = c
+            v = F[tau] + c + beta
             evals += 1
             if v < best:
                 best, arg = v, tau
         F[t], cp[t] = best, arg
         if prune and best < INF:
             for tau in active:
-                if t - tau >= m and F[tau] < INF and F[tau] + C(tau, t) > F[t] and tau not in prune_at:
+                if tau in costs and F[tau] + costs[tau] > F[t] and tau not in prune_at:
                     prune_at[tau] = t + m if deferred else t
             active = [tau for tau in active if not (tau in prune_at and prune_at[tau] <= t)]
         if t - m + 1 >= m:                          # new candidate start that can host a segment of length >= m
             active.append(t - m + 1)
-        active = sorted(set(active))
     if F[n] == INF:
         return {"status": "NO_LEGAL_SEGMENTATION", "change_points": []}
     cps, t = [], n
@@ -120,7 +132,10 @@ def detect(closes: list[float], lookback_returns: int = 500, m: int = 10, beta: 
     base = solve(r, m, beta)
     out = {"profile": {"lookback_returns": lookback_returns, "min_segment": m, "penalty": "auto 2 ln(n)" if not beta else beta}, **base,
            "mode": "RESEARCH / READ_ONLY (retrospektywna segmentacja – nie sygnał)"}
-    if sensitivity and base["status"] == "OK":
+    if sensitivity and base["status"] == "OK" and len(r) > SENSITIVITY_MAX_RETURNS:
+        # 1.46: 10 extra exact solves of an O(n^2) pure-Python DP (~40-50 s CPU for 5000 returns) ran synchronously in the API process
+        out["sensitivity_skipped"] = "LOOKBACK_GT_2000"
+    elif sensitivity and base["status"] == "OK":
         runs = []
         for pm in (0.5, 1, 2, 3):
             runs.append(("penalty×%s" % pm, solve(r, m, (base["beta"]) * pm)))

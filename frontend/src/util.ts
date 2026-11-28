@@ -25,11 +25,6 @@ export function fmtNum(v: any, digits = 2): string {
   return Number(v).toLocaleString("pl-PL", { minimumFractionDigits: digits, maximumFractionDigits: digits });
 }
 
-export function fmtMoney(v: any, cur?: string | null): string {
-  if (v === null || v === undefined) return "—";
-  return `${fmtNum(v, 2)} ${cur ?? ""}`.trim();
-}
-
 export function cls(...a: (string | false | null | undefined)[]): string {
   return a.filter(Boolean).join(" ");
 }
@@ -42,66 +37,3 @@ export function tone(status?: string | null): "ok" | "warn" | "bad" | "muted" {
   return "warn";
 }
 
-export const REASON_PL: Record<string, string> = {
-  EXECUTION_MODE_SIGNALS: "Tryb „Analiza warunków” – bez zleceń",
-  NO_MT5_ACCOUNT: "Brak rachunku MT5",
-  ML_BELOW_THRESHOLD: "Model ML (ASSIST): ocena poniżej zwalidowanego progu",
-  RISK_LIMITS_NOT_CONFIGURED: "Limity ryzyka nieustawione (Ustawienia → Ryzyko)",
-  AI_UNAVAILABLE_NO_KEY: "Brak klucza Claude API",
-  MODEL_NOT_CONFIGURED: "Nie wybrano modelu Claude",
-  MACRO_CALENDAR_UNAVAILABLE: "Kalendarz makro niedostępny",
-  MACRO_CALENDAR_NOT_LOADED: "Kalendarz makro jeszcze nie pobrany",
-  MACRO_EVENT_WINDOW: "Okno wydarzenia makro wysokiego wpływu",
-  STRUCTURAL_DIRECTION_UNRESOLVED: "Brak zgodności struktury H4/H1",
-  M02_STRUCTURE_UNKNOWN: "Struktura M02 nieustalona (H4 i H1 w różnych kierunkach)",
-  M02_STRUCTURE_NEUTRAL: "Struktura M02 neutralna (H4 i H1 bez trendu)",
-  RISK_EVALUATED: "Ryzyko nieliczone – brak setupu",
-  STRUCTURE_COUNTER_H4: "Setup przeciw kierunkowi H4 (polityka H1_LEAD)",
-  AI_ASSESSMENT_RUNNING: "Czekam na ocenę Claude",
-  AI_ASSESSMENT_MISSING: "Brak oceny Claude",
-  SETUP: "Brak setupu MasterQUO",
-  FROZEN_M07_SETUP: "Brak zamrożonego setupu M07",
-  M10A_CONFIRMED: "Setup niepotwierdzony (M10A)",
-  QUOTE_STALE: "Kwotowanie nieświeże",
-  NEW_ENTRIES_STOPPED: "Nowe wejścia zatrzymane",
-  PRIMARY_PATH_NOT_SELECTED: "Nie wybrano ścieżki głównej (okno Tryb → 4)",
-  PORTFOLIO_DAILY_LOSS_LIMIT: "Dzienny limit straty portfela (obie ścieżki łącznie)",
-  PORTFOLIO_MAX_OPEN_POSITIONS: "Limit otwartych pozycji portfela (obie ścieżki łącznie)",
-  COST_MODEL_UNKNOWN_COMMISSION: "Nieznana prowizja",
-  SLIPPAGE_STRESS_NOT_CONFIGURED: "Nieustawiony stres poślizgu",
-  SIZE_BELOW_BROKER_MIN_LOT: "Wielkość poniżej min. lota brokera (nie zaokrąglamy w górę)",
-  MARKET_CLOSED_WEEKEND: "Rynek zamknięty (weekend)",
-  MARKET_CLOSED_SESSION_BREAK: "Przerwa sesji",
-  MARKET_NO_FRESH_TICKS: "Brak świeżych ticków",
-  TIME_OFFSET_UNKNOWN: "Nieznany offset czasu serwera",
-  TIME_OFFSET_MEASURING: "Pomiar offsetu czasu serwera",
-  TIME_OFFSET_STORED_UNVERIFIED: "Offset czasu z poprzedniej sesji (niezweryfikowany)",
-  // conditions of the decision tree (unmet = what is still missing)
-  RISK_GATE_PASS: "bramka ryzyka nie przepuszcza",
-  ONLY_SIGNAL_ONLY_STRATEGIES_HAVE_SETUPS: "setupy mają tylko strategie „tylko sygnał” – brak kandydata do wykonania",
-  EXECUTION_MODE_ALLOWS_ORDERS: "tryb wykonania nie pozwala teraz na zlecenia",
-  STRATEGY_ALLOWED_TO_TRADE: "strategia nie ma zgody na wykonywanie zleceń",
-  AI_ASSESSMENT_VALID_AND_AGREES: "brak zgodnej oceny agenta AI",
-  ML_SHADOW_NOT_GATING: "ML w trybie SHADOW – nie blokuje",
-  ANALYSIS_DATA_VALID: "dane do analizy niepełne",
-  ENTRY_DATA_FRESH: "dane do wejścia nieświeże",
-};
-
-export function reasonPl(code: string): string {
-  if (REASON_PL[code]) return REASON_PL[code];
-  if (code.startsWith("PORTFOLIO_GUARD_ERROR")) return "Nie można ustalić stanu portfela – brak nowych wejść";
-  if (code.startsWith("NOT_PRIMARY_PATH_")) return "Ta ścieżka tylko analizuje – wejścia otwiera ścieżka główna " + (code.endsWith("_SH") ? "SCALPING/HEDGING" : "S01–S12");
-  if (code.startsWith("RR_NET_BELOW")) return "RR netto poniżej progu blokady";
-  if (code.startsWith("RR_NET_CONDITIONAL_REDUCED_RISK")) return "RR netto warunkowy – wejście z mniejszym ryzykiem (x" + code.split("_X").pop() + ")";
-  if (code.startsWith("RR_NET_CONDITIONAL")) return "RR netto warunkowy – bez wykonania";
-  if (code.startsWith("AI_VETO_WAIT_")) return "Czekam na ewentualne weto Claude";
-  if (code.startsWith("AI_NO_VETO_")) return "Claude nie zgłosił weta – nie blokuje";
-  if (code.startsWith("STRUCTURE_H1_LEADS_")) return "Kierunek z H1 (H4: " + code.split("_").pop() + ")";
-  if (code.endsWith("_INSUFFICIENT_HISTORY")) return `${code.split("_")[0]}: za mało historii (WARMING_UP)`;
-  if (code.startsWith("SETUP_STATE_")) return "Etap setupu: " + code.slice(12);
-  if (code.startsWith("STRATEGY_TRADE_DISABLED_")) return `Strategia ${code.slice(24)}: wykonywanie wyłączone w ustawieniach (tylko sygnały)`;
-  if (code.startsWith("REGIME_")) return "Reżim rynku: " + code.slice(7);
-  if (code.startsWith("SELECTED_")) return "Wybrana strategia: " + code.slice(9).replace(/_/g, " ");
-  if (code.startsWith("AI_")) return "Agent: " + code.slice(3).replace(/_/g, " ").toLowerCase();
-  return code;
-}

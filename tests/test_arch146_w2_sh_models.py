@@ -107,7 +107,7 @@ class TestI0624ProbeScalpB(_Data):
 class TestI0352I0356MMShadowStatusHonest(_Data):
     def _promote(self, mid: str) -> str:
         from masterquo.mm import artifacts as MA
-        aid = MA.save(INST, mid, {"w": [1.0, 2.0]}, {"status": "VALIDATED_SHADOW"})
+        aid = MA.save(INST, mid, {"w": [1.0, 2.0]}, {"status": "VALIDATED_SHADOW", "gates": {"g": True}, "data_kind": "REAL_USER_DATA"})   # I0545
         MA.promote_shadow(INST, mid, aid, "test")
         return aid
 

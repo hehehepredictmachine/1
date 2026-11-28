@@ -287,23 +287,21 @@ class AccountLoopStops(unittest.TestCase):
     """focus_X3#6: the telegram-account thread was `while True` - Runtime.stop() never ended it."""
 
     def test_loop_ends_when_runtime_stops(self):
+        # 1.46 arch (I0092): the loop is no longer started by the route registration (it started before rt.start() and regardless of
+        # the licence lock) - Runtime.start starts it through Wf32Services.start_account_loop; it still ends with rt._stop
         import threading
         import types
         from unittest import mock
 
-        from fastapi import FastAPI
-
-        from masterquo.api import wf32_routes as W
+        from masterquo.wf32_services import Wf32Services
         rt = types.SimpleNamespace(_stop=threading.Event(), bridge=types.SimpleNamespace(), cfg=None)
-        with mock.patch.object(W, "AccountCenter", create=True):
-            try:
-                W.register(FastAPI(), rt)
-            except Exception:  # noqa: BLE001 - only the loop thread matters here
-                pass
-        th = getattr(rt, "_acct_thread", None)
-        self.assertIsNotNone(th)
-        rt._stop.set()
-        th.join(15)
+        svc = Wf32Services(rt)
+        with mock.patch.object(Wf32Services, "acct", return_value=mock.MagicMock()):
+            self.assertTrue(svc.start_account_loop(rt._stop))
+            th = getattr(rt, "_acct_thread", None)
+            self.assertIsNotNone(th)
+            rt._stop.set()
+            th.join(15)
         self.assertFalse(th.is_alive())
 
 
