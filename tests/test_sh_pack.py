@@ -577,6 +577,8 @@ class TestGarchHG09(unittest.TestCase):
         class Fam:
             def __init__(self, st):
                 self.st = st
+                # w2 (I0408): READY also needs the ASSIST gate of the family store (APPROVED + REAL data) and a role other than OFF
+                self.store = type("S", (), {"assist_ok": staticmethod(lambda fid, inst, rid: (True, None))})()
 
             def status(self, fid, inst):
                 return self.st
@@ -584,8 +586,8 @@ class TestGarchHG09(unittest.TestCase):
             def _artifact(self, fid, inst, rid):
                 return {"omega": 0.01, "alpha": 0.05, "beta": 0.9, "dist": "t"}
         s = SHService.__new__(SHService)
-        s.families = Fam({"artifact": "CANDIDATE", "active_run": "R1"})
+        s.families = Fam({"artifact": "CANDIDATE", "active_run": "R1", "use": "SHADOW"})
         self.assertEqual(s.garch_artifact("XAUUSD")["status"], "CANDIDATE")
-        s.families = Fam({"artifact": "APPROVED", "active_run": "R2"})
+        s.families = Fam({"artifact": "APPROVED", "active_run": "R2", "use": "SHADOW"})
         g = s.garch_artifact("XAUUSD")
         self.assertEqual((g["status"], g["run_id"], g["alpha"]), ("READY", "R2", 0.05))

@@ -1235,7 +1235,7 @@ def create_app(rt, port: int) -> FastAPI:
         from ..sh.pack import catalog as _CAT
         try:
             cfg = _CAT.save_override(body, who="panel")
-        except (ValueError, KeyError) as exc:
+        except (ValueError, KeyError, TypeError, AttributeError) as exc:      # w2 (I0818): a bad type is a 400, never a 500
             raise HTTPException(400, str(exc)[:400])
         rt.log.info("SH", "PACK_CONFIG", f"Zmiana konfiguracji pakietu 20 wariantów – hash {cfg['hash']}")
         return _CAT.public(cfg)
@@ -1472,7 +1472,11 @@ def create_app(rt, port: int) -> FastAPI:
             rt.bridge.request_reconnect("ACTIVE_ASSET_CHANGED")
         rt.engine.mark_dirty()
         rt.bus.publish("assets", st)
-        return st
+        try:                                              # w2 (I0748, informative): open SH plans of another symbol are not managed now
+            w = rt.sh.open_plans_warning(rt.sh.store, rt.cfg.get().mt5.symbol)
+        except Exception:  # noqa: BLE001 - the switch itself already happened
+            w = None
+        return dict(st, sh_open_plans_warning=w) if w and isinstance(st, dict) else st
 
     LOCK_NOTE = ("Execution Lock został wycofany (1.24, decyzja użytkownika). O wysyłce zleceń decydują: tryb wykonania, potwierdzony "
                  "rachunek (DEMO / REAL), STOP nowych wejść, limity ryzyka użytkownika, aktualne dane i warunki brokera.")
@@ -2185,6 +2189,8 @@ def create_app(rt, port: int) -> FastAPI:
 
     @app.get("/api/v1/models/evidence")
     def models_evidence(instrument: str = Query("XAUUSD"), strategy: str = Query("SCALPING")):
+        """Diagnostic view (no consumer in the panels): evidence groups per correlation group of modelhub.aggregate.ROUTES (per TF); the
+        SH matrix shows the Training Center models as the summary row th_direction with these groups in group_by_tf (w2 I0006)."""
         from ..modelhub import aggregate as _AG
         i = _th_inst(instrument)
         if strategy not in ("SCALPING", "HEDGING"):

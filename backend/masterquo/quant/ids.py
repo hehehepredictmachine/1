@@ -87,9 +87,8 @@ SI_LIVE = ("prognoza SHADOW STRUCTURE_MOVE_M1_V1 liczona na żywo przy każdej z
 # prefix rule of resolve() returns an already prefixed name unchanged (lab: / si: / flow: / quant: ...) - no record that reaches the Quant
 # features carries such a name in a field canonical() reads instead of its explicit canonical_id (1.46 arch I0529: 'quant' added).
 # cid -> (name, category, env, files, quant role, adapter or None, reason when there is no adapter / note)
+# 1.46 w2 (I0206): tsfm:tirex2 left this list - it is a row of sh/models.REGISTRY now (one inventory row, metadata in quant/inventory._OVR)
 EXTRA_PRODUCERS: dict[str, tuple] = {
-    "tsfm:tirex2": ("TiRex-2 (TSFM, prognoza ceny M5/M15)", "MODEL_PRETRAINED", ".venv_tirex2", ["backend/masterquo/tsfm/", "backend/tsfm_runtime/"],
-                    "BASE_FORECAST", "modelhub.adapters.all_predictions", "rekordy z model_id tsfm:tirex2 (TsfmService, jak Chronos-2 / Granite TTM)"),
     "quant:tabicl_v2": ("TabICLv2 (estymator confidence kandydata, in-context)", "MODEL_PRETRAINED", ".venv_tabicl",
                         ["backend/masterquo/quant/tabicl.py", "backend/tabicl_runtime/"], "SETUP_EVENT", None,
                         "wynik per kandydat w pamięci QuantService (nieutrwalany) – brak samodzielnej predykcji"),

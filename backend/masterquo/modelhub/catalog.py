@@ -4,8 +4,9 @@ purpose, required data, input / output, instruments, training method, category a
 Sources (not re-declared here): sh/models.REGISTRY (role per strategy + live probes), mm/inventory.MODULES (PMW-MM modules, spec /
 blocked status), trainhub registry (Training Center packages) + the modules added in 1.28 (market zones). A documented model without
 code appears only from those sources with its blocker - nothing is reported as implemented or trained without evidence.
-Categories: TRAINABLE (artifact from training), ONLINE (estimated / filtered online), INDICATOR (deterministic calculation), RULE
-(rule / state machine / strategy), SIMULATION (Monte Carlo), EXTERNAL (Claude agent), INFRA (optimiser, benchmark, data).
+Categories: TRAINABLE (artifact from training), PRETRAINED (pretrained weights, no training in the bot - 1.46 w2), ONLINE (estimated /
+filtered online), INDICATOR (deterministic calculation), RULE (rule / state machine / strategy), SIMULATION (Monte Carlo), EXTERNAL
+(Claude agent), INFRA (optimiser, benchmark, data).
 """
 from __future__ import annotations
 
@@ -13,7 +14,7 @@ from . import contract as C
 
 STATE_FROM_PROBE = {"READY": "READY", "SHADOW_ONLY": "READY", "DETERMINISTIC_OK": "READY", "NOT_TRAINED": "NOT_TRAINED", "NOT_CONNECTED": "DISABLED",
                     "INCOMPATIBLE": "INCOMPATIBLE", "ERROR": "ERROR", "DATA_MISSING": "ERROR", "UNAVAILABLE": "DISABLED"}
-CAT_FROM_KIND = {"DETERMINISTIC": "INDICATOR", "TRAINED": "TRAINABLE", "EXTERNAL": "EXTERNAL"}
+CAT_FROM_KIND = {"DETERMINISTIC": "INDICATOR", "TRAINED": "TRAINABLE", "PRETRAINED": "PRETRAINED", "EXTERNAL": "EXTERNAL"}
 CAT_FROM_MM = {"TRAINABLE": "TRAINABLE", "ONLINE_LEARNER": "ONLINE", "RECURSIVE_FILTER": "ONLINE", "DETERMINISTIC_INDICATOR": "INDICATOR",
                "RULE_STRATEGY": "RULE", "OPTIMIZER": "INFRA", "DATA_INFRA": "INFRA", "VISUALIZATION": "INDICATOR", "BENCHMARK": "INFRA"}
 # where the code lives + what it needs (sh/models.REGISTRY ids)
@@ -41,6 +42,8 @@ LOCATION = {
     "chronos2": ("tsfm/ (serwis) + backend/tsfm_runtime (proces .venv_chronos2, chronos-forecasting 2.3.2, Apache-2.0)", "zamknięte świece M5/M15 z MT5 przez bridge"),
     "granite_ttm": ("tsfm/ (serwis) + backend/tsfm_runtime (proces .venv_granite, granite-tsfm 0.3.11, Apache-2.0; 1.40 zamiast FinCast)",
                     "zamknięte świece M5/M15 z MT5 przez bridge (wspólny snapshot z Chronos-2)"),
+    "tirex2": ("tsfm/ (serwis) + backend/tsfm_runtime (proces .venv_tirex2, TiRex-2 NX-AI; 1.41)",
+               "zamknięte świece M5/M15 z MT5 przez bridge (wspólny snapshot z Chronos-2)"),
 }
 
 

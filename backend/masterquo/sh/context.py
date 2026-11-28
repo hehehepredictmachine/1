@@ -155,14 +155,18 @@ def _regime(m5: list[dict], tick: float, cache: dict | None = None) -> dict:
     return inc.public()
 
 
+# 1.46 w2 (I0312): SH reads VAMD / FD / SMC with the FROZEN DEFAULT profile of lab/context_ind (VM.DEFAULT, FD.DEFAULT, SMC defaults) -
+# passed explicitly here (the values are the ones computed before: cfg None = DEFAULT). A calibrated context_ind profile (profile.json,
+# 'context-indicators calibrate') is used by the context panel / SI cell and research only; switching SH to it would change the SH filters
+# and the sh_tp_model inputs (an owner decision after a validation with costs, not a fix). The panel shows the values SH uses ('sh' block).
 def _ctx_m5(m5: list[dict], tick: float) -> dict:
     from ..lab.context_ind import fractal as FD
     from ..lab.context_ind import smc as SM
     from ..lab.context_ind import vamd as VM
     out = {}
-    v5 = [x for x in VM.series(m5[-300:]) if x.get("status") == "READY"]
+    v5 = [x for x in VM.series(m5[-300:], VM.DEFAULT) if x.get("status") == "READY"]
     out["vamd_m5"] = v5[-1]["y"] if v5 else None
-    f = [x for x in FD.series(m5[-200:]) if x.get("zone")]
+    f = [x for x in FD.series(m5[-200:], FD.DEFAULT) if x.get("zone")]
     out["fd_zone_m5"] = f[-1]["zone"] if f else None
     s = SM.run(m5[-400:], 300, tick=tick)
     out["smc_trend_m5"] = s.trend
@@ -178,7 +182,7 @@ def _ctx_m5(m5: list[dict], tick: float) -> dict:
 def _ctx_m1(m1: list[dict], tick: float) -> dict:
     from ..lab.context_ind import smc as SM
     from ..lab.context_ind import vamd as VM
-    v1 = [x for x in VM.series(m1[-300:]) if x.get("status") == "READY"]
+    v1 = [x for x in VM.series(m1[-300:], VM.DEFAULT) if x.get("status") == "READY"]
     s1 = SM.run(m1[-240:], 60, tick=tick)
     ev1 = [e for e in s1.events if e["kind"].startswith(("BOS", "CHOCH"))]
     return {"vamd_m1": v1[-1]["y"] if v1 else None, "smc_trend_m1": s1.trend,

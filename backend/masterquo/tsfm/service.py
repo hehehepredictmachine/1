@@ -216,6 +216,8 @@ class ModelWorker:
 
 
 class TsfmService:
+    # w2 (I0095): optional dependency wired by runtime.py after construction - class default (None = absent), read as self.x
+    governor = None
     # the data helpers of the Kronos service (same bridge, same symbol mapping, same calendar / meta caches) - one implementation
     symbol = KronosService.symbol
     data_kind = KronosService.data_kind
@@ -266,7 +268,7 @@ class TsfmService:
         """CPU threads of a model process: the explicit setting, else the resource profile (Memory Governor), else all cores but one."""
         if c.cpu_threads:
             return int(c.cpu_threads)
-        gov = getattr(self, "governor", None)
+        gov = self.governor
         if gov is not None:
             return gov.threads_for(mid)
         return max(1, (os.cpu_count() or 2) - 1)
@@ -474,7 +476,7 @@ class TsfmService:
         s = self.settings.get()
         c = s.models[mid]
         w = self.workers[mid]
-        gov = getattr(self, "governor", None)
+        gov = self.governor
         loaded = bool(w.proc and w.proc.poll() is None and w.load_info)
         if gov is not None:
             essential = any(c.use[pth].use in ("ASSIST", "REQUIRED") for pth in PATHS)          # 1.42.6: model w decyzjach
@@ -524,7 +526,7 @@ class TsfmService:
             return None
         w.timings.append(float(r.get("ms") or 0))
         w.last_ok = w.last_used = time.monotonic()
-        gov = getattr(self, "governor", None)
+        gov = self.governor
         if gov is not None:
             gov.record(mid, ms=r.get("ms"))
         fc = self._forecast(job, r, y_raw, off, H, s, cinfo, ctx)

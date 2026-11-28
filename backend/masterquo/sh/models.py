@@ -12,16 +12,24 @@ Participation rules (docs/strategie_sh/03_MODELE_I_ROLE.md):
 * 1.46: SUPERVISION is never EVIDENCE (INFO at most); a deterministic row shows what sh/setup.py really does with it (sh_use: GATE /
   INPUT / not read = INFO); a pretrained model with use ASSIST / REQUIRED is HOLD_ONLY (it can only turn READY into WAIT).
   The matrix is presentation only: sh/setup.py copies it into su['models'] and nothing decides on it.
+* 1.46 w2: the SH cycle reads the rows of the LIVE runtime through a cached provider (MatrixCache, refreshed off the SH thread); without
+  it every row is NOT_EVALUATED (use NONE) - never the false DATA_MISSING / UNAVAILABLE of a probe without the runtime. data_quality and
+  news are probed from the cycle's own snapshot / calendar. PRETRAINED = a pretrained model with no training in the bot.
 """
 from __future__ import annotations
 
 import json
+import threading
+import time
 from pathlib import Path
 
 ROLES = ("DATA_QUALITY", "RISK_ANOMALY", "REGIME", "DIRECTION_STRUCTURE", "VOLATILITY", "TIMING", "PATTERN", "LIQUIDITY",
          "TARGET_PROB", "SUPERVISION", "OBSERVATION")
 # OBSERVATION (PMW-MM master models): shown with its live status, never a gate, never evidence, never a probability of the SH event.
-STATUS = ("READY", "SHADOW_ONLY", "NOT_TRAINED", "NOT_CONNECTED", "INCOMPATIBLE", "ERROR", "DETERMINISTIC_OK", "DATA_MISSING", "UNAVAILABLE")
+STATUS = ("READY", "SHADOW_ONLY", "NOT_TRAINED", "NOT_CONNECTED", "INCOMPATIBLE", "ERROR", "DETERMINISTIC_OK", "DATA_MISSING", "UNAVAILABLE",
+          "NOT_EVALUATED")
+# kind: DETERMINISTIC (rule / measurement), TRAINED (artifact trained in the bot), PRETRAINED (pretrained weights, no training in the bot -
+# 1.46 w2: they were TRAINED, so the Training panel showed them as 'requires training'), EXTERNAL (agent)
 
 # id, name, kind, event/output, correlation group, roles {SCALPING, HEDGING}, training task (runner) or None
 # sh_use (1.46): what sh/setup.py really does with a deterministic component whose role is not a gate by itself - "GATE" (it can turn the
@@ -42,9 +50,12 @@ REGISTRY: list[dict] = [
      "group": "STRUCTURE", "roles": {"SCALPING": "DIRECTION_STRUCTURE", "HEDGING": "DIRECTION_STRUCTURE"}, "train": None, "sh_use": "GATE"},
     {"id": "smc_pullback", "name": "Pullback + SMC (BoS/CHoCH/IDM) – context_ind", "kind": "DETERMINISTIC", "output": "trend SMC, aktywne poziomy",
      "group": "STRUCTURE", "roles": {"SCALPING": "DIRECTION_STRUCTURE", "HEDGING": "DIRECTION_STRUCTURE"}, "train": None, "sh_use": "INPUT"},
-    {"id": "vamd", "name": "VAMD momentum", "kind": "DETERMINISTIC", "output": "y (znak = momentum)", "group": "MOMENTUM",
+    # 1.46 w2 (I0312): SH reads VAMD / FD with the FROZEN DEFAULT profile (sh/context.py); the calibrated context_ind profile is used by
+    # the context panel / SI cell and research only - the panel shows the DEFAULT values next to its own ('sh' block)
+    {"id": "vamd", "name": "VAMD momentum – profil DEFAULT (stały dla SH; kalibracja context_ind dotyczy panelu/badań)", "kind": "DETERMINISTIC", "output": "y (znak = momentum)", "group": "MOMENTUM",
      "roles": {"SCALPING": "TIMING", "HEDGING": "TIMING"}, "train": None, "sh_use": "GATE"},
-    {"id": "fractal", "name": "Bounded Katz FD (trend/chop bez kierunku)", "kind": "DETERMINISTIC", "output": "TREND/NEUTRAL/CHOP", "group": "REGIME",
+    {"id": "fractal", "name": "Bounded Katz FD (trend/chop bez kierunku) – profil DEFAULT (stały dla SH; kalibracja context_ind dotyczy panelu/badań)",
+     "kind": "DETERMINISTIC", "output": "TREND/NEUTRAL/CHOP", "group": "REGIME",
      "roles": {"SCALPING": "REGIME", "HEDGING": "REGIME"}, "train": None},
     {"id": "atr_vol", "name": "Zmienność ATR(14) M1/M5 + StopDistance", "kind": "DETERMINISTIC", "output": "ATR w USD", "group": "VOLATILITY",
      "roles": {"SCALPING": "VOLATILITY", "HEDGING": "VOLATILITY"}, "train": None, "sh_use": "GATE"},
@@ -107,21 +118,25 @@ REGISTRY: list[dict] = [
      "output": "P(DOWN/FLAT/UP) w H świecach po kosztach (kalibracja dev)", "group": "TH_DIRECTION",
      "roles": {"SCALPING": "OBSERVATION", "HEDGING": "OBSERVATION"}, "train": "trainhub", "runner_step": None,
      "owner_train": "Centrum treningu (trainhub): trening + ręczna aktywacja paczki"},
-    {"id": "kronos", "name": "Kronos-small (NeoQuasar, przetrenowany, 24,7M) – prognoza świec OHLC", "kind": "TRAINED",
+    {"id": "kronos", "name": "Kronos-small (NeoQuasar, przetrenowany, 24,7M) – prognoza świec OHLC", "kind": "PRETRAINED",
      "output": "ścieżka OHLC na H świec (cena; pojedyncza próbka – nie prawdopodobieństwo)", "group": "KRONOS_PRICE_PATH",
      "roles": {"SCALPING": "OBSERVATION", "HEDGING": "OBSERVATION"}, "train": None},
     {"id": "agent", "name": "Agent Claude (weto, opis)", "kind": "EXTERNAL", "output": "BUY/SELL/WAIT/NO_TRADE bez prawdopodobieństwa",
      "group": "AGENT", "roles": {"SCALPING": "SUPERVISION", "HEDGING": "SUPERVISION"}, "train": None},
     # --- 1.37 time-series foundation models (pretrained, own processes; OBSERVE by default, ASSIST / REQUIRED only after validation)
-    {"id": "chronos2", "name": "Chronos-2 (amazon/chronos-2, 120M, przetrenowany) – kwantyle close", "kind": "TRAINED",
+    {"id": "chronos2", "name": "Chronos-2 (amazon/chronos-2, 120M, przetrenowany) – kwantyle close", "kind": "PRETRAINED",
      "output": "kwantyle ceny close na H świec (mediana jako punkt; nieskalibrowane)", "group": "TSFM_PRICE",
      "roles": {"SCALPING": "OBSERVATION", "HEDGING": "OBSERVATION"}, "train": None},
     # 1.40: FinCast retired -> Granite TTM (same correlation group TSFM_PRICE: three price forecasts from the same closes are not
     # independent votes - the group is counted once in the SH consensus).
-    {"id": "granite_ttm", "name": "Granite TTM (IBM granite-timeseries-ttm-r2, 0,8M, przetrenowany) – prognoza punktowa close", "kind": "TRAINED",
+    {"id": "granite_ttm", "name": "Granite TTM (IBM granite-timeseries-ttm-r2, 0,8M, przetrenowany) – prognoza punktowa close", "kind": "PRETRAINED",
      "output": "prognoza punktowa ceny close na H świec (bez kwantyli; nieskalibrowana)", "group": "TSFM_PRICE",
      "roles": {"SCALPING": "OBSERVATION", "HEDGING": "OBSERVATION"}, "train": "tsfm.granite_train", "runner_step": None,
      "owner_train": "tsfm/granite_train.py (dostrajanie Granite TTM: Centrum PEPE / panel TSFM)"},
+    # 1.46 w2 (I0206): TiRex-2 (1.41, own .venv_tirex2 process) has an SH receiver (service._tsfm) - it was missing from the matrix / catalog
+    {"id": "tirex2", "name": "TiRex-2 (NX-AI, przetrenowany) – kwantyle close", "kind": "PRETRAINED",
+     "output": "kwantyle ceny close na H świec (mediana jako punkt; nieskalibrowane)", "group": "TSFM_PRICE",
+     "roles": {"SCALPING": "OBSERVATION", "HEDGING": "OBSERVATION"}, "train": None},
 ]
 
 
@@ -158,18 +173,56 @@ def _probe_registry_file(path: Path, key: str, task: str | None = None) -> tuple
     return "SHADOW_ONLY", "wybrany do obserwacji SHADOW – brak walidacji holdout dla zdarzenia strategii SH", {"selected": sel}
 
 
-def probe(item: dict, rt, inst: str) -> dict:
-    """Live status of one component. Never raises: a broken probe is reported as ERROR with the exception type."""
+def _mm_live(rt, inst: str) -> tuple[str, str | None, dict | None]:
+    """1.46 w2 (I0359): state of the PMW-MM SHADOW loop for the mm_* rows - READ ONLY (rt.mm.loop / rt.mm._cache through .get(); never
+    rt.mm.live(), a GP fit, bars or a write). (status, reason, cached value): UNAVAILABLE / ERROR / DATA_MISSING / OK."""
+    mm = getattr(rt, "mm", None) if rt is not None else None
+    if mm is None:
+        return "UNAVAILABLE", "serwis MM niedostępny w tym procesie (stan pętli nieznany)", None
+    loop = getattr(mm, "loop", None)
+    err = loop.get("last_error") if isinstance(loop, dict) else None
+    if err:
+        return "ERROR", f"pętla MM: {err}"[:200], None
+    cache = getattr(mm, "_cache", None)
+    ent = cache.get(inst) if isinstance(cache, dict) else None
+    val = ent.get("value") if isinstance(ent, dict) else None
+    if not isinstance(val, dict) or val.get("status") != "OK":
+        why = val.get("reason") if isinstance(val, dict) else None
+        return "DATA_MISSING", (why or "pętla MM nie policzyła jeszcze zamkniętej świecy M5")[:200], None
+    return "OK", None, val
+
+
+def probe(item: dict, rt, inst: str, *, snap: dict | None = None, news=None) -> dict:
+    """Live status of one component. Never raises: a broken probe is reported as ERROR with the exception type.
+    1.46 w2: `snap` (the SH cycle's snapshot) -> data_quality from its data component (I0551); `news` (NewsService) -> the macro calendar
+    status and risk level (I0557). Both optional keywords: the callers with `rt` are unchanged."""
     import mq_instruments as mi
     from .. import paths
     mid = item["id"]
     try:
         if item["kind"] == "DETERMINISTIC":
             if mid == "data_quality":
+                if snap is not None:
+                    d = snap.get("data") if isinstance(snap, dict) else None
+                    d = d if isinstance(d, dict) else {}
+                    if d.get("status") == "OK":
+                        return {"status": "DETERMINISTIC_OK", "reason": "migawka cyklu SH: dane i notowanie świeże"}
+                    return {"status": "DATA_MISSING", "reason": ("migawka cyklu SH: " + "; ".join(d.get("issues") or ["brak oceny danych"]))[:200]}
                 q = rt.bridge.quote_status() if rt else None
                 return {"status": "DETERMINISTIC_OK" if q else "DATA_MISSING", "reason": "notowanie dostępne" if q else "brak notowania z MT5"}
             if mid == "news":
-                return {"status": "DETERMINISTIC_OK", "reason": "kalendarz " + str(((rt.news.summary() if rt else {}) or {}).get("status", "?"))}
+                src = news if news is not None else (getattr(rt, "news", None) if rt else None)
+                if src is None:
+                    return {"status": "DETERMINISTIC_OK", "reason": "kalendarz ?"}
+                m = src.macro() or {}
+                lvl = m.get("risk_level")
+                blk = " – okno wydarzenia wysokiego wpływu: nowe wejścia wstrzymane" if m.get("status") in ("OK", "PARTIAL") and lvl == "HIGH" else ""
+                return {"status": "DETERMINISTIC_OK", "reason": f"kalendarz {m.get('status', '?')}, ryzyko {lvl or '?'}{blk}",
+                        "detail": {"calendar": m.get("status"), "risk_level": lvl}}
+            if mid.startswith("mm_"):
+                st, why, _v = _mm_live(rt, inst)
+                if st != "OK":
+                    return {"status": st, "reason": why}
             return {"status": "DETERMINISTIC_OK", "reason": "nie wymaga treningu; liczony z bieżących świec"}
         if mid == "agent":
             st = getattr(rt.agent, "state", "?") if rt else "?"
@@ -242,6 +295,12 @@ def probe(item: dict, rt, inst: str) -> dict:
             if mid == "mm_gpr":
                 # 1.46: the live GP is refitted on the current window every M5 bar; a promoted artifact is never loaded (validation reference)
                 ref = f"; artefakt {aid} (walidacja walk-forward) nie jest wczytywany – tylko referencja walidacji" if aid else ""
+                st, why, val = _mm_live(rt, inst)                     # 1.46 w2 (I0359): SHADOW_ONLY only when the loop really fitted the GP
+                if st != "OK":
+                    return {"status": st, "reason": why + ref}
+                g = val.get("gpr") if isinstance(val.get("gpr"), dict) else {}
+                if g.get("status") not in ("OK", "DEGRADED"):
+                    return {"status": "DATA_MISSING", "reason": f"GPR: {g.get('status') or 'brak wyniku'} {g.get('reason') or ''}".strip()[:200] + ref}
                 return {"status": "SHADOW_ONLY", "reason": "prognoza na żywo = dopasowanie GP na bieżącym oknie co świecę M5 (SHADOW, ledger kalibracji); "
                                                            f"kandydaci: {len(arts)}{ref}"}
             if aid and mid == "mm_event_engine":
@@ -259,10 +318,10 @@ def probe(item: dict, rt, inst: str) -> dict:
             if arts:
                 return {"status": "NOT_CONNECTED", "reason": f"{len(arts)} kandydat(ów) bez walidacji na REAL_USER_DATA ({arts[-1].get('status')}) – brak ścieżki na żywo"}
             return {"status": "NOT_TRAINED", "reason": "brak artefaktu – zadanie treningu master_models nie było uruchomione"}
-        if mid in ("chronos2", "granite_ttm"):
+        if mid in ("chronos2", "granite_ttm", "tirex2"):
             ts = getattr(rt, "tsfm", None) if rt else None
             if ts is None:
-                return {"status": "UNAVAILABLE", "reason": "serwis Chronos-2/Granite TTM niedostępny"}
+                return {"status": "UNAVAILABLE", "reason": "serwis Chronos-2/Granite TTM/TiRex-2 niedostępny"}
             w = ts.workers[mid]
             st = w.state.get("status")
             use = {p: u.use for p, u in ts.settings.get().models[mid].use.items()}
@@ -317,6 +376,8 @@ def participation(item: dict, st: dict, strategy: str) -> dict:
     REQUIRED can only turn READY into WAIT (REQUIRED also when the model is unavailable), never grant an entry."""
     role = item["roles"].get(strategy)
     s = st["status"]
+    if s == "NOT_EVALUATED":                                  # 1.46 w2 (I0004): not probed in this cycle - never a gate / evidence
+        return {"role": role, "use": "NONE"}
     live = s in ("READY", "DETERMINISTIC_OK")
     du = (st.get("detail") or {}).get("use")
     use_cfg = du.get(strategy) if isinstance(du, dict) else None
@@ -347,14 +408,32 @@ def participation(item: dict, st: dict, strategy: str) -> dict:
     return out
 
 
-def matrix(rt, inst: str) -> dict:
-    rows = []
-    for it in REGISTRY:
-        st = probe(it, rt, inst)
-        rows.append({**{k: it[k] for k in ("id", "name", "kind", "output", "group", "train")}, "runner_step": runner_step(it),
-                     "owner_train": it.get("owner_train"), "instrument": inst, "status": st["status"], "reason": st["reason"], "detail": st.get("detail"),
-                     "SCALPING": participation(it, st, "SCALPING"), "HEDGING": participation(it, st, "HEDGING")})
+def _group_by_tf() -> dict | None:
+    """1.46 w2 (I0006): correlation groups of the Training Center direction models per TF (modelhub.aggregate.ROUTES, task DIRECTION_H).
+    th_direction keeps its summary group TH_DIRECTION; this field says which per-TF group a model of the row belongs to. Lazy import;
+    any failure -> no field (the matrix never raises)."""
+    try:
+        from ..modelhub import aggregate as AG
+        return {tf: v["group"] for (task, tf), v in AG.ROUTES.items() if task == "DIRECTION_H"} or None
+    except Exception:  # noqa: BLE001 - presentation only
+        return None
+
+
+def _row(it: dict, st: dict, inst: str) -> dict:
+    r = {**{k: it[k] for k in ("id", "name", "kind", "output", "group", "train")}, "runner_step": runner_step(it),
+         "owner_train": it.get("owner_train"), "instrument": inst, "status": st["status"], "reason": st["reason"], "detail": st.get("detail"),
+         "SCALPING": participation(it, st, "SCALPING"), "HEDGING": participation(it, st, "HEDGING")}
+    if it["id"] == "th_direction":
+        g = _group_by_tf()
+        if g:
+            r["group_by_tf"] = g
+            r["group_note"] = "TH_DIRECTION = wiersz zbiorczy; grupy korelacji per TF wg modelhub.aggregate.ROUTES"
+    return r
+
+
+def _out(inst: str, rows: list[dict]) -> dict:
     tp = next(r for r in rows if r["id"] == "sh_tp_model")
+    groups = {r["group"] for r in rows} | {g for r in rows for g in (r.get("group_by_tf") or {}).values()}
     return {"instrument": inst, "rows": rows,
             "mode": "PEŁNA" if tp["status"] == "READY" else "OGRANICZONA",
             "mode_note": None if tp["status"] == "READY" else
@@ -362,4 +441,74 @@ def matrix(rt, inst: str) -> dict:
             ("TRYB OGRANICZONY (zdefiniowany): brak skalibrowanego modelu zdarzenia strategii – setup ma tylko score, bez prawdopodobieństwa. "
              "Od 1.39 (decyzja użytkownika) bramka modelu jest zdjęta: AUTO_DEMO i AUTO_LIVE są dozwolone, AUTO_LIVE pokazuje ostrzeżenie "
              "(wcześniej: AUTO zablokowane do czasu treningu i walidacji sh_tp_model)."),
-            "correlation_groups": sorted({r["group"] for r in rows})}
+            "correlation_groups": sorted(groups)}
+
+
+def matrix(rt, inst: str, *, snap: dict | None = None, news=None) -> dict:
+    return _out(inst, [_row(it, probe(it, rt, inst, snap=snap, news=news), inst) for it in REGISTRY])
+
+
+def not_evaluated(inst: str) -> dict:
+    """1.46 w2 (I0004): the matrix when no live probe ran (the SH cycle without the runtime provider / after a provider error): every row
+    NOT_EVALUATED, use NONE - instead of the false DATA_MISSING / UNAVAILABLE / 'agent: ?' of a probe without the runtime."""
+    st = {"status": "NOT_EVALUATED", "reason": "stan nieoceniony w tym cyklu (brak migawki stanów z działającego bota)"}
+    return _out(inst, [_row(it, st, inst) for it in REGISTRY])
+
+
+def refresh_rows(rows: list[dict], inst: str, *, snap: dict | None = None, news=None) -> list[dict]:
+    """The rows of THIS cycle: data_quality from the cycle's snapshot, news from the calendar in memory (no I/O); every other row as given
+    (cached live matrix or NOT_EVALUATED). Presentation only."""
+    fresh = {}
+    for it in REGISTRY:
+        if (it["id"] == "data_quality" and snap is not None) or (it["id"] == "news" and news is not None):
+            fresh[it["id"]] = _row(it, probe(it, None, inst, snap=snap, news=news), inst)
+    return [fresh.get(r.get("id"), r) for r in rows]
+
+
+class MatrixCache:
+    """1.46 w2 (I0004): provider of the SH cycle's model rows from the LIVE runtime - MR.matrix(rt, inst) cached `ttl` seconds and refreshed
+    in a daemon thread (background=True), so the SH thread (which manages open plans in the same tick) never waits for a probe. Before
+    the first refresh, after an error or when the cached rows are older than 10 x ttl: not_evaluated(). Never raises. Presentation only:
+    the rows reach su['models'], nothing decides on them."""
+
+    def __init__(self, rt, ttl: float = 45.0, *, background: bool = True, clock=time.time):
+        self.rt, self.ttl, self.background, self.clock = rt, float(ttl), background, clock
+        self._lock = threading.Lock()
+        self._data: dict = {}
+        self._busy: set = set()
+        self.last_error: str | None = None
+
+    def _refresh(self, inst: str) -> None:
+        try:
+            rows = matrix(self.rt, inst)["rows"]
+            with self._lock:
+                self._data[inst] = (self.clock(), rows)
+                self.last_error = None
+        except Exception as exc:  # noqa: BLE001 - presentation only
+            with self._lock:
+                self._data.pop(inst, None)
+                self.last_error = f"{type(exc).__name__}: {exc}"[:200]
+        finally:
+            with self._lock:
+                self._busy.discard(inst)
+
+    def __call__(self, inst: str) -> list[dict]:
+        try:
+            now = self.clock()
+            with self._lock:
+                ent = self._data.get(inst)
+                start = (ent is None or now - ent[0] >= self.ttl) and inst not in self._busy
+                if start:
+                    self._busy.add(inst)
+            if start:
+                if self.background:
+                    threading.Thread(target=self._refresh, args=(inst,), name="sh-models-matrix", daemon=True).start()
+                else:
+                    self._refresh(inst)
+            with self._lock:
+                ent = self._data.get(inst)
+            if ent is None or self.clock() - ent[0] > 10 * self.ttl:
+                return not_evaluated(inst)["rows"]
+            return list(ent[1])
+        except Exception:  # noqa: BLE001 - never stops the SH cycle
+            return not_evaluated(inst)["rows"]

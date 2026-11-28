@@ -80,7 +80,8 @@ def tasks(cfg_store=None) -> list[dict]:
             if fid in I.TRAINHUB_FAMILY_ALIASES:
                 continue                                                        # trained through the TRAINHUB tasks above
             kind = f.DATA.get("kind")
-            cat = {"TRAINED": "TRAINABLE", "ESTIMATED": "FITTABLE", "VALIDATED_RULES": "CALIBRATABLE", "MEASUREMENT": "TRAINABLE",
+            # 1.46 w2 (I0008): a MEASUREMENT family is shown as MEASUREMENT (was TRAINABLE); operations() keeps its verb (TRAIN by default)
+            cat = {"TRAINED": "TRAINABLE", "ESTIMATED": "FITTABLE", "VALIDATED_RULES": "CALIBRATABLE", "MEASUREMENT": "MEASUREMENT",
                    "PRETRAINED_ADAPTER": "EXTERNAL"}[f.KIND]
             impl, why = f.implementation()
             st = "SUPPORTED" if impl == "AVAILABLE" else "BLOCKED_DEPENDENCY"
