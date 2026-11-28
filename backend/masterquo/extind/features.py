@@ -1,6 +1,6 @@
 """build_indicator_context_features(decision_snapshot, feature_spec) - ONE function for dataset, training, replay and live.
 
-Groups (stable registry, SCALP_INDICATOR_CONTEXT_V1):
+Groups (stable registry, SCALP_INDICATOR_CONTEXT_V2):
   BASE           the existing setup features (scalp.strategy.SETUP_FEATURES), unchanged
   SAR            per TF (M5, M15): direction-normalised distance to SAR in ATR, SAR with/against side, bars since flip,
                  flips in the last 50 closed bars, AF, degenerate flag - profile MQ_SAR_WILDER_PROFILE_V1 with the given params
@@ -9,6 +9,9 @@ Groups (stable registry, SCALP_INDICATOR_CONTEXT_V1):
   PAL02M         registered but BLOCKED until the tool is identified (no default algorithm, no features)
 Only data available at the decision time: bars with open + TF <= decision, external snapshots with available_at <= decision
 (the caller passes as_of snapshots). A missing value is NaN + missing flag, never 0 (imputation is fitted in the train fold).
+V2 (1.46 arch, I0164/I0784): `price` is the Bid close of the retest bar (plan ref_close_bid) and `atr_m5` the range ATR frozen at
+arming (plan range.atr_m5) in training AND live - V1 artefacts were trained on the replay fill price and a decision-time ATR of 40 M5,
+so they abstain (FEATURE_SCHEMA_MISMATCH) instead of receiving other inputs. SAR uses the last SAR_WINDOW closed bars of each TF.
 """
 from __future__ import annotations
 
@@ -19,7 +22,8 @@ from ..scalp import indicators as ind
 from ..scalp.strategy import SETUP_FEATURES
 from ..timeutil import parse_iso
 
-FEATURE_SCHEMA = "SCALP_INDICATOR_CONTEXT_V1"
+FEATURE_SCHEMA = "SCALP_INDICATOR_CONTEXT_V2"
+SAR_WINDOW = 400                    # closed bars per TF fed to the SAR (training = live: the caller passes >= SAR_WINDOW closed bars)
 TASK_ID = "SCALP_TP1_FIRST_WITHIN_FROZEN_POLICY_V1"
 GROUPS = ("BASE", "SAR", "IQ_GOLD_GANN", "IQ_STAR_LINES", "PAL02M")
 TF_S = {"M5": 300, "M15": 900}
@@ -62,7 +66,10 @@ def _levels(snap: dict | None, price: float, atr: float, t: datetime, prefix: st
     out[f"{prefix}_up_dist_atr"] = (up - price) / atr if up is not None and atr else NAN
     out[f"{prefix}_dn_dist_atr"] = (price - dn) / atr if dn is not None and atr else NAN
     out[f"{prefix}_levels"] = float(len(lv))
-    out[f"{prefix}_age_min"] = (t - parse_iso(snap["available_at"])).total_seconds() / 60.0
+    # age of the read known at t: as_of age_s (1.46 arch I0729 - time since the last confirmation of the content; = t - available_at for
+    # a single read, the value before the deduplication of the archive)
+    age_s = snap.get("age_s")
+    out[f"{prefix}_age_min"] = (float(age_s) if isinstance(age_s, (int, float)) else (t - parse_iso(snap["available_at"])).total_seconds()) / 60.0
     groups[g] = "OK"
 
 
@@ -83,7 +90,7 @@ def build_indicator_context_features(snap: dict, spec: dict) -> dict:
         elif g == "SAR":
             ok = True
             for tf in spec["sar"]["tfs"]:
-                b = _closed((snap.get("bars") or {}).get(tf) or [], tf, t)[-400:]
+                b = _closed((snap.get("bars") or {}).get(tf) or [], tf, t)[-SAR_WINDOW:]
                 keys = ("dist_atr_dir", "with_side", "bars_since_flip", "flips50", "af", "degenerate")
                 if len(b) < 5 or not atr:
                     ok = False

@@ -497,10 +497,11 @@ class TestScalpRiskReferenceWrite(unittest.TestCase):
         calls = []
         orig = mod._atomic_write_text
         mod._atomic_write_text = lambda p, t: calls.append(p) or orig(p, t)
+        t0 = datetime.fromisoformat("2026-03-03T00:02:00+00:00")               # 1.46 arch (I0810): a mid-day first observation is NOT_VERIFIED
         try:
-            ok, why = svc._loss_limits({"equity": 10000.0})
+            ok, why = svc._loss_limits({"equity": 10000.0}, now=t0)
             self.assertTrue(ok, why)
-            ok2, why2 = svc._loss_limits({"equity": 9900.0})                      # same day: no rewrite, the reference stays 10000
+            ok2, why2 = svc._loss_limits({"equity": 9900.0}, now=t0 + timedelta(hours=5))   # same day: no rewrite, the reference stays 10000
         finally:
             mod._atomic_write_text = orig
         self.assertEqual(len(calls), 1)
