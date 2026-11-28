@@ -405,7 +405,7 @@ def association_rules(ctx: SourceContext, timeframe: str = "H1", horizon: int = 
 
     from ..ml import association_rules as AR
     prov = {"source": "ml.association_rules (event_bits + train + assess, zamknięte świece MT5)", "schema": AR.SCHEMA, "timeframe": timeframe,
-            "horizon_bars": horizon, "mode": "OBSERVE"}
+            "horizon_bars": horizon, "mode": "OBSERVE", "validation": AR.VALIDATION}
     bars, why = _mt5_series(ctx, timeframe, 5000)
     if bars is None:
         return _unavailable(why, prov)
@@ -416,7 +416,7 @@ def association_rules(ctx: SourceContext, timeframe: str = "H1", horizon: int = 
     rows = [{**b, "hour": _dt.fromisoformat(b["open_utc"].replace("Z", "+00:00")).hour} for b in rows]
     masks = AR.event_bits(rows)
     h = max(1, min(int(horizon), 200))
-    m = AR.train(masks, AR.labels([float(b["c"]) for b in rows], h, 0.0), scope={"timeframe": timeframe, "horizon": h})
+    m = AR.train(masks, AR.labels([float(b["c"]) for b in rows], h, 0.0), scope={"timeframe": timeframe, "horizon": h}, horizon=h)
     rules = [{**{k: v for k, v in r.items()}} for r in m.get("rules", [])]
     cur = masks[-1] if masks else None
     assess = []
@@ -424,8 +424,10 @@ def association_rules(ctx: SourceContext, timeframe: str = "H1", horizon: int = 
         a = AR.assess(m, cur, d)
         assess.append({"as_of_bar_open_utc": rows[-1]["open_utc"], "direction": d, "action": a.get("action"), "reason": a.get("reason"),
                        "candidate_direction_supported": a.get("candidate_direction_supported"), "matched_rules": a.get("matched_rules"),
+                       "validated_rules_for": a.get("validated_rules_for"), "validated_rules_against": a.get("validated_rules_against"),
                        "current_mask": cur, "current_events": [AR.CATALOG[k] for k in range(len(AR.CATALOG)) if cur is not None and cur >> k & 1]})
-    prov.update(status=m.get("status"), n_labeled=m.get("n_labeled"), base_up=m.get("base_up"), base_down=m.get("base_down"), bars=len(rows))
+    prov.update(status=m.get("status"), n_labeled=m.get("n_labeled"), base_up=m.get("base_up"), base_down=m.get("base_down"), bars=len(rows),
+                validated_rules=m.get("validated_rules"), validation_params=m.get("validation_params"))
     return Collected([Dataset("rules", rules, "DERIVED", description="reguły asocjacyjne (filtr OBSERVE)"),
                       Dataset("assessment", assess, "DERIVED", time_columns={"as_of_bar_open_utc": "UTC"})], prov)
 

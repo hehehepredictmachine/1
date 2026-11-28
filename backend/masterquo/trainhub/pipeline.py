@@ -21,6 +21,11 @@ PROFILES = {
     "research": {"models": ["TH_BASELINE", "TH_LOGREG", "TH_HGB", "TH_XGB", "TH_RF", "TH_SVM"], "n_folds": 4, "grid_limit": None, "time_budget_s": 3600},
     "full": {"models": ["TH_BASELINE", "TH_LOGREG", "TH_HGB", "TH_XGB", "TH_RF", "TH_SVM"], "n_folds": 6, "grid_limit": None, "time_budget_s": 6 * 3600},
 }
+# 1.46 (I0050): one meaning of costs.slippage_stress_points in the bot - slippage of ONE fill (risk/engine.py, evaluation/service.py
+# count 2 per trade). Label costs are per round trip, so trainhub counts SLIPPAGE_FILLS fills. Labels change -> new cost policy id in
+# config.json / dataset.json; packages trained before keep working (their inputs are unchanged), retraining is recommended.
+SLIPPAGE_FILLS = 2
+COST_POLICY = "PMW-TH-COST-2"
 
 
 def _check_num(cfg: dict, k: str, lo: float, hi: float | None = None, *, integer: bool = False, none_ok: bool = False) -> None:
@@ -110,11 +115,16 @@ def config(params: dict | None, store_manifest: dict | None = None, cost_cfg=Non
     elif point is None:
         cfg["slippage_price"], slip_status = 0.0, "POINT_UNKNOWN"       # never used: DS.build refuses an unknown point
     else:
-        cfg["slippage_price"], slip_status = float(slip_pts) * point, "ASSUMPTION_STRESS"
+        # 1.46 (I0050): slippage_stress_points = slippage of ONE fill (risk/engine and evaluation/service count it twice per trade);
+        # the label cost is a round trip -> SLIPPAGE_FILLS fills (up to COST_POLICY ...-1 it was counted once)
+        cfg["slippage_price"], slip_status = float(slip_pts) * point * SLIPPAGE_FILLS, "ASSUMPTION_STRESS"
     cfg["cost_blockers"] = blockers
+    cfg["cost_policy"] = COST_POLICY                   # in config.json of every package (packages without it: policy -1, one fill)
     cfg["cost_status"] = {"spread": "MEASURED_PER_BAR" if point is not None else "POINT_UNKNOWN", "commission": comm_status, "slippage": slip_status,
+                          "slippage_fills": SLIPPAGE_FILLS if slip_status == "ASSUMPTION_STRESS" else None, "policy": COST_POLICY,
                           "note": "prowizja (waluta rachunku -> cena przez trade_tick_value/trade_tick_size) i poślizg w jednostkach ceny na 1 lot "
-                                  "(round-trip); 'UNKNOWN_ZERO_USED' zawyża ocenę"}
+                                  "(round-trip; poślizg z ustawień = slippage_stress_points x point na wypełnienie x 2 wypełnienia); "
+                                  "'UNKNOWN_ZERO_USED' zawyża ocenę"}
     return cfg
 
 
@@ -173,6 +183,13 @@ def stage_train(store: Store, inst: str, cfg: dict, progress=None, cancel=None, 
             out["skipped"].append({"model": mid, "reason": f"budżet czasu profilu {cfg.get('profile')} wyczerpany ({cfg['time_budget_s']} s)"})
             continue
         tr = L.train_one(mid, ds, sp, seed=int(cfg["seed"]), progress=progress, cancel=cancel, grid_limit=cfg.get("grid_limit"))
+        if tr["result"].get("svm_fallback"):
+            # 1.46 (I0674): the final TH_SVM fit fell back to the class frequencies - a baseline under the name TH_SVM is not saved
+            # (it could be activated as an SVM); the result says why
+            out["skipped"].append({"model": mid, "reason": "TH_SVM: blok kalibracyjny bez ≥2 klas – model = częstości klas (baseline), "
+                                                           "paczka nie zapisana", "detail": tr["result"].get("svm_fallback_reason"),
+                                   "svm_fallback_folds": tr["result"].get("svm_fallback_folds"), "holdout": tr["result"]["holdout"]})
+            continue
         pkg = R.save_package(inst, cfg, tr, desc, man)
         out["packages"].append({**pkg, "holdout": tr["result"]["holdout"], "walk_forward": {k: v for k, v in tr["result"]["walk_forward"].items()
                                                                                            if k != "folds"},

@@ -890,6 +890,8 @@ class MLService:
             out["assist_rank_scale"] = self.assist_rank_scale()
         except Exception as exc:  # noqa: BLE001 - the status never fails because of an informational field
             out["assist_rank_scale"] = {"error": f"{type(exc).__name__}: {exc}"[:200]}
+        # 1.46 (I0024): zone defaults / session profiles of the champion's training vs this code - a warning only (never a gate change)
+        out["feature_context"] = champ.meta.get("feature_context") if champ is not None else None
         if not compact:
             out["models"] = self.registry.models()
             out["events"] = self.registry.events()
