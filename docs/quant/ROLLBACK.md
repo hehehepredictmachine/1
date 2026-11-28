@@ -47,3 +47,44 @@ Zmienione:
 | `tests/test_evaluation.py` | oczekiwania PMW-EVAL-ENGINE-2 |
 | `frontend/dist/*` | przebudowa |
 | `backend/masterquo/version.py`, `tools/build_release.py`, `tools/make_manuals.py`, `desktop/winres` | wersja 1.35.0 |
+
+## 1.46 – wersje cech Quant (`PMW-QUANT-FEAT-3`) a powrót do starszej wersji
+
+Gałąź architektury 1.46 wersjonuje semantykę cech MetaModelu. Nowe wiersze ledgera i nowe modele mają `PMW-QUANT-FEAT-3`. Artefakty sprzed
+1.46 (`PMW-QUANT-FEAT-1`) dostają wejście jak dotąd.
+
+**Ledger.** 1.46 dodaje w miejscu kolumnę `rows.feature_version` (`ALTER TABLE`, addytywnie, żaden wiersz nie jest usuwany). Wiersze sprzed
+1.46 mają w niej pustą wartość (= FEAT-1), nowe `PMW-QUANT-FEAT-3`. Starsza wersja programu otworzy ten plik i zignoruje kolumnę, ale jej
+trening **nie filtruje wersji**. Nauczyłby więc model na mieszance wierszy, w których te same kolumny (`st:mm:kalman_cross:aligned`,
+`ctx:dxy_*`, `ctx:regime=*` kandydata SH) znaczą co innego.
+
+- Po cofnięciu **nie trenuj Quant** (`quant train`, Centrum treningu) na ledgerze, który zawiera wiersze `PMW-QUANT-FEAT-3`.
+- Jeśli trening w starszej wersji jest potrzebny:
+  1. zatrzymaj bota i zachowaj kopię `<dane>\quant\ledger.sqlite` (np. `ledger.feat3.bak.sqlite`) – przy powrocie do 1.46 przywróć ją;
+  2. sprawdź liczby wierszy: `SELECT COALESCE(feature_version, 'PMW-QUANT-FEAT-1') v, COUNT(*) FROM rows GROUP BY v;`
+  3. w pliku, którego używa starsza wersja, odfiltruj wiersze nowej semantyki:
+     `DELETE FROM rows WHERE feature_version = 'PMW-QUANT-FEAT-3';`
+
+**MetaModele.** Starsza wersja odrzuci artefakt FEAT-3 przy wczytaniu (`INCOMPATIBLE_FEATURE_SCHEMA`). Quant ASSIST bez wczytanego modelu
+**nie wstrzymuje wejść** (fail-open). Przed powrotem, jeśli aktywny jest model FEAT-3:
+
+- przywróć poprzedni artefakt FEAT-1: `python -m masterquo quant rollback --instrument XAUUSD --task <task_hash>`, albo
+- przełącz Quant na obserwację: `python -m masterquo quant mode SHADOW --instrument XAUUSD`.
+
+**Aktywacja pierwszego modelu FEAT-3 (w 1.46).** Odpowiedź `POST /api/v1/quant/models/activate` i `quant activate` podaje
+`feature_semantics` (wersja cech i opis). W Quant ASSIST zbiór HOLD zmienia się wtedy w obie strony, bo to inny model na innych cechach.
+Sam reżim w kandydacie SH tylko zaostrza: model FEAT-3 jest oceniany z reżimem i bez niego, HOLD, gdy wstrzymuje którakolwiek ocena.
+Cofnięcie aktywacji: rollback jak wyżej.
+
+**Licznik wierszy.** Do czasu zebrania wierszy FEAT-3 (co najmniej DEV 300 + CAL 100 + TEST 100 na zadanie) trening odpowiada
+INSUFFICIENT_EVIDENCE, a działa dotychczasowy artefakt FEAT-1. Stan: pole `training_evidence` w `GET /api/v1/quant/status` i
+`python -m masterquo quant status`.
+
+**1.46 – `PMW-QUANT-FEAT-4` (reżim w słowniku źródła).** Nowe wiersze ledgera i nowe modele mają `PMW-QUANT-FEAT-4`: to FEAT-3, w którym
+reżim kandydata jest kodowany słownikiem jego źródła – `ctx:regime_sh=<stan>` (SH RegimeMachine v2: TREND_UP / TREND_DOWN / RANGE /
+TRANSITION), `ctx:regime_active=<stan>` (ACTIVE MarketRegimeEngine) i `ctx:regime_<źródło>:trend_aligned`; stan nieznany, DATA_UNAVAILABLE,
+STALE albo rozgrzewka = brak kolumny (maska). FEAT-1 / FEAT-3 porównywały stan z TREND / RANGE / TRANSITION / HIGH_VOL, więc każdy trend
+był „znany, żaden” (same zera). Artefakty FEAT-1 i FEAT-3 dostają dokładnie swoje dotychczasowe wejście (nic nie jest unieważniane);
+wiersze FEAT-3 zostają w ledgerze, ale nie trenują nowych modeli i nie wchodzą do kontekstu TabICL (licznik `training_evidence` liczy
+od nowa wiersze FEAT-4). Powrót do wersji z FEAT-3: jak wyżej – nie trenuj na ledgerze z wierszami `PMW-QUANT-FEAT-4` albo odfiltruj je
+(`DELETE FROM rows WHERE feature_version = 'PMW-QUANT-FEAT-4';` w kopii pliku), a aktywny artefakt FEAT-4 cofnij (`quant rollback`).

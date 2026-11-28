@@ -287,8 +287,10 @@ class TrainingCenter:
             self.proc = subprocess.Popen([self.python, "-m", "masterquo.trainhub.worker", str(db_path()), jid], env=env, stdout=logf,
                                          stderr=subprocess.STDOUT, cwd=str(paths.ROOT_DIR / "backend"), **kw)
             try:
+                from ..runtimes import DEFAULT_RAM_BUDGET_MB
                 from ..training.core import _job_limit
-                _job_limit(self.proc, int(os.environ.get("MQ_RAM_BUDGET_MB") or 6144))
+                # 1.46 arch (I0117): the one default budget of a training child (was 6144 MB here, 8192 MB on the training path)
+                _job_limit(self.proc, int(os.environ.get("MQ_RAM_BUDGET_MB") or DEFAULT_RAM_BUDGET_MB))
             except Exception:  # noqa: BLE001
                 pass
             update(self.db, jid, pid=self.proc.pid)

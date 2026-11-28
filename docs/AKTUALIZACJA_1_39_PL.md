@@ -11,7 +11,15 @@
 | REDUCE na NETTING bez walidacji | blokada | dozwolone z ostrzeżeniem |
 | STOP, limity ryzyka, spread, deduplikacja, uzgadnianie MT5, rachunek REAL, ścieżka główna | aktywne | **bez zmian – aktywne** |
 
-Symulator (`--demo`, dane syntetyczne) nigdy nie przechodzi w LIVE. Wyłączenie: STOP / `start_mode: "SIGNALS"` / ROLLBACK.md 0d.
+Symulator (`--demo`, dane syntetyczne) nigdy nie przechodzi w LIVE.
+
+> **Nieaktualne (arch146 D1):** wiersze „Tryb po starcie” i „Potwierdzenie rachunku” opisują zamiar 1.39, nie działanie programu.
+> `execution.start_mode` NIE jest stosowany przy starcie (warunek startu w `runtime.py` nigdy nie jest spełniony i celowo zostaje bez
+> zmian) – bot startuje w ostatnio zapisanym trybie `execution.mode` (domyślnie PAPER); status trybu pokazuje
+> `start_mode_effective: NOT_APPLIED`. `live_autobind` działa tylko, gdy zapisany tryb to już AUTO_LIVE bez potwierdzonego rachunku.
+> **Wyłączenie LIVE:** zmiana trybu wykonania na SIGNALS albo PAPER w panelu (`POST /api/v1/mode`) – zapisywana, przetrwa restart; przy
+> zamkniętym bocie `data\config.json` → `"execution": {"mode": "SIGNALS", "bound_account": null}`. Sam STOP nie przetrwa restartu, a zmiana
+> `start_mode` albo `live_autobind` nie wyłącza zapisanego AUTO_LIVE. Szczegóły: ROLLBACK.md 0d.
 
 ## 2. GARCH w PMW_HG09
 `volatility_method`: `STD_LOGRET_60_M5` (domyślnie) albo `VOL_GARCH` (aktywny, zatwierdzony model rodziny VOL_GARCH – omega / alpha / beta

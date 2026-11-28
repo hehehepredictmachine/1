@@ -4,9 +4,9 @@ Scale is explicit everywhere: arch is fitted on PERCENT returns (100 x log retur
 to DECIMAL and labelled: sigma_bar (per bar), sigma_h (over H bars = sqrt of the summed forecast variances), variance_h and the price
 move sigma_h x price. Distribution (normal vs Student-t) is chosen on development data by QLIKE against the squared-return proxy -
 never by the holdout. A fit is accepted only when the optimiser converged, alpha + beta < 1 (stationary), omega > 0 and all
-parameters are finite; otherwise VALIDATION_FAILED and the risk receiver keeps its own volatility.
-The output is a volatility forecast, not a BUY/SELL vote. The risk receiver may use it inside the existing limits only (it never
-raises the allowed risk and never moves an existing stop to hide a loss).
+parameters are finite; otherwise VALIDATION_FAILED.
+The output is a volatility forecast, not a BUY/SELL vote. Receivers in 1.46: the SH family_context (`vol` - information only) and the
+panel. No risk receiver reads it (RISK:volatility_scenario is PLANNED, not connected): limits, sizing and stops never use it.
 """
 from __future__ import annotations
 
@@ -52,7 +52,8 @@ class GARCH(B.Family):
     DEPS = ("arch", "scipy")
     TF = "M5"
     HORIZONS = (1, 6, 12)
-    RECEIVERS = ("RISK:volatility_scenario", "SH_CONTEXT:volatility", "PANEL:model_status")
+    RECEIVERS = ("SH_CONTEXT:volatility", "PANEL:model_status")
+    PLANNED_RECEIVERS = ("RISK:volatility_scenario",)
     DATA = {"kind": "BARS", "tf": "M5", "min_bars": 1000}
 
     def fit(self, data, cfg, tmp, budget):
@@ -129,6 +130,12 @@ class GARCH(B.Family):
         f = self._forecast(art, c)
         H = str(self.HORIZONS[1])                                      # the record's horizon is the same (pred above)
         s = f["horizons"][H]["sigma"]
+        # 1.46 (I0409): art['window'] (2000) is the MAXIMUM history the filter starts from; live the bridge buffer gives ~760 closed M5 bars
+        # (sample / validation: 2000), so the filter starts from a different history. Reported, not hidden: the returns actually used and
+        # the weight (alpha + beta) ** n the start value still has in the conditional variance (near-unit persistence: 0.998 ** 759 = 0.22)
+        used = int(min(len(c), int(art["window"]) + 1) - 1)
         return {"sigma": s, "variance": f["horizons"][H]["variance"], "scale": "decimal", "sigma_bar": f["sigma_bar"], "horizon_bars": int(H),
                 "price_move_1sigma": float(c[-1] * s), "horizons": f["horizons"],
-                "note": "sigma log-zwrotu (ułamek dziesiętny) na horyzont; ruch ceny = sigma × cena"}
+                "bars_used": used, "window_declared": int(art["window"]), "burn_in_residual": float((art["alpha"] + art["beta"]) ** used),
+                "note": "sigma log-zwrotu (ułamek dziesiętny) na horyzont; ruch ceny = sigma × cena; filtr startuje z bars_used zwrotów "
+                        "(okno artefaktu to maksimum), burn_in_residual = waga wartości startowej w wariancji"}

@@ -285,8 +285,8 @@ def _gold(ctx) -> dict:
                             and "NOT_REAL_USER_DATA" in gate[1] and act[0] == 0,
                             f"forecast_model.json (sha256 OK) -> runtime_check trenera (loader bota, {rc.get('checked')} migawek holdoutu vs cechy batch): "
                             f"max |dp| {par.get('max_abs_prob_diff')}, obcy kontrakt odrzucony; registry_cli activate bez nadpisania: odmowa zgodnie z bramką; "
-                            f"z {ALLOW}=1 (tylko os.environ tymczasowego procesu obszaru): aktywny. Uwaga: activate przyjmuje run {g['overall_status']} "
-                            f"(common.py:158-173 nie sprawdza jakości)",
+                            f"z {ALLOW}=1 (tylko os.environ tymczasowego procesu obszaru): aktywny mimo oceny {g['overall_status']} – nadpisanie testowe "
+                            f"omija też bramkę oceny walidacji (D20, common.verdict_admissible: syntetyka jest REJECTED z założenia)",
                             f"runtime_check {rc}, sha256 {sha_ok}, bramka {gate}, aktywacja {act}"[:400])
     ctx.step = "predict"
     lv = _live(ctx)
@@ -296,14 +296,20 @@ def _gold(ctx) -> dict:
     fc = ((st.get("report") or {}).get("forecast") or {}).get("probabilities") or {}
     sess = sorted({str(v.get("session_check")) for v in fc.values()})
     rows = lv["shadow_rows"]
-    okp = (st.get("status") == "SHADOW" and st.get("execution_permission") is False and len(fc) == 3 and [r.get("state") for r in recs] == ["READY"] * 3
+    # D21: the state of each horizon follows the TRAINER's registry verdict (REJECTED / INSUFFICIENT_DATA -> DISABLED) and the worker's
+    # session check (BLOCKED_SESSION_BREAK -> BLOCKED_DATA); the synthetic run is REJECTED by construction, so 3x READY is not expected
+    exp = [MA.horizon_state(v, (g.get("horizon_status") or {}).get(str(max(1, int(v.get("horizon_minutes") or 5) // 5))))[0] for v in fc.values()]
+    got = [r.get("state") for r in recs]
+    honest = all((r.get("result") is not None) if r.get("state") == "READY" else (r.get("result") is None and bool(r.get("unavailable_reason")))
+                 for r in recs)
+    okp = (st.get("status") == "SHADOW" and st.get("execution_permission") is False and len(fc) == 3 and got == exp and honest
            and len(rows) == 3 and {r["outcome_status"] for r in rows} == {"PENDING"})
     out["predict"] = check(okp, f"MarketBridge(FakeMT5) -> ForecastService.tick -> worker {VENV} analyze -> {st.get('status')}: " +
                                 ", ".join(f"{k} min UP {v['probabilities']['UP']:.3f}" for k, v in fc.items()) +
-                                f"; forecast_shadow {len(rows)}x PENDING; forecast_predictions {len(recs)}x READY. ZNANY PROBLEM (nie FAIL): adapter "
-                                f"daje READY mimo horizon_status {'/'.join(sorted(set(g['horizon_status'].values())))} i nie filtruje BLOCKED_SESSION_BREAK "
-                                f"(tu {'/'.join(sess)}) – modelhub/adapters.py:40-49",
-                           f"status {st.get('status')} {st.get('reason')}, horyzonty {len(fc)}, adapter {[(r.get('state'), r.get('unavailable_reason')) for r in recs]}, "
+                                f"; forecast_shadow {len(rows)}x PENDING; forecast_predictions {got} = oczekiwane per horyzont z oceny rejestru "
+                                f"{g.get('horizon_status')} i session_check workera ({'/'.join(sess)}); rekordy nie-READY bez wartości, z powodem",
+                           f"status {st.get('status')} {st.get('reason')}, horyzonty {len(fc)}, adapter {[(r.get('state'), r.get('unavailable_reason')) for r in recs]} "
+                           f"vs oczekiwane {exp} (modelhub/adapters.py horizon_state), bez wartości/powodu: {not honest}, "
                            f"forecast_shadow {rows} (forecast/service.py:139-229)"[:400])
     ctx.step = "contract"
     out["contract"] = ctx.contract_step(recs)

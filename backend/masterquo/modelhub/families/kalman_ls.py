@@ -53,7 +53,8 @@ class KalmanLS(B.Family):
     DEPS = ()
     TF = "M5"
     HORIZONS = (1,)
-    RECEIVERS = ("SH_CONTEXT:trend_state", "STRATEGY:regime_context", "PANEL:model_status")
+    RECEIVERS = ("SH_CONTEXT:trend_state", "PANEL:model_status")
+    PLANNED_RECEIVERS = ("STRATEGY:regime_context",)
     DATA = {"kind": "BARS", "tf": "M5", "min_bars": 600}
 
     def fit(self, data, cfg, tmp, budget):

@@ -9,7 +9,7 @@ import numpy as np
 import pandas as pd
 
 from gold_candles.analysis import analyze
-from gold_candles.cli import demo_bars, main
+from gold_candles.cli import demo_bars
 from gold_candles.data import Config, DataError, aggregate_m30, validate_bars, write_json
 from gold_candles.features import chronological_masks, feature_frame, make_labels
 from gold_candles.model import forecast, load_model, train

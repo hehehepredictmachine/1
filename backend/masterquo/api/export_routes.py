@@ -18,7 +18,8 @@ def register(app, rt) -> None:
     _busy = threading.Lock()
 
     def ctx() -> S.SourceContext:
-        return S.SourceContext(paths.data_dir(), rt=rt, wf32=getattr(app.state, "wf32", None) or {})
+        own = getattr(rt, "wf32", None)                  # 1.46 arch (I0088): the Runtime's objects (app.state.wf32 is the same dict)
+        return S.SourceContext(paths.data_dir(), rt=rt, wf32=own if isinstance(own, dict) else (getattr(app.state, "wf32", None) or {}))
 
     def _formats(fmt: str | None) -> tuple:
         f = (fmt or "both").lower()

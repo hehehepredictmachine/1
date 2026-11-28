@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import unittest
 
-import _env
+import _env  # noqa: F401 - side effect: sys.path / offline flags
 from _env import TempData
 from test_montecarlo import bars, _Bridge
 

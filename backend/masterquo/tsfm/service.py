@@ -899,6 +899,23 @@ class TsfmService:
             pass
 
     # ================================================================== install / verify / validation jobs (separate processes / thread)
+    def start_job_process(self, name: str, argv: list[str], env: dict | None = None, on_done=None) -> dict:
+        """1.46 arch (I0089): public entry of _run_job_proc (the API started the TabICL installer through the private method)."""
+        return self._run_job_proc(name, argv, env=env, on_done=on_done)
+
+    def register_with(self, governor) -> None:
+        """1.46 arch (I0089/I0102): register every model worker with the Memory Governor (was a set of lambdas on this service's
+        internals in runtime._wire_governor). Same callables: pid / release / idle are evaluated lazily at call time; a worker is never
+        released while it computes (running[0] == its model id)."""
+        import time as _time
+
+        from ..resources.governor import HEAVY
+        for mid, w in self.workers.items():
+            governor.register(mid, "heavy" if mid in HEAVY else "light",
+                              (lambda w=w: w.proc.pid if (w.proc and w.proc.poll() is None) else None),
+                              release=(lambda w=w, mid=mid: (self.running is None or self.running[0] != mid) and w.kill()),
+                              idle=(lambda w=w, mid=mid: 0.0 if (self.running and self.running[0] == mid) else _time.monotonic() - w.last_used))
+
     def _run_job_proc(self, name: str, argv: list[str], env: dict | None = None, on_done=None) -> dict:
         cur = self.jobs.get(name)
         if cur and cur.get("state") == "RUNNING":

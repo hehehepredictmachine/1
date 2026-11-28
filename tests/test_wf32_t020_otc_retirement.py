@@ -96,15 +96,20 @@ class TestSettingsMigration(unittest.TestCase):
                 self.assertTrue(str(cm.exception).startswith(code), cm.exception)
 
     def test_cycle_never_touches_otc_feed(self):                                     # T020-021
+        # 1.46 (I0112): the OTC feed reader itself was removed - cycle() has no OTC feed to poll, and the stored feed files / import
+        # folder of an older version stay exactly as they are (no import, no new files)
         with tempfile.TemporaryDirectory() as d:
+            otc = Path(d) / "otc"
+            (otc / "import").mkdir(parents=True)
+            (otc / "import" / "gold_M1.csv").write_text("t,o,h,l,c\n0,1,2,0.5,1.5\n", encoding="utf-8")
+            (otc / "ticks.jsonl").write_text("[1700000000.0, 2000.5]\n", encoding="utf-8")
+            before = {str(p.relative_to(otc)): p.read_bytes() for p in otc.rglob("*") if p.is_file()}
             svc = self._svc(d)
-            called = []
-            svc.otc.import_dir = lambda *a, **k: called.append("import")
-            svc.otc.state = lambda *a, **k: called.append("state") or {"state": "LIVE"}
+            self.assertFalse(hasattr(svc, "otc"))
             svc.update_settings({"profiles": {"CRYPTO_FOMO_PERPS": {"enabled": False}, "FOREX_MT5": {"enabled": False}}})
             out = svc.cycle()
             self.assertEqual(out, {})
-            self.assertEqual(called, [])
+            self.assertEqual({str(p.relative_to(otc)): p.read_bytes() for p in otc.rglob("*") if p.is_file()}, before)
             self.assertEqual(svc.status()["otc_feed"]["state"], "RETIRED")
 
 

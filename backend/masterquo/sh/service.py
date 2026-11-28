@@ -23,8 +23,8 @@ from . import risk as RK
 from . import setup as SU
 from . import tpmodel as TM
 from .coordinator import arbitrate
-from .executor import SHExecutor
-from .hedge_fsm import Basket, HedgeConfig
+from .executor import SHExecutor, TerminalDataUnavailable
+from .hedge_fsm import HEDGE_CLOSE_MAX_TRIES, Basket, HedgeConfig
 from .lifecycle import Leg, Position
 from .store import SHStore
 from .units import SymbolSpec, UnitError
@@ -32,11 +32,28 @@ from .units import SymbolSpec, UnitError
 STRATEGIES = ("SCALPING", "HEDGING")
 NOT_SH_GATE_REASONS = ("EXECUTION_MODE_SIGNALS", "RISK_LIMITS_NOT_CONFIGURED")
 MM = {"NETTING": 0, "EXCHANGE": 1, "HEDGING": 2}
+RECON_WAIT_SECONDS = 60.0      # a terminal answering None / a vanished position without its closing deal: plan frozen this long, then
+RECON_WAIT_MIN_TICKS = 3       # settled as before with verified=False (the loss never drops out of the daily limit)
+RECON_WAIT_GAP_SECONDS = 30.0  # observations further apart are not consecutive (the wait starts again)
+CAP_RETRY_SECONDS = 5.0        # pack ratio-cap reduction of the hedge after a rejection: spacing and attempt limit
+CAP_RETRY_MAX = 5
 
 
 def day_start(now: float) -> float:
     d = datetime.fromtimestamp(now, tz=timezone.utc)
     return datetime(d.year, d.month, d.day, tzinfo=timezone.utc).timestamp()
+
+
+def _regime_kw(record_sh, snap: dict | None) -> dict:
+    """1.46 (D4): {'regime': <regime of this cycle's snapshot>} for a coordinator whose record_sh takes it (DecisionCoordinator), {} for
+    an older / stub receiver without the keyword - the call stays valid for both."""
+    import inspect
+    try:
+        ok = "regime" in inspect.signature(record_sh).parameters
+    except (TypeError, ValueError):
+        ok = False
+    reg = snap.get("regime") if isinstance(snap, dict) else None
+    return {"regime": reg if isinstance(reg, dict) else None} if ok else {}
 
 
 class SHService:
@@ -50,6 +67,8 @@ class SHService:
         self._lock = threading.RLock()
         self.last_bar_key = None
         self.recovered_epoch = None
+        self._recon_wait: dict = {}                   # plan_id -> deferred reconciliation (in memory: a restart only restarts the wait)
+        self._recon_err: dict = {}                    # plan_id -> terminal not answering (timeout / busy): signalled, never settled on
         self.last_eval: dict = {}
         self.last_saved: dict = {}
         self.listeners: list = []                  # fn(evals, inst=, symbol=, snap=, now=) after each cycle - read-only observers
@@ -190,8 +209,9 @@ class SHService:
         ex = self.executor(spec)
         epoch = getattr(self.bridge, "session_epoch", None)
         if self.recovered_epoch != epoch:
-            self.recover(ex, spec, now)
-            self.recovered_epoch = epoch
+            rec = self.recover(ex, spec, now)
+            if not rec.get("incomplete"):                 # terminal data unavailable: recovery is repeated on the next tick
+                self.recovered_epoch = epoch
         if q:
             self.manage(ex, spec, q, now, shc)
         self.store.expire_signals(now)
@@ -286,7 +306,8 @@ class SHService:
                 try:                                                   # PMW-ARC-1 DecisionRecord; REQUIRED models may only hold READY
                     # 1.46: the coordinator result of THIS candidate (coord is keyed by signal_id - coord.get(strat) was always None) with
                     # the "allowed" flag record_sh reads; audit trail only - entries still follow cd["decision"] above
-                    rec = arc.record_sh(su, risk, mode, self.bridge.account_key, dict(cd, allowed=cd.get("decision") == "PROCEED") if cd else None)
+                    rec = arc.record_sh(su, risk, mode, self.bridge.account_key, dict(cd, allowed=cd.get("decision") == "PROCEED") if cd else None,
+                                        **_regime_kw(arc.record_sh, snap))
                     su["decision_record"] = {"record_id": rec["record_id"], "final_verdict": rec["final_verdict"]} if rec else None
                     req = [r for r in (rec or {}).get("reason_codes", []) if r.startswith(("MODEL_REQUIRED", "MODEL_QUANT_HOLD"))]
                     if req and su.get("status") == "READY":
@@ -572,9 +593,12 @@ class SHService:
         if arc is not None and mode != "SIGNALS":     # PMW-ARC-1: intent (dedup) + shared atomic risk reservation of BOTH paths
             rec = (getattr(arc, "by_source", {}) or {}).get(su["signal_id"]) or \
                 (arc.last.get("SH") if (arc.last.get("SH") or {}).get("source_id") == su["signal_id"] else None)
+            # w2 (I0774, tightening only): a HEDGING basket on a hedging account may later open its hedge leg - the entry needs room for
+            # both positions in the shared cap (2 slots while in flight); the later hedge-leg check is unchanged (+1, its own intent)
+            two = su["strategy"] == "HEDGING" and (self.bridge.account_status() or {}).get("margin_mode") == "HEDGING"
             op = arc.intents.open(path="SH", mode=mode, account_key=self.bridge.account_key, subject=pid, symbol=spec.symbol, side=su["side"],
                                   volume=float(risk["volume"]), risk_money=risk.get("risk_money"), record_id=(rec or {}).get("record_id"),
-                                  equity=(getattr(self.bridge, "account", None) or {}).get("equity"))
+                                  equity=(getattr(self.bridge, "account", None) or {}).get("equity"), **({"positions": 2} if two else {}))
             if op["status"] == "DUPLICATE":
                 return {"status": "DUPLICATE", "reason": "INTENT_ALREADY_EXISTS"}
             if op["status"] == "BLOCKED":
@@ -720,8 +744,9 @@ class SHService:
         p = b.primary
         hedged = bool(b.hedge and b.hedge.status in ("OPEN", "CLOSING"))
         out: list[dict] = []
-        # ratio cap after a partial of the base: the hedge never exceeds max_ratio x remaining base volume
-        if hedged and b.hedge.status == "OPEN":
+        # ratio cap after a partial of the base: the hedge never exceeds max_ratio x remaining base volume (after an exit decision the
+        # whole leg is being closed - no separate reduction)
+        if hedged and b.hedge.status == "OPEN" and b.state != "EXIT_PENDING":
             cap = spec.floor_volume(p.remaining * float(b.cfg.max_ratio))
             excess = round(b.hedge.volume - cap, 8)
             if excess > 1e-9:
@@ -729,11 +754,16 @@ class SHService:
                 ex_v = round(math.ceil(excess / spec.volume_step - 1e-9) * spec.volume_step, 8)       # reduce at least the excess
                 if b.hedge.volume - ex_v < spec.volume_min - 1e-9:
                     ex_v = b.hedge.volume                                                       # remainder below min lot: close the leg
-                a = b._act("CLOSE_HEDGE", f"CAP{len(p.realized)}", volume=min(b.hedge.volume, ex_v), reason="limit hedge po częściowym zamknięciu bazy")
+                # a rejected reduction (its id released by on_hedge_closed) is retried spaced and bounded - never every tick
+                nrej = int(b.policy.get("cap_rejects") or 0)
+                wait = nrej and (nrej >= CAP_RETRY_MAX or now - float(b.policy.get("cap_last_reject") or 0.0) < CAP_RETRY_SECONDS)
+                a = None if wait else b._act("CLOSE_HEDGE", f"CAP{len(p.realized)}", volume=min(b.hedge.volume, ex_v),
+                                             reason="limit hedge po częściowym zamknięciu bazy")
                 if a:
                     out.append(a)
                     b.policy["cap_reduced"] = True
-                return out
+                    return out
+                # reduction in flight / waiting: the variant policy is still evaluated (while hedged only EXIT / UNWIND / HOLD)
         if b.state not in ("PRIMARY_OPEN", "HEDGED"):
             return out
         m5 = self.bridge.bars("M5", 700, include_forming=False)
@@ -755,9 +785,9 @@ class SHService:
         if dec["decision"] == "EXIT":
             return b._exit_all(now, dec["reason"])
         if dec["decision"] == "UNWIND":
-            return b._unwind(now, dec["reason"])
-        if dec["decision"] != "HEDGE":
-            return out
+            return b._unwind(now, dec["reason"], gated=True)
+        if dec["decision"] != "HEDGE" or hedged:
+            return out                                           # never a new HEDGE intent next to an open / closing leg
         acc = self.account()
         ok, why = True, ""
         if acc.get("margin_mode") != "HEDGING":
@@ -790,34 +820,137 @@ class SHService:
         return b.request_hedge(now, hv, dec["reason"])
 
     # ------------------------------------------------------------------ management (every tick)
+    NOT_SENT_TTL_S = 60.0                      # w2 (I0739): a NOT_SENT management action is sent again for at most this long
+
     def manage(self, ex, spec, q, now, shc) -> None:
+        lim = (spec.volume_step, spec.volume_min)        # partial closes capped to the volume the position still holds
         for row in self.store.open_plans(spec.symbol):
             obj = row.get("fsm_obj")
             if obj is None:
                 continue
             mode = row["exec_mode"]
+            confirmed = True
             if mode in RK.REAL_MODES:
-                self.reconcile(ex, row, obj, spec, now)
+                rs = self.reconcile(ex, row, obj, spec, now)
+                if rs == "SKIP":
+                    continue        # another account / terminal not read / settlement waits for the deal: no action on an unverified state
+                confirmed = rs == "CONFIRMED"           # a hedge leg only when fresh data showed the primary with its full volume
             elif mode == "PAPER":
                 self.paper_stops(ex, row, obj, spec, q, now)
-            acts = []
+            acts = self._retry_acts(row, obj, now)
             if isinstance(obj, Basket):
                 inval = row["plan"]["setup"].get("invalidation")
                 p = obj.primary
                 sv = True if inval is None else ((q["bid"] > inval) if p.side == "BUY" else (q["ask"] < inval))
                 if row["plan"].get("pack"):
-                    if p.state in ("OPEN", "TP1_DONE"):
+                    if p.state in ("OPEN", "TP1_DONE") and confirmed:
                         acts += self.pack_hedge_step(row, obj, spec, q, now)
-                elif obj.state == "PRIMARY_OPEN" and p.state in ("OPEN", "TP1_DONE") and obj.activations < obj.cfg.max_activations:
+                elif obj.state == "PRIMARY_OPEN" and p.state in ("OPEN", "TP1_DONE") and obj.activations < obj.cfg.max_activations and confirmed:
                     acts += self.hedge_step(row, obj, spec, q, now, sv)
-                acts += obj.on_quote(now, q["bid"], q["ask"], structure_valid=sv)
+                acts += obj.on_quote(now, q["bid"], q["ask"], structure_valid=sv, primary_close_ok=self._primary_close_free(row, obj, ex),
+                                     limits=lim)
             else:
-                acts += obj.on_quote(q["bid"], q["ask"])
+                acts += obj.on_quote(q["bid"], q["ask"], limits=lim)
                 maxm = float(row["plan"]["profile"].get("position_max_minutes") or 0)
                 if maxm and now - row["created_at"] >= 60 * maxm and obj.remaining > 1e-9:
                     acts.append({"action_id": f"{row['plan_id']}:CLOSE_RUNNER:TIME", "plan_id": row["plan_id"], "kind": "CLOSE_RUNNER",
                                  "volume": obj.remaining, "reason": "TIME_LIMIT"})
+            seen_ids: set = set()
+            acts = [a for a in acts if not (a["action_id"] in seen_ids or seen_ids.add(a["action_id"]))]   # a retried id once per tick
             self.process(ex, row, obj, acts, spec, q, now)
+
+    def _retry_acts(self, row, obj, now) -> list[dict]:
+        """w2 (I0739): NOT_SENT management actions of this plan, sent again with the SAME id / volume / level (flag _retry) within
+        NOT_SENT_TTL_S. After it the action goes back to the normal evaluation - never a blind send: a partial-close leg returns to
+        PENDING (requested again only when its price is crossed again), an unwind (UNWINDING) returns to HEDGED with the leg OPEN;
+        every other action stays where it was (as an UNKNOWN one today: no EXIT_PENDING rollback, no BE fallback)."""
+        lst = getattr(obj, "_sh_retry", None) or []
+        out, keep = [], []
+        for ent in lst:
+            a = ent.get("action") or {}
+            first = ent.get("first_at")
+            if now - float(now if first is None else first) <= self.NOT_SENT_TTL_S:
+                keep.append(ent)
+                out.append(dict(a, _retry=True))
+                continue
+            self._retry_expired(row, obj, a, now)
+        obj._sh_retry = keep
+        return out
+
+    def _retry_expired(self, row, obj, a, now) -> None:
+        b = obj if isinstance(obj, Basket) else None
+        pos = b.primary if b else obj
+        k, aid = a.get("kind"), a.get("action_id")
+        back = False
+        if k == "CLOSE_PARTIAL":
+            pos.on_partial_rejected(f"{aid}:ns{now}", aid.split(":")[-1], "NOT_SENT_TTL")
+            back = True
+        elif k == "CLOSE_HEDGE" and b and b.state == "UNWINDING" and b.hedge and b.hedge.status == "CLOSING":
+            b.hedge.status = "OPEN"
+            b.issued.discard(aid)
+            b._no_new_hedge(now, "zamknięcie nogi hedge nie wysłane do terminala (NOT_SENT_TTL)")   # merge w2: as I0740 - no second leg
+            b._go("HEDGED", "zamknięcie hedge nie wysłane do terminala – ocena od nowa", now)
+            back = True
+        if not back:
+            self.store.finish_action(aid, "NOT_SENT_EXPIRED", {"status": "NOT_SENT_EXPIRED", "reason": "NOT_SENT_TTL"}, now)
+        self.store.event(row["plan_id"], "ACTION_NOT_SENT_EXPIRED", {"action": aid, "kind": k, "back_to_evaluation": back}, now)
+
+    def _not_sent(self, row, obj, a, res, now) -> bool:
+        """True = the result is fully handled here (no state-machine feedback): NOT_SENT keeps / adds the retry entry; a retried
+        action that still fails is dropped without any state change (no rollback of EXIT_PENDING, no BE fallback)."""
+        lst = getattr(obj, "_sh_retry", None)
+        if lst is None:
+            lst = obj._sh_retry = []
+        aid = a["action_id"]
+        ent = next((e for e in lst if (e.get("action") or {}).get("action_id") == aid), None)
+        if res.get("status") == "NOT_SENT":
+            if ent is None:
+                lst.append({"action": {k: v for k, v in a.items() if k != "_retry"}, "first_at": now})
+                self.store.event(row["plan_id"], "ACTION_NOT_SENT", {"action": aid, "reason": res.get("reason")}, now)
+            return True
+        if ent is not None:
+            lst.remove(ent)
+        return bool(a.get("_retry")) and res.get("status") not in ("FILLED", "PARTIAL", "DONE")
+
+    def _primary_close_free(self, row, b: Basket, ex=None) -> bool:
+        """EXIT_PENDING may re-request the close of the primary only when no close of it is in flight: SENT / UNKNOWN in sh_actions, or
+        the rest of a PARTIAL answer that the terminal may still be working (RETURN filling)."""
+        if b.state != "EXIT_PENDING" or b.primary.remaining <= 1e-9:
+            return False
+        return not self._closes_in_flight(row, ex)
+
+    @staticmethod
+    def _js(v) -> dict:
+        if isinstance(v, dict):
+            return v
+        try:
+            return json.loads(v) if v else {}
+        except (TypeError, ValueError):
+            return {}
+
+    def _closes_in_flight(self, row, ex=None, kinds=("CLOSE_PRIMARY", "CLOSE_RUNNER", "CLOSE_PARTIAL", "CLOSE_PRIMARY_PART")) -> list[dict]:
+        """Closes of the primary whose outcome is still open, oldest first: [{action_id, kind, leg, volume (unfilled part of the request),
+        row}] - SENT / UNKNOWN / NOT_SENT waiting for its retry (minus what reconciliation already settled on it), and the rest of a
+        PARTIAL answer unless the terminal
+        cancels such a rest (FOK / IOC; ex.rest_cancelled())."""
+        rest_cancelled = True if ex is None else ex.rest_cancelled()
+        out = []
+        for a in self.store.actions(row["plan_id"]):
+            if a["kind"] not in kinds:
+                continue
+            req, res = self._js(a.get("request")), self._js(a.get("result"))
+            rv = float(req.get("volume") or 0)
+            rec = float(res.get("reconciled_volume") or 0)
+            if a["status"] in ("SENT", "UNKNOWN", "NOT_SENT"):   # merge w2: a NOT_SENT close waits for its retry (same id, I0739)
+                left = round(rv - rec, 8) if rv > 0 else float("inf")
+            elif a["status"] == "DONE" and res.get("status") == "PARTIAL" and not rest_cancelled:
+                left = round(rv - float(res.get("volume") or 0) - rec, 8)
+            else:
+                continue
+            if left > 1e-9:
+                out.append({"action_id": a["action_id"], "kind": a["kind"], "volume": left, "row": a,
+                            "leg": req.get("leg") or a["action_id"].split(":")[-1].split("#")[0]})
+        return out
 
     def hedge_step(self, row, b: Basket, spec, q, now, structure_valid) -> list[dict]:
         prof = row["plan"]["profile"]
@@ -964,16 +1097,33 @@ class SHService:
             if k == "CLOSE_HEDGE":
                 hs = b.hedge.side if b and b.hedge else ("SELL" if pos.side == "BUY" else "BUY")
                 res = ex.perform(row["plan"], a, mode=mode, quote=q, ticket=row.get("hedge_ticket"), side_of_position=hs, slippage=slip, now=now)
-                if res["status"] in ("FILLED", "PARTIAL"):
+                if self._not_sent(row, obj, a, res, now):
+                    continue
+                hvol = float(res.get("volume") or 0)
+                if res["status"] in ("FILLED", "PARTIAL") and hvol > 0:
                     b.hedge.status = "OPEN"
-                    queue += b.on_hedge_closed(a["action_id"] + ":r", now, float(res["volume"]), float(res["price"]))
+                    queue += b.on_hedge_closed(a["action_id"] + ":r", now, hvol, float(res["price"]), action_id=a["action_id"])
+                    if res["status"] == "PARTIAL" and b.hedge.status == "OPEN" and ":CLOSE_HEDGE:CAP" not in a["action_id"] \
+                            and not ex.rest_cancelled():
+                        b.hedge.status = "CLOSING"          # RETURN filling: the rest may still be working - never re-requested;
+                        #                                     reconciliation settles the leg when its ticket disappears
                 elif res["status"] == "REJECTED":
                     b.hedge.status = "OPEN"
-                    queue += b.on_hedge_closed(a["action_id"] + f":rej{now}", now, 0, 0, ok=False, reason=str(res.get("reason")))
+                    st0 = b.state
+                    queue += b.on_hedge_closed(a["action_id"] + f":rej{now}", now, 0, 0, ok=False, reason=str(res.get("reason")),
+                                               action_id=a["action_id"])
+                    if ":CLOSE_HEDGE:CAP" not in a["action_id"] and b.exit_retries >= HEDGE_CLOSE_MAX_TRIES:
+                        why = f"zamknięcie nogi hedge odrzucone {b.exit_retries} razy (stan {st0} -> {b.state}): {res.get('reason')}"
+                        self.store.event(pid, "HEDGE_CLOSE_FAILED", {"reason": why, "retcode": res.get("retcode")}, now)
+                        self.log.error("SH", "HEDGE_CLOSE_FAILED", f"{pid}: {why}"[:300])  # noqa: PLE1205 - application log (source, code, text)
                 continue
             res = ex.perform(row["plan"], a, mode=mode, quote=q, ticket=row.get("primary_ticket"), side_of_position=pos.side, slippage=slip, now=now)
+            if self._not_sent(row, obj, a, res, now):
+                continue
             st = res["status"]
-            done = st in ("FILLED", "PARTIAL", "DONE")
+            vol = float(res.get("volume") or 0)
+            # an OK answer without an executed volume (or a stored DONE row without it) is an unknown outcome: reconciliation decides
+            done = st in ("FILLED", "PARTIAL", "DONE") and vol > 0
             if k == "MODIFY_TP":
                 continue
             if k == "MODIFY_SL":
@@ -983,30 +1133,32 @@ class SHService:
                     queue += pos.on_sl_result(a["action_id"] + ":b", False, q["bid"], q["ask"], res["reason"])
                 continue
             if k == "CLOSE_PARTIAL":
-                leg = a["action_id"].split(":")[-1]
+                leg = a.get("leg") or a["action_id"].split(":")[-1].split("#")[0]
                 if done:
                     ev = a["action_id"] + ":r"
-                    queue += (b.on_primary_fill(ev, now, leg, float(res["volume"]), float(res["price"])) if b
-                              else pos.on_fill(ev, leg, float(res["volume"]), float(res["price"])))
+                    rr = st == "PARTIAL" and ex.rest_cancelled()           # rest of a partial fill re-requested only if the terminal dropped it
+                    rq = float(a.get("volume") or 0) or None
+                    queue += (b.on_primary_fill(ev, now, leg, vol, float(res["price"]), retry_rest=rr, requested=rq) if b
+                              else pos.on_fill(ev, leg, vol, float(res["price"]), retry_rest=rr, requested=rq))
                 elif st in ("REJECTED", "BLOCKED"):
-                    pos.on_partial_rejected(a["action_id"] + f":rej{now}", leg, str(res.get("reason")))
+                    pos.on_partial_rejected(a["action_id"] + f":rej{now}", leg, str(res.get("reason")), action_id=a["action_id"])
                 continue
             if k in ("CLOSE_RUNNER", "CLOSE_PRIMARY", "CLOSE_PRIMARY_PART"):
                 if done:
                     ev = a["action_id"] + ":r"
                     reason = a.get("reason") or k
                     if k == "CLOSE_RUNNER" and reason == "TP3":
-                        queue += (b.on_primary_fill(ev, now, "TP3", float(res["volume"]), float(res["price"])) if b
-                                  else pos.on_fill(ev, "TP3", float(res["volume"]), float(res["price"])))
+                        queue += (b.on_primary_fill(ev, now, "TP3", vol, float(res["price"])) if b
+                                  else pos.on_fill(ev, "TP3", vol, float(res["price"])))
                     else:
-                        queue += (b.on_primary_closed(ev, now, float(res["volume"]), float(res["price"]), reason[:40]) if b
-                                  else pos.on_closed(ev, float(res["volume"]), float(res["price"]), reason[:40]))
+                        queue += (b.on_primary_closed(ev, now, vol, float(res["price"]), reason[:40]) if b
+                                  else pos.on_closed(ev, vol, float(res["price"]), reason[:40]))
                 elif st in ("REJECTED", "BLOCKED"):
                     pos.issued.discard(a["action_id"])                  # allow the same exit to be requested again
                     if b:
-                        b.issued.discard(a["action_id"])
-                        if b.state == "EXIT_PENDING":
-                            b.state = "HEDGED" if b.hedge and b.hedge.status in ("OPEN", "CLOSING") else "PRIMARY_OPEN"
+                        # 1.46: an exit decision is final - the basket stays EXIT_PENDING (re-requested, spaced) and never returns to
+                        # PRIMARY_OPEN / HEDGED, where a hedge step could open a new opposite leg
+                        b.on_primary_close_rejected(now, a["action_id"], str(res.get("reason")))
                 continue
         self.finish(row, obj, spec, now)
 
@@ -1057,6 +1209,11 @@ class SHService:
         comm_money = (2 * float(comm) * (vols + hedge_vol)) if comm is not None else None
         prim = sum(r["volume"] * r["move"] for r in pos.realized) * mpp
         hedge = b.hedge_realized_money if b else 0.0
+        # a close settled without its closing deal (reconciliation after the wait) carries a substitute price
+        verified = all(r.get("verified", True) for r in pos.realized)
+        if b:
+            verified = verified and not any(e["kind"] == "RECONCILED_UNVERIFIED" and (e["payload"] or {}).get("leg") == "HEDGE"
+                                            for e in self.store.events(row["plan_id"]))
         gross = prim + hedge
         try:                                                     # 1.46: R from the INITIAL risk (frozen plan SL), never from the current SL
             sl0 = float(((row.get("plan") or {}).get("setup") or {})["sl"])     # (after BE the current SL ~ entry: R was ~7x too big or None)
@@ -1067,7 +1224,8 @@ class SHService:
                 "commission_money": None if comm_money is None else round(comm_money, 2),
                 "net_money": round(gross - (comm_money or 0.0), 2), "commission_known": comm is not None,
                 "r_multiple": round((gross - (comm_money or 0.0)) / sl_risk, 3) if sl_risk else None,
-                "legs": [vars(x) for x in pos.legs], "realized": pos.realized, "hedge_activations": b.activations if b else 0}
+                "legs": [vars(x) for x in pos.legs], "realized": pos.realized, "hedge_activations": b.activations if b else 0,
+                "price_verified": verified}
 
     # ------------------------------------------------------------------ PAPER: broker-side stops are simulated
     def paper_stops(self, ex, row, obj, spec, q, now) -> None:
@@ -1086,39 +1244,164 @@ class SHService:
             self.process(ex, row, obj, acts, spec, q, now)
 
     # ------------------------------------------------------------------ AUTO_DEMO / AUTO_LIVE: reconciliation with the terminal
-    def reconcile(self, ex, row, obj, spec, now) -> None:
+    def _recon_waited(self, pid: str, kind: str, now: float, detail: str) -> bool:
+        """Deferred reconciliation of one plan: False while waiting (the plan is frozen), True once RECON_WAIT_SECONDS of consecutive
+        observations passed - then it is settled as before 1.46 (substitute price) with verified=False and an alert."""
+        w = self._recon_wait.get(pid)
+        if w is None or w["kind"] != kind or now - w["last"] > RECON_WAIT_GAP_SECONDS:
+            self._recon_wait[pid] = {"kind": kind, "since": now, "last": now, "n": 1}
+            self.store.event(pid, "RECONCILE_WAIT", {"kind": kind, "detail": detail[:200], "max_wait_s": RECON_WAIT_SECONDS}, now)
+            return False
+        w["last"], w["n"] = now, w["n"] + 1
+        if now - w["since"] < RECON_WAIT_SECONDS or w["n"] < RECON_WAIT_MIN_TICKS:
+            return False
+        self._recon_wait.pop(pid, None)
+        self.log.error("SH", "RECONCILED_UNVERIFIED",  # noqa: PLE1205 - application log (source, code, text)
+                       f"{pid}: {kind} przez {now - w['since']:.0f} s – rozliczenie ceną zastępczą (verified=False): {detail}"[:300])
+        return True
+
+    def _recon_terminal_error(self, pid: str, now: float, detail: str) -> None:
+        """No terminal answer (timeout / busy worker) - the plan is skipped (nothing is assumed or settled on it), but visibly: a
+        RECONCILE_WAIT event and a warning at the start of an episode, an error once it lasted RECON_WAIT_SECONDS (once per episode)."""
+        w = self._recon_err.get(pid)
+        if w is None or now - w["last"] > RECON_WAIT_GAP_SECONDS:
+            self._recon_err[pid] = {"since": now, "last": now, "n": 1, "alerted": False}
+            self.store.event(pid, "RECONCILE_WAIT", {"kind": "TERMINAL_ERROR", "detail": detail[:200], "settles": False}, now)
+            self.log.warn("SH", "RECONCILE_WAIT", f"{pid}: terminal nie odpowiada – zarządzanie planem wstrzymane: {detail}"[:300])  # noqa: PLE1205, G010 - application log
+            return
+        w["last"], w["n"] = now, w["n"] + 1
+        if not w["alerted"] and now - w["since"] >= RECON_WAIT_SECONDS and w["n"] >= RECON_WAIT_MIN_TICKS:
+            w["alerted"] = True
+            self.store.event(pid, "RECONCILE_WAIT", {"kind": "TERMINAL_ERROR", "detail": detail[:200], "settles": False,
+                                                     "waiting_s": round(now - w["since"])}, now)
+            self.log.error("SH", "RECONCILE_TERMINAL_ERROR",  # noqa: PLE1205 - application log (source, code, text)
+                           f"{pid}: terminal nie odpowiada od {now - w['since']:.0f} s – plan bez zarządzania bota: {detail}"[:300])
+
+    def _settle_partials_in_flight(self, ex, row, obj, gone: float, deals: list, px: float, ver: bool, ev: str, now: float):
+        """A volume drop of a primary still open: first the partial closes of REQUESTED legs whose outcome is unknown (timeout, OK without
+        volume, the working rest of a RETURN partial) take it - in leg order, up to their unfilled request - so the leg completes (TP1_DONE /
+        TP2_DONE with BE and the hedge unwind) instead of staying in flight while the same volume is booked again as an external close.
+        Returns (actions, the volume left for the external close, settled legs)."""
         b = obj if isinstance(obj, Basket) else None
         pos = b.primary if b else obj
+        req = {x.name for x in pos.legs if x.status == "REQUESTED" and x.name != "TP3"}
+        acts, done = [], []
+        if not req or gone <= 1e-9:
+            return acts, gone, done
+        for f in self._closes_in_flight(row, ex, kinds=("CLOSE_PARTIAL",)):
+            if gone <= 1e-9:
+                break
+            leg = next((x for x in pos.legs if x.name == f["leg"] and x.name in req and x.status == "REQUESTED"), None)
+            if leg is None:
+                continue
+            v = round(min(gone, f["volume"], max(0.0, leg.volume - leg.fill_volume)), 8)
+            if v <= 1e-9:
+                continue
+            tag = ex.comment(row["plan_id"], f["action_id"].split(":")[-1])
+            own = [d for d in deals if d.get("comment") == tag]                  # the leg's own closing deal, when the terminal kept the comment
+            lpx = own[-1]["price"] if own else px
+            n0 = len(pos.realized)
+            e = f"{ev}:{f['action_id'].split(':')[-1]}"
+            acts += (b.on_primary_fill(e, now, leg.name, v, lpx, requested=f["volume"]) if b
+                     else pos.on_fill(e, leg.name, v, lpx, requested=f["volume"]))
+            if not (own or ver):
+                for r in pos.realized[n0:]:
+                    r["verified"] = False
+            gone = round(gone - v, 8)
+            a, res = f["row"], self._js(f["row"].get("result"))
+            rec = round(float(res.get("reconciled_volume") or 0) + v, 8)
+            full = f["volume"] - v <= 1e-9
+            st = "DONE" if full or a["status"] == "DONE" else a["status"]
+            out = dict(res, reconciled_volume=rec, reconciled_price=lpx, reconciled_verified=bool(own or ver))
+            if a["status"] != "DONE" and full:
+                out.update(status="FILLED", volume=rec, price=lpx, reconciled=True)          # outcome no longer unknown
+            self.store.finish_action(f["action_id"], st, out, now)
+            done.append({"leg": leg.name, "action_id": f["action_id"], "volume": v, "price": lpx, "verified": bool(own or ver)})
+        return acts, gone, done
+
+    def reconcile(self, ex, row, obj, spec, now) -> str:
+        """Terminal plan against the terminal. Returns CONFIRMED (the primary ticket is seen with its full remaining volume), READ
+        (terminal read: settled / nothing to confirm) or SKIP (no management of the plan in this tick): a plan of another account is
+        managed only on its own account; a terminal answering None (error, not 'no positions') or a vanished primary without its closing
+        deal freezes the plan for RECON_WAIT_SECONDS, then it is settled as before with verified=False. A basket with an open hedge leg
+        is settled at once (the leg is unwound immediately, as before) - only its price stays unverified. A terminal not answering at all
+        (timeout / busy) only skips the plan, signalled (RECONCILE_WAIT, alert after RECON_WAIT_SECONDS) - never settled on. A partial volume
+        drop is booked first on the partial closes in flight (unknown outcome), the rest as an external partial close."""
+        b = obj if isinstance(obj, Basket) else None
+        pos = b.primary if b else obj
+        pid = row["plan_id"]
+        if row.get("account_key") not in (None, ex.account_key):
+            return "SKIP"                                            # open plan still blocks the symbol (coordinator)
+        unverified = False
         try:
             term = {p["ticket"]: p for p in ex.terminal_positions(spec.symbol)}
-        except Exception:  # noqa: BLE001 - no terminal answer: nothing is assumed
-            return
+        except TerminalDataUnavailable as exc:
+            if not self._recon_waited(pid, "TERMINAL_NONE", now, str(exc)):
+                return "SKIP"
+            term, unverified = {}, True
+        except Exception as exc:  # noqa: BLE001 - no terminal answer: nothing is assumed (signalled, never settled on)
+            self._recon_terminal_error(pid, now, f"{type(exc).__name__}: {exc}")
+            return "SKIP"
+        self._recon_err.pop(pid, None)
+        if not unverified and (self._recon_wait.get(pid) or {}).get("kind") == "TERMINAL_NONE":
+            self._recon_wait.pop(pid, None)                          # the terminal answers again
+        confirmed = False
         tk = row.get("primary_ticket")
         if tk and pos.remaining > 1e-9:
             p = term.get(int(tk))
             vol_t = p["volume"] if p else 0.0
-            if vol_t < pos.remaining - 1e-9:
-                deals = ex.closing_deals(int(tk))
+            if vol_t >= pos.remaining - 1e-9:
+                confirmed = True
+                self._recon_wait.pop(pid, None)
+            else:
+                try:
+                    deals = [] if unverified else ex.closing_deals(int(tk))
+                except Exception:  # noqa: BLE001 - per plan: a failing history query never stops the management of other plans
+                    deals = []
+                hedged = bool(b and b.hedge and b.hedge.status in ("OPEN", "CLOSING"))
+                if not deals and not unverified and not hedged and \
+                        not self._recon_waited(pid, "NO_CLOSING_DEAL", now, f"terminal {vol_t} < plan {pos.remaining}"):
+                    return "SKIP"                                    # frozen until the closing deal arrives (or the wait ends)
+                self._recon_wait.pop(pid, None)
+                ver = bool(deals)
                 px = deals[-1]["price"] if deals else (pos.sl or pos.entry)
                 gone = round(pos.remaining - vol_t, 8)
                 reason = "BROKER_TP" if pos.legs and abs(px - pos.legs[-1].price) < abs(px - pos.sl) else ("BE" if pos.be_status == "SET" else "SL")
                 if p is not None:
                     reason = "ZEWNĘTRZNE_ZAMKNIĘCIE_CZĘŚCI"
-                ev = f"{row['plan_id']}:RECON:{tk}:{round(vol_t, 4)}"
-                acts = b.on_primary_closed(ev, now, gone, px, reason) if b else pos.on_closed(ev, gone, px, reason)
-                self.store.event(row["plan_id"], "RECONCILED_PRIMARY", {"terminal_volume": vol_t, "closed": gone, "price": px, "reason": reason}, now)
+                ev = f"{pid}:RECON:{tk}:{round(vol_t, 4)}"
+                acts, legs, ext = [], [], gone
+                if p is not None:                                    # partial drop: partial closes in flight first (outcome unknown)
+                    acts, ext, legs = self._settle_partials_in_flight(ex, row, obj, gone, deals, px, ver, ev, now)
+                n0 = len(pos.realized)
+                if ext > 1e-9:
+                    acts += b.on_primary_closed(ev, now, ext, px, reason) if b else pos.on_closed(ev, ext, px, reason)
+                if not ver and len(pos.realized) > n0:
+                    pos.realized[-1]["verified"] = False
+                info = {"terminal_volume": vol_t, "closed": gone, "price": px, "reason": reason, "verified": ver}
+                if legs:
+                    info.update(legs_in_flight=legs, closed_external=ext)
+                self.store.event(pid, "RECONCILED_PRIMARY", info, now)
+                if not ver:
+                    self.store.event(pid, "RECONCILED_UNVERIFIED", {**info, "leg": "PRIMARY"}, now)
                 if acts:
                     self.process(ex, row, obj, acts, spec, {"bid": px, "ask": px, "spread": 0.0}, now)
                 else:
                     self.finish(row, obj, spec, now)
         htk = row.get("hedge_ticket")
         if b and b.hedge and b.hedge.status in ("OPEN", "CLOSING") and htk and int(htk) not in term:
-            deals = ex.closing_deals(int(htk))
+            try:
+                deals = [] if unverified else ex.closing_deals(int(htk))
+            except Exception:  # noqa: BLE001 - per plan, as above
+                deals = []
             px = deals[-1]["price"] if deals else b.hedge.entry
             b.hedge.status = "OPEN"
-            b.on_hedge_closed(f"{row['plan_id']}:RECON_H:{htk}", now, b.hedge.volume, px)
-            self.store.event(row["plan_id"], "RECONCILED_HEDGE", {"price": px}, now)
+            b.on_hedge_closed(f"{pid}:RECON_H:{htk}", now, b.hedge.volume, px)
+            self.store.event(pid, "RECONCILED_HEDGE", {"price": px, "verified": bool(deals)}, now)
+            if not deals:
+                self.store.event(pid, "RECONCILED_UNVERIFIED", {"leg": "HEDGE", "price": px}, now)
             self.finish(row, obj, spec, now)
+        return "CONFIRMED" if confirmed else "READ"
 
     def recover(self, ex, spec, now) -> dict:
         """After a restart / reconnect: plans whose entry outcome is unknown are adopted from the terminal (own magic + comment)
@@ -1130,10 +1413,12 @@ class SHService:
             return out
         try:
             term = ex.terminal_positions(spec.symbol) if ex.terminal is not None else []
-        except Exception:  # noqa: BLE001
-            return out
+        except Exception as exc:  # noqa: BLE001 - no data: nothing is adopted or rejected, the recovery is repeated (next tick)
+            return {**out, "incomplete": f"{type(exc).__name__}: {exc}"[:200]}
         shm = C.load()["magic_number"]
         for r in demo:
+            if r.get("account_key") not in (None, ex.account_key):
+                continue                                             # decided only on its own account (never rejected from another one)
             if r["state"] == "ENTRY_UNKNOWN":
                 tag = ex.comment(r["plan_id"], "P")
                 hit = next((p for p in term if p["magic"] == shm and p["comment"] == tag), None)
@@ -1160,6 +1445,8 @@ class SHService:
         v = {k: row.get(k) for k in ("plan_id", "signal_id", "strategy", "symbol", "side", "exec_mode", "state", "config_hash", "primary_ticket",
                                      "hedge_ticket", "created_at", "updated_at")}
         v["plan"] = row["plan"]
+        if row.get("exec_mode") in RK.REAL_MODES and row.get("account_key") not in (None, getattr(self.bridge, "account_key", None)):
+            v["flags"] = ["INNY_RACHUNEK"]          # managed only when the plan's own account is connected (the plan still blocks the symbol)
         if isinstance(o, Basket):
             v["basket"] = o.report(q["bid"], q["ask"]) if q else None
             v["position"] = o.primary.snapshot()

@@ -11,6 +11,22 @@ Outputs with different meanings are separate NAMED features - nothing is average
 Every feature f has mask m:f = 1 when the input was missing / not READY / excluded - the value is then 0 AND the mask says so; the
 meta-model is trained with exactly this policy (a missing model is never turned into a neutral probability). At inference only the
 artifact's feature list is used: unknown features are ignored, trained features that are missing get mask 1.
+
+Versions of the feature SEMANTICS (1.46) - the prefix of an artifact's feature_schema says which builder computes its input:
+  PMW-QUANT-FEAT-1 / -2  build2 exactly as in 1.41-1.46 (frozen; MetaModel artifacts trained before 1.46 carry FEAT-1)
+  PMW-QUANT-FEAT-3       build3 = the same names with fixed meaning: an unconfirmed *_CANDIDATE filter state is no direction (D8), a DXY
+                         relation whose own status is not READY (STALE / WARMUP / NO_DATA) is missing, not a value (D9); with it the
+                         coordinator's SH candidate carries the regime as the ledger rows do (D4 - quant/service.assess)
+  PMW-QUANT-FEAT-4       build4 = FEAT-3 with the regime in the vocabulary of its SOURCE (I0561 / I0565 / I0566 / I0016): ctx:regime=*
+                         compared the state with TREND / RANGE / TRANSITION / HIGH_VOL, but the SH RegimeMachine v2 emits TREND_UP /
+                         TREND_DOWN / RANGE / TRANSITION and the ACTIVE MarketRegimeEngine TREND_UP / TREND_DOWN / COMPRESSION / ... - every
+                         trend (and every ACTIVE state but RANGE / TRANSITION, also DATA_UNAVAILABLE / STALE) became "known, none" (all zeros,
+                         mask 0), HIGH_VOL never occurred and one column carried two definitions. FEAT-4: ctx:regime_sh=<state> (sh.context,
+                         MQ-REGIME-2) and ctx:regime_active=<state> (strategies.regime, MQ-REGIME-1) one-hot in their own namespaces, plus
+                         ctx:regime_<ns>:trend_aligned (+1 / -1 / 0 vs the side); an empty / unknown / DATA_UNAVAILABLE / STALE / warm-up
+                         state or another source (scalp) gives no regime column at all (mask 1). No ctx:regime=* column in FEAT-4.
+New ledger rows and new MetaModels use CURRENT; an older artifact keeps its own input (never silently the new meaning) and training never
+mixes rows of different versions (quant/ledger.py feature_version, metamodel.train).
 """
 from __future__ import annotations
 
@@ -83,8 +99,10 @@ def context_features(c: dict) -> dict:
     return out
 
 
-def prediction_features(preds: list[dict], side: str) -> dict:
-    """From ELIGIBLE (checked, deduplicated) PMW-PRED records only."""
+def prediction_features(preds: list[dict], side: str, *, semantics: str = VERSION) -> dict:
+    """From ELIGIBLE (checked, deduplicated) PMW-PRED records only. semantics=VERSION3 applies the FEAT-3 fixes (module docstring);
+    the default is the FEAT-1 computation, unchanged."""
+    v3 = semantics == VERSION3
     sgn = 1 if side == "LONG" else -1
     out = {}
     for p in preds or []:
@@ -103,9 +121,11 @@ def prediction_features(preds: list[dict], side: str) -> dict:
             out[base + ":score"] = float(r["raw_score"])
             out[base + ":score_x_side"] = sgn * float(r["raw_score"])
         elif tt == "FILTER_STATE" and isinstance(r, dict) and isinstance(r.get("state"), str):
-            d = _dir_of(r["state"])
+            d = _filter_dir_v3(r["state"]) if v3 else _dir_of(r["state"])
             out[f"st:{cid}:aligned"] = float(sgn * d)
         elif tt == "STATE" and cid == "analysis:dxy_correlation" and isinstance(r, dict):
+            if v3 and r.get("status") not in (None, "READY"):
+                continue                                # FEAT-3 (D9): a STALE / WARMUP relation is missing (masks), not a value
             for k in ("corr_72", "resid_z_72", "beta_72"):
                 if _f(r.get(k)) is not None:
                     out[f"ctx:dxy_{k}"] = float(r[k])
@@ -193,3 +213,107 @@ def build2(c: dict, preds: list[dict]) -> dict:
 
 def schema2(names: list[str]) -> str:
     return VERSION2 + ":" + hashlib.sha256("|".join(names).encode()).hexdigest()[:12]
+
+
+# ---------------------------------------------------------------------------------------------------------------- 1.46 FEAT-3 (semantics)
+VERSION3 = "PMW-QUANT-FEAT-3"
+LEGACY_ROWS = VERSION                  # ledger rows logged before 1.46 (no feature_version): the semantics of the FEAT-1 artifacts
+
+
+def _filter_dir_v3(state: str) -> int:
+    """FEAT-3 (D8): an unconfirmed *_CANDIDATE filter state names no direction. Kalman BULLISH_CANDIDATE / BEARISH_CANDIDATE is a raw
+    change AGAINST the accepted crossover that may still revert (mm/kalman.py) - FEAT-1 read it as +1 / -1 (substring BULL / BEAR).
+    *_CONFIRMED and the other named states as in FEAT-1; NEUTRAL / INITIALIZING / INSUFFICIENT_HISTORY stay 0."""
+    s = str(state or "").upper()
+    return 0 if s.endswith("CANDIDATE") else _dir_of(s)
+
+
+def _build_fixed(c: dict, preds: list[dict], ctx: dict) -> dict:
+    """FEAT-3 / FEAT-4 body: plan + the given context features + the prediction features with the FEAT-3 meaning, price forecasts, rm:*."""
+    f = {**plan_features(c), **ctx, **prediction_features(preds, c.get("direction"), semantics=VERSION3)}
+    f = {k: v for k, v in f.items() if _f(v) is not None}
+    f.update(price_forecast_features(preds, c))
+    for k, v in ((c.get("research_features") or {}).items()):
+        if _f(v) is not None:
+            f[f"rm:{k}"] = float(v)
+    return {k: v for k, v in f.items() if _f(v) is not None}
+
+
+def build3(c: dict, preds: list[dict]) -> dict:
+    """FEAT-3: every FEAT-2 column (same names) with the FEAT-3 meaning of the prediction features."""
+    return _build_fixed(c, preds, context_features(c))
+
+
+# ---------------------------------------------------------------------------------------------------------------- 1.46 FEAT-4 (regime)
+VERSION4 = "PMW-QUANT-FEAT-4"
+# the vocabularies of the two regime definitions a candidate can carry (market_regime.source); a state outside them = no regime column
+REGIME_SH = ("TREND_UP", "TREND_DOWN", "RANGE", "TRANSITION")                          # sh.context RegimeMachine v2 (MQ-REGIME-2.0.0)
+REGIME_ACTIVE = ("TREND_UP", "TREND_DOWN", "RANGE", "COMPRESSION", "EXPANSION", "EXHAUSTION_OR_REVERSAL_CANDIDATE",
+                 "TRANSITION")                  # strategies.regime STATES (MQ-REGIME-1.0.0) without DATA_UNAVAILABLE / STALE (= missing)
+REGIME_VOCABULARY = {"sh": REGIME_SH, "active": REGIME_ACTIVE}
+_REGIME_SOURCES = (("sh.context", "sh"), ("strategies.regime", "active"))
+_REGIME_ENGINES = {"SH_SCALPING": "sh", "SH_HEDGING": "sh", "ACTIVE_S01_S12": "active"}
+
+
+def regime_namespace(c: dict) -> str | None:
+    """'sh' | 'active' | None from market_regime.source (evaluation/contract.py names it); without a source from the engine. Another
+    source (scalp context) has its own, unpublished vocabulary -> None (no regime column)."""
+    src = str((c.get("market_regime") or {}).get("source") or "")
+    if src:
+        return next((ns for pre, ns in _REGIME_SOURCES if src.startswith(pre)), None)
+    return _REGIME_ENGINES.get(c.get("engine"))
+
+
+def regime_features4(c: dict) -> dict:
+    """FEAT-4 regime columns: one-hot ctx:regime_<ns>=<STATE> over the vocabulary of the candidate's regime source + the side-aligned
+    trend ctx:regime_<ns>:trend_aligned (+1 TREND with the side, -1 against it, 0 another known state). Unknown -> {} (masks)."""
+    ns = regime_namespace(c)
+    vocab = REGIME_VOCABULARY.get(ns or "")
+    st = str((c.get("market_regime") or {}).get("state") or "").upper()
+    if not vocab or st not in vocab:
+        return {}
+    out = {f"ctx:regime_{ns}={r}": 1.0 if st == r else 0.0 for r in vocab}
+    side = 1 if c.get("direction") == "LONG" else -1 if c.get("direction") == "SHORT" else 0
+    if side:
+        trend = 1 if st == "TREND_UP" else -1 if st == "TREND_DOWN" else 0
+        out[f"ctx:regime_{ns}:trend_aligned"] = float(side * trend)
+    return out
+
+
+def context_features4(c: dict) -> dict:
+    """FEAT-1 context columns without the broken ctx:regime=* one-hot, plus the FEAT-4 regime columns."""
+    out = context_features({**c, "market_regime": None})
+    out.update(regime_features4(c))
+    return out
+
+
+def build4(c: dict, preds: list[dict]) -> dict:
+    """FEAT-4: FEAT-3 (D8 / D9 meaning, same prediction / plan / price / rm columns) with the regime of the candidate's own source."""
+    return _build_fixed(c, preds, context_features4(c))
+
+
+# ---------------------------------------------------------------------------------------------------------------- versions
+CURRENT = VERSION4                     # new ledger rows and new MetaModels (FEAT-3 artifacts / rows keep their own meaning)
+ARTIFACT_VERSIONS = (VERSION, VERSION3, VERSION4)   # feature_schema prefixes a MetaModel artifact may carry (train never wrote FEAT-2)
+REGIME_IN_SH_CANDIDATE = (VERSION3, VERSION4)       # D4: the coordinator SH candidate carries the regime (and is re-evaluated without it)
+
+
+def version_of(feature_schema) -> str | None:
+    """'PMW-QUANT-FEAT-3:<hash>' -> 'PMW-QUANT-FEAT-3'; None for an unknown prefix."""
+    v = str(feature_schema or "").split(":", 1)[0]
+    return v if v in (VERSION, VERSION2, VERSION3, VERSION4) else None
+
+
+def schema_for(version: str, names: list[str]) -> str:
+    return version + ":" + hashlib.sha256("|".join(names).encode()).hexdigest()[:12]
+
+
+def build_for(version: str, c: dict, preds: list[dict]) -> dict:
+    """The builder of one feature version: FEAT-1 / FEAT-2 -> build2 (the frozen 1.41 computation), FEAT-3 -> build3, FEAT-4 -> build4."""
+    if version in (VERSION, VERSION2):
+        return build2(c, preds)
+    if version == VERSION3:
+        return build3(c, preds)
+    if version == VERSION4:
+        return build4(c, preds)
+    raise ValueError(f"FEATURE_VERSION_UNKNOWN:{version}")

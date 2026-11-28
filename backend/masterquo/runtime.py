@@ -47,6 +47,11 @@ class Runtime:
                 _UM.before()
             except Exception:  # noqa: BLE001 - never blocks the start; the after-report shows the missing step
                 log.exception("upgrade 1.41 before-step failed")
+            try:                                            # 1.46 arch (I0120): copy of every settings file once per app version
+                from .upgrade import migrate as _UM
+                _UM.snapshot_before()
+            except Exception:                               # a copy never blocks the start
+                log.exception("settings snapshot before the update failed")
         try:                                                # 1.42.2: program folder moved -> model venvs re-pointed to this Python
             import mq_venv
             base = getattr(sys, "_base_executable", None) or sys.executable
@@ -181,6 +186,7 @@ class Runtime:
         self.quant = QuantService(self)                                                             # 1.35 PMW Quant Core: own thread, SHADOW by default
         self.evaluation.listeners.append(self.quant.on_candidate)                                  # decision-time features + SHADOW assessment
         self.families.event_gru_provider = lambda inst: self.quant.event_gru.latest.get(inst)      # Event GRU: live path owned by Quant
+        self.families.event_gru_live = lambda: self.quant.mode() != "OFF"                          # 1.46 arch (I0477): status only (read)
         self.arc.quant = self.quant                                                                 # ASSIST only after validation + explicit activation
         self.sh.kronos = self.kronos                                                                # Kronos context in SCALPING / HEDGING
         from .tsfm.service import TsfmService
@@ -234,30 +240,36 @@ class Runtime:
         self._engine_lock = threading.Lock()
         self.security = None
         self.shutdown_hook = None  # set by the server launcher
+        # 1.46 arch (I0088): services of the workflow v3.2 routes (ledgers, journal, game, Hyperliquid / Universe, Telegram account center)
+        # are owned here, not by the HTTP layer; rt.wf32 is the dict the routes publish as app.state.wf32 and the exporters read
+        from .wf32_services import Wf32Services
+        self.wf32_services = Wf32Services(self)
+        self.wf32 = self.wf32_services.public
+        # 1.46 arch (I0092): ONE Bootstrap, built here (reads its state file only - no thread, no installer); started in start()
+        self.bootstrap = None
+        try:
+            from .bootstrap import Bootstrap
+            self.bootstrap = Bootstrap(self)
+        except Exception:                                   # never blocks the construction
+            log.exception("bootstrap construction failed")
 
     def _wire_governor(self) -> None:
         """1.40 Memory Governor: one resource manager for every model process (Kronos, Chronos-2, Granite TTM) + training jobs."""
         import os as _os
-        import time as _time
-        from .resources.governor import HEAVY, Governor
+
+        from .resources.governor import Governor
         self.governor = Governor(self.cfg, self.log)
         self.tsfm.governor = self.governor
         self.kronos.governor = self.governor
         self.governor.register("bot", "bot", lambda: _os.getpid())
-        k = self.kronos
-        self.governor.register("kronos", "light", lambda: k.proc.pid if (k.proc and k.proc.poll() is None) else None,
-                               release=lambda: k.running is None and k._kill(), idle=lambda: 0.0 if k.running else _time.monotonic() - k.last_used)
-        tb = self.quant.tabicl                                          # 1.41 TabICLv2 worker (heavy slot, idle release)
-        self.quant.tabicl.governor = self.governor
-        self.governor.register("tabicl", "heavy", lambda: tb.worker.proc.pid if (tb.worker.proc and tb.worker.proc.poll() is None) else None,
-                               release=lambda: tb.jobs.empty() and tb.worker.kill(), idle=lambda: _time.monotonic() - tb.worker.last_used)
+        # 1.46 arch (I0089/I0102): every model service registers its own worker(s) (same pid / release / idle callables and the same
+        # 'never release while it computes' guards as the former lambdas here) - this composition root no longer knows their internals
+        self.kronos.register_with(self.governor)
+        self.quant.tabicl.governor = self.governor                     # 1.41 TabICLv2 worker (heavy slot, idle release)
+        self.quant.tabicl.register_with(self.governor)
         if getattr(self, "research", None) is not None:
             self.research.governor = self.governor                     # 1.41 SDformerFlow training / inference (heavy slot)
-        for mid, w in self.tsfm.workers.items():
-            self.governor.register(mid, "heavy" if mid in HEAVY else "light",
-                                   (lambda w=w: w.proc.pid if (w.proc and w.proc.poll() is None) else None),
-                                   release=(lambda w=w, mid=mid: (self.tsfm.running is None or self.tsfm.running[0] != mid) and w.kill()),
-                                   idle=(lambda w=w, mid=mid: 0.0 if (self.tsfm.running and self.tsfm.running[0] == mid) else _time.monotonic() - w.last_used))
+        self.tsfm.register_with(self.governor)
 
     def _publish_prefs(self) -> None:
         try:
@@ -359,21 +371,36 @@ class Runtime:
             _UM.apply_142(self)
         except Exception:  # noqa: BLE001 - never blocks the start
             log.exception("upgrade 1.42 step failed")
-        for name in ("market_zones", "trainhub", "trainhub_inference", "kronos", "tsfm", "governor", "quant", "research", "baskets"):
+        # families: 1.46 arch (I0790) background inference of the .venv_deep families after a bar close (the SH cycle reads the cache)
+        for name in ("market_zones", "trainhub", "trainhub_inference", "kronos", "tsfm", "governor", "quant", "research", "baskets", "families"):
             self._start_part(name)
         threading.Thread(target=self._clock_loop, name="pc-clock", daemon=True).start()
         threading.Thread(target=self._signal_track_loop, name="signal-track", daemon=True).start()
         if not self.demo:
             threading.Thread(target=self._upgrade_after, name="upgrade-1.41", daemon=True).start()
         try:                                                # 1.45 (TASK 013): verify-first bootstrap; heavy runtimes sequential, after start
-            from .bootstrap import Bootstrap
-            self.bootstrap = Bootstrap(self)
+            if self.bootstrap is None:                     # 1.46 arch (I0092): normally built in __init__
+                from .bootstrap import Bootstrap
+                self.bootstrap = Bootstrap(self)
             self.bootstrap.start()                         # no-op in demo / PMW_BOOTSTRAP=0
         except Exception:  # noqa: BLE001 - never blocks the start
             log.exception("bootstrap failed to start")
+        self._start_account_loop()
         if self.start_failures:
             self.log.error("APP", "START_DEGRADED", "Nie wystartowały: " + ", ".join(f["part"] for f in self.start_failures)
                            + " – reszta aplikacji działa, szczegóły w logs/engine_console.log")
+
+    def _start_account_loop(self) -> None:
+        """1.46 arch (I0092): the Telegram account loop (read the account / deals, queue and send reports - never an order) starts here,
+        i.e. after the licence unlock, ONCE, only with the real MT5 terminal (never in the synthetic demo / `models check --live`); it ends
+        with self._stop (Runtime.stop). Before 1.46 the route registration started it, before start() and regardless of the licence."""
+        if self.demo:
+            return
+        try:
+            self.wf32_services.start_account_loop(self._stop)
+        except Exception as exc:                            # never blocks the start of the other parts
+            log.exception("start of telegram_account failed")
+            self.start_failures.append({"part": "telegram_account", "error": f"{type(exc).__name__}: {exc}"[:300]})
 
     def _upgrade_after(self) -> None:
         """1.41: after-inventory + preservation report (60 s after start, when every registry is loaded) and the background installation
@@ -416,7 +443,7 @@ class Runtime:
     # 1.46: stop order (unchanged); every part stops on its own - an exception in one .stop() skipped all later parts (bridge, MT5
     # worker) and the cleanup of shutdown.token / server.pid in __main__
     _STOP_ORDER = ("ml", "forecast", "scalp", "sh", "mm", "zones", "indicators", "svp", "market_zones", "trainhub", "trainhub_inference",
-                   "kronos", "tsfm", "montecarlo", "quant", "research", "baskets", "analytics", "lab", "extind", "nss", "mtf", "si",
+                   "kronos", "tsfm", "montecarlo", "quant", "research", "baskets", "families", "analytics", "lab", "extind", "nss", "mtf", "si",
                    "liquidity", "scanner", "engine", "manager", "news", "bridge", "worker")
 
     def _stop_part(self, name: str, method: str = "stop") -> None:

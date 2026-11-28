@@ -165,7 +165,7 @@ class TestPairsMicroNLP(Base):
         self.assertEqual(m["validation"]["status"], "APPROVED")
         self.assertAlmostEqual(m["metrics"]["p_value_train"] < 0.05, True)
         rw = [{"t": T0 + i * 3600, "c": float(np.exp(7 + np.cumsum(rng.normal(0, 0.01, 1200))[i]))} for i in range(1200)]
-        r2 = self.train("PAIR_COINT", {"instrument": "XAUUSD", "pair": ["XAUUSD", "BTC"], "pair_bars": [A, rw], "data_kind": "REAL"})
+        self.train("PAIR_COINT", {"instrument": "XAUUSD", "pair": ["XAUUSD", "BTC"], "pair_bars": [A, rw], "data_kind": "REAL"})
         m2 = self.store.runs("PAIR_COINT", "XAUUSD")[-1]
         self.assertEqual(m2["validation"]["status"], "VALIDATION_FAILED")
         nb = self.train("PAIR_COINT", {"instrument": "XAUUSD", "pair": None})
@@ -200,7 +200,6 @@ class TestPairsMicroNLP(Base):
         self.assertIn(str(MI.MIN_SNAPSHOTS), r["reason"])
 
     def test_microstructure_classifier_learns_imbalance(self):
-        from masterquo.modelhub.families import micro as MI
         rng = np.random.default_rng(3)
         books, mid = [], 2000.0
         for i in range(6000):

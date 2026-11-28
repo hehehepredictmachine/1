@@ -36,9 +36,9 @@ CLASSES = ("DOWN", "FLAT", "UP")
 
 
 def candle_python(cfg) -> str | None:
-    cands = [os.environ.get("MQ_CANDLES_PYTHON"), cfg.forecast.python_path,
-             str(paths.ROOT_DIR / ".venv_candles" / "Scripts" / "python.exe"), str(paths.ROOT_DIR / ".venv_candles" / "bin" / "python")]
-    return next((c for c in cands if c and Path(c).exists()), None)
+    # 1.46 arch (I0117): MQ_CANDLES_PYTHON -> forecast.python_path -> .venv_candles (exists), as before
+    from .. import runtimes
+    return runtimes.find_python("candles", cfg.forecast.python_path, check=Path.exists)
 
 
 class ForecastService:

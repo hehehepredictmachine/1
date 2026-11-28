@@ -188,6 +188,13 @@ class PackEngine:
         hi, _lo = X.prev_day_range(mir)
         if hi is not None and hi > E:
             cands.append((hi, "maksimum poprzedniej doby"))
+        elif hi is None:
+            # 1.46 arch (I0744, only stricter): in the Monday session the previous trading day is the empty weekend window - the high of
+            # the last trading day WITH bars is an additional obstacle (min() of the candidates can only get closer: TP2 behind it ->
+            # NO_TRADE TARGET_UNREACHABLE, a target is never moved and no setup is created by this)
+            lhi, _llo, _day = X.last_traded_day_range(mir)
+            if lhi is not None and lhi > E:
+                cands.append((lhi, "maksimum ostatniej doby z notowaniami (poprzednia doba bez świec – weekend/święto)"))
         if not cands:
             return None, None
         return min(cands)

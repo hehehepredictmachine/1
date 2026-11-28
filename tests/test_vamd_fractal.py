@@ -1,5 +1,4 @@
 """PMW-UPD-14 VAMD (T01-T10) and bounded Katz FD (T39-T48). Expected values are hand-derived here, not produced by the module."""
-import math
 import unittest
 
 import numpy as np

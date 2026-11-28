@@ -1,6 +1,6 @@
 """`python -m masterquo montecarlo <cmd>` - validation of the Monte Carlo variants on an export, rollback of the calibration.
 
-  validate --dataset DIR [--horizon 60] [--stride 30] [--n-paths 500] [--max-points 600] [--out report.json]
+  validate --dataset DIR [--horizon 60] [--stride 30] [--n-paths 500] [--max-points 600] [--out report.json] [--no-activate]
   rollback --instrument XAUUSD
   status   --instrument XAUUSD
 Nothing here connects to MT5 or sends orders; it reads the exported files only."""
@@ -23,6 +23,8 @@ def main(argv: list[str]) -> int:
     v.add_argument("--n-paths", type=int, default=500)
     v.add_argument("--max-points", type=int, default=600)
     v.add_argument("--out")
+    v.add_argument("--no-activate", action="store_true",
+                   help="1.46: zapisz run bez zmiany aktywnego kalibratora (profil TEST_INSTALACJI)")
     for n in ("rollback", "status"):
         s = sub.add_parser(n)
         s.add_argument("--instrument", choices=("XAUUSD", "BTC"), required=True)     # instrument id of the allowlist, never an MT5 symbol
@@ -34,7 +36,7 @@ def main(argv: list[str]) -> int:
         except (ValueError, FileNotFoundError) as exc:
             print(f"[BLAD] {exc}")
             return 2
-        saved = V.save(rep.get("instrument") or "XAUUSD", rep)
+        saved = V.save(rep.get("instrument") or "XAUUSD", rep, activate=not a.no_activate)
         rep["saved"] = saved
         if a.out:
             V._write(Path(a.out), rep)

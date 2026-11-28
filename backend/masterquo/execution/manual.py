@@ -25,6 +25,7 @@ import uuid
 from datetime import timedelta
 
 from ..timeutil import iso, parse_iso, utcnow
+from .gateway import client_tag
 
 VERSION = "MQ-MANUAL-PAD-1.0.0"
 COMMISSION_SOURCE = {"DEAL_HISTORY": "BROKER_OBSERVED", "FROM_DEAL_HISTORY": "BROKER_OBSERVED", "CONFIGURED": "USER_CONFIGURED",
@@ -168,6 +169,15 @@ def plan_math(*, side: str, quote: dict, meta: dict, sl: float | None = None, tp
         reasons.append("INSUFFICIENT_FREE_MARGIN")
     net_risk = lp + (sc or 0) + (comm_rt or 0) if comm_rt is not None else None
     net_gain = gain - (comm_rt or 0) - (sc or 0) if (gain is not None and comm_rt is not None) else None
+    if sizing_mode == "FIXED":
+        # w2 (I0782): fixed lots obey the same per-trade risk policy as RISK_PCT (full cost at SL <= basis x max_risk_pct); an unknown
+        # basis or an unknown full cost blocks (never passes)
+        if basis_value is None or float(basis_value) <= 0:
+            reasons.append("RISK_BASIS_UNKNOWN")
+        elif net_risk is None:
+            reasons.append("RISK_NET_UNKNOWN")
+        elif net_risk > float(basis_value) * max_risk_pct / 100.0 + 1e-9:
+            reasons.append("RISK_ABOVE_POLICY")
     rem = round(vol - vstep, 10)
     out = {"version": VERSION, "side": side, "entry": entry, "exit_reference": exit_ref, "sl_requested": sl, "tp_requested": tp, "sl": sl_a, "tp": tp_a,
            "aligned_to_tick": tick, "point": point, "lots": vol, "sizing_mode": sizing_mode, "risk_basis": risk_basis, "risk_pct": risk_pct, "budget": budget,
@@ -274,7 +284,7 @@ class ManualPad:
             raise PlanError("SETTINGS_CHANGED_REPLAN")
         if not p["execution_eligible"]:
             raise PlanError("PLAN_NOT_ELIGIBLE:" + ",".join(p["reason_codes"]))
-        mode = self.gateway.common_checks(side=p["side"], entry=p["entry"], require_real=False)
+        mode = self.gateway.common_checks(side=p["side"], entry=p["entry"], require_real=False, source="MANUAL_USER")
         if mode == "SIGNALS":
             raise PlanError("MODE_SIGNALS_NO_EXECUTION")
         if p["tp"] is None and mode != "PAPER":
@@ -283,6 +293,8 @@ class ManualPad:
             raise PlanError("TP_REQUIRED_FOR_REAL")
         return mode, p
 
+    RETRY_STATES = ("PLANNED", "BLOCKED", "REJECTED")       # w2 (I0783): states an ENTRY may (still) be executed from
+
     def execute(self, iid: str, action_revision: int = 1) -> dict:
         it = self.intent(iid)
         if not it:
@@ -290,12 +302,27 @@ class ManualPad:
         mode_now = self.modes.gate(self.bridge.account_key)["mode"]
         key = f"{mode_now}|{self.bridge.account_key}|{it['instrument']}|{iid}|ENTRY|{int(action_revision)}"
         now = iso(utcnow())
+        if it["state"] not in self.RETRY_STATES:
+            # w2 (I0783): one intent = at most one entry - after OPEN / OPEN_PARTIAL / UNKNOWN_RECONCILE / EXECUTING another revision
+            # opened another position (only BLOCKED / REJECTED - no position - may be retried)
+            ex = self.db.one("SELECT state, result FROM manual_actions WHERE idempotency_key=?", (key,))
+            if ex:
+                return {"status": "DUPLICATE", "reason": "ACTION_ALREADY_ATTEMPTED", "state": ex["state"], "result": json.loads(ex["result"] or "null")}
+            return {"status": "DUPLICATE", "reason": "INTENT_ALREADY_EXECUTED", "state": it["state"]}
         try:
             self.db.execute("INSERT INTO manual_actions(idempotency_key, intent_id, action, action_revision, state, created_at, updated_at) VALUES (?,?,?,?,?,?,?)",
                             (key, iid, "ENTRY", int(action_revision), "PREPARED", now, now))
         except sqlite3.IntegrityError:
             ex = self.db.one("SELECT state, result FROM manual_actions WHERE idempotency_key=?", (key,))
             return {"status": "DUPLICATE", "reason": "ACTION_ALREADY_ATTEMPTED", "state": ex["state"], "result": json.loads(ex["result"] or "null")}
+        # w2 (I0783): atomic claim of the intent (two concurrent revisions: only one passes); an exception after it leaves EXECUTING
+        marks = ",".join("?" * len(self.RETRY_STATES))
+        claimed = self.db.execute(f"UPDATE manual_intents SET state='EXECUTING', version=version+1, updated_at=? WHERE intent_id=? AND state IN ({marks})",
+                                  (now, iid, *self.RETRY_STATES))
+        if not claimed:
+            cur = (self.db.one("SELECT state FROM manual_intents WHERE intent_id=?", (iid,)) or {}).get("state")
+            self._act(key, "DUPLICATE", {"reason": "INTENT_ALREADY_EXECUTED", "state": cur})
+            return {"status": "DUPLICATE", "reason": "INTENT_ALREADY_EXECUTED", "state": cur}
         try:
             mode, p = self._validate_manual(it)
         except (PlanError, ValueError) as exc:
@@ -312,7 +339,7 @@ class ManualPad:
             c.execute("""INSERT INTO order_attempts(attempt_id, entry_key, decision_id, setup_id, created_at, updated_at, mode, account_key, symbol, side, volume,
                          price_requested, sl, tp, client_tag, state, initiated_by) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                       (attempt_id, "MANUAL:" + key, iid, iid, now, now, mode, self.bridge.account_key, it["instrument"], p["side"], p["lots"], p["entry"],
-                       p["sl"], p["tp"], ("MQM:" + iid[4:])[:20], "PREPARED", "MANUAL_USER"))
+                       p["sl"], p["tp"], client_tag(iid), "PREPARED", "MANUAL_USER"))   # w2 (I0727): = the comment _send gives the order
         self._act(key, "SENDING", {"attempt_id": attempt_id})
         if mode == "PAPER":
             res = self.paper.open(attempt_id=attempt_id, decision=d, side=p["side"], lots=p["lots"], sl=p["sl"], targets=d["risk"]["targets"],
@@ -410,15 +437,33 @@ class ManualPad:
         return {"ticket": mp["position_ticket"], "status": "DONE", "closed": vol, "remaining": max(0.0, left), "net": net}
 
     def reconcile(self) -> dict:
-        """UNKNOWN entries: look for the position by client tag in the terminal; never re-send."""
+        """UNKNOWN entries: look for the position by client tag in the terminal; never re-send.
+
+        w2 (I0727): matched like the position manager does - comment STARTS WITH the stored tag, own magic number, in the open positions
+        or as an entry deal of the history. Rows written before w2 stored 'MQM:...' while the order carried client_tag(intent) - for them
+        the sent tag is matched too (rows are not migrated)."""
         rows = self.db.query("SELECT * FROM manual_actions WHERE state='UNKNOWN'")
+        magic = int(self.cfg_store.get().mt5.magic_number)
+        with self.bridge._lock:
+            positions = list(self.bridge.positions or [])
+            deals = list(getattr(self.bridge, "deals", None) or [])
         fixed = []
         for r in rows:
             res = json.loads(r["result"] or "{}")
-            att = self.db.one("SELECT client_tag FROM order_attempts WHERE attempt_id=?", (res.get("attempt_id"),))
-            pos = next((p for p in (self.bridge.positions or []) if att and p.get("comment") == att["client_tag"]), None)
-            if pos:
-                self._act(r["idempotency_key"], "FILLED", dict(res, reconciled_ticket=pos["ticket"]))
+            att = self.db.one("SELECT client_tag, setup_id FROM order_attempts WHERE attempt_id=?", (res.get("attempt_id"),))
+            if not att or not att.get("client_tag"):
+                continue
+            tags = [att["client_tag"]]
+            if att["client_tag"].startswith("MQM:") and att.get("setup_id"):
+                tags.append(client_tag(att["setup_id"]))
+
+            def mine(x, tags=tags):
+                return int(x.get("magic") or 0) == magic and any(str(x.get("comment") or "").startswith(t) for t in tags)
+            pos = next((p for p in positions if mine(p)), None)
+            deal = None if pos else next((d for d in deals if d.get("entry") == 0 and mine(d)), None)
+            if pos or deal:
+                ticket = pos["ticket"] if pos else deal.get("position_id")
+                self._act(r["idempotency_key"], "FILLED", dict(res, reconciled_ticket=ticket))
                 fixed.append(r["idempotency_key"])
         return {"unknown": len(rows), "reconciled": fixed, "resend": "NEVER"}
 

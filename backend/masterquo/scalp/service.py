@@ -22,6 +22,11 @@ from . import adapters, hedge as hedge_mod, indicators as ind, replay, sessions,
 TFS = {"M1": 1, "M5": 5, "M15": 15, "M30": 30, "H1": 60}
 
 
+# w2 (I0031): the outcome definition of scalp_shadow rows (_outcome / replay.walk on M1, net of costs, full TP1/TP2/BE cycle) - the same
+# label ML scalp samples and NSS reuse; shown in the views next to the other ledgers' policies, never stored
+LABEL_POLICY = "SCALP_REPLAY_NET_V1"
+
+
 class ScalpService:
     def __init__(self, cfg_store, bridge, db, bus, log, news=None, forecast=None):
         self.cfg_store, self.bridge, self.db, self.bus, self.log, self.news, self.forecast = cfg_store, bridge, db, bus, log, news, forecast
@@ -434,6 +439,7 @@ class ScalpService:
             for k in ("reasons", "plan", "gates", "hedge", "outcome"):
                 if r.get(k):
                     r[k] = json.loads(r[k])
+            r["label_policy"] = LABEL_POLICY          # w2 (I0031): view field only (the stored row is unchanged)
         return rows
 
     def summary(self) -> dict:
@@ -490,8 +496,11 @@ class ScalpService:
         try:
             m1 = self.bridge.bars("M1", 400, include_forming=False)
             pt = float((self.bridge.symbol_info or {}).get("point") or 0.01)
-            ans = self.forecast._ask({"cmd": "scalp_forecast", "m1": [dict({k: b[k] for k in ("open_utc", "o", "h", "l", "c", "tv")},
-                                                                         spread_price=b["spread"] * pt if b.get("spread") is not None else None) for b in m1]}, 20)
+            # 1.46 (I0754): as_of of the request - the worker answers STALE_DATA when the newest closed M1 is older than the feed allows
+            # (a frozen feed after a disconnect was published as the current task-A forecast)
+            ans = self.forecast._ask({"cmd": "scalp_forecast", "as_of": iso(utcnow()),
+                                      "m1": [dict({k: b[k] for k in ("open_utc", "o", "h", "l", "c", "tv")},
+                                                  spread_price=b["spread"] * pt if b.get("spread") is not None else None) for b in m1]}, 20)
             return ans
         except Exception as exc:
             return {"status": "UNAVAILABLE", "reason": f"{type(exc).__name__}: {exc}"[:200]}

@@ -31,6 +31,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import kronos_setup as KS  # noqa: E402 - same process helpers (streaming, RESULT parsing, python detection)
 
 TOTAL = 5
+DEFAULT_PORT = 8765          # = masterquo.paths.DEFAULT_PORT (1.46 arch I0125; this tool runs without the backend on sys.path)
 TORCH = {"chronos2": "torch==2.14.1", "granite_ttm": "torch==2.14.1", "tirex2": "torch==2.14.1", "tabicl": "torch==2.14.1"}        # = the pins of the requirement files
 VENV = {"chronos2": ".venv_chronos2", "granite_ttm": ".venv_granite", "tirex2": ".venv_tirex2", "tabicl": ".venv_tabicl"}
 RUNTIME = {"tabicl": "tabicl_runtime"}                     # 1.41: TabICLv2 has its own runtime package (classifier, not a forecaster)
@@ -224,7 +225,7 @@ def set_profile_8gb(root: Path) -> str:
         raw = json.loads(cfg_p.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return "brak config.json (pierwsze uruchomienie bota jeszcze nie nastąpiło) – wybierz profil LOW_MEMORY_8GB w Diagnostyka → Zasoby"
-    port = int(((raw.get("server") or {}).get("port")) or 8765)
+    port = int(((raw.get("server") or {}).get("port")) or DEFAULT_PORT)
     try:
         with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/v1/health", timeout=2):
             return "bot działa – wybierz profil LOW_MEMORY_8GB w panelu Diagnostyka → Zasoby (konfiguracji działającego bota nie zmieniam)"

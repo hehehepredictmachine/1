@@ -233,9 +233,12 @@ def probe(item: dict, rt, inst: str) -> dict:
                                                          "(F-17), tylko replay z CLI", "detail": {"runs": n, "selected": cid}}
         if mid.startswith("mm_") and item["kind"] == "TRAINED":
             from ..mm import artifacts as MA
-            mm_ids = {"mm_gpr": "gpr_logret", "mm_hdc": "hdc_dir3", "mm_event_engine": "event_engine_dir3", "mm_ste_flownet": "ste_flownet_ret"}
-            aid = (MA.read_pointer(inst).get("active") or {}).get(mm_ids[mid])
-            arts = MA.list_artifacts(inst, mm_ids[mid])
+            from ..quant import ids as I
+            art = I.mm_artifact_of(mid)          # 1.46 arch (I0009): from quant/ids.ALIASES (mm_gpr -> gpr_logret ...), was a copied dict
+            if art is None:
+                raise KeyError(mid)              # as the dict lookup before: an unknown TRAINED mm_ row is an ERROR probe, never a guess
+            aid = (MA.read_pointer(inst).get("active") or {}).get(art)
+            arts = MA.list_artifacts(inst, art)
             if mid == "mm_gpr":
                 # 1.46: the live GP is refitted on the current window every M5 bar; a promoted artifact is never loaded (validation reference)
                 ref = f"; artefakt {aid} (walidacja walk-forward) nie jest wczytywany – tylko referencja walidacji" if aid else ""

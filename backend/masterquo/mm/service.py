@@ -94,6 +94,10 @@ class MMService:
             except Exception as exc:  # noqa: BLE001 - SHADOW loop never stops the bot
                 self.loop["last_error"] = f"{type(exc).__name__}: {exc}"[:200]
 
+    def ledger(self, inst: str):
+        """1.46 arch (I0089): the instrument's prediction ledger (public name of _ledger; read by GET /api/v1/mm/ledger)."""
+        return self._ledger(inst)
+
     def _ledger(self, inst: str):
         from .ledger import Ledger
         if inst not in self._ledgers:

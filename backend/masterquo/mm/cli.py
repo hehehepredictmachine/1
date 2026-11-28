@@ -1,12 +1,14 @@
 """`python -m masterquo mm ...` - master models CLI (SHADOW / OBSERVE; no command here can send, modify or close an order).
 
   mm inventory --instrument XAUUSD [--json]          module inventory with evidence-based statuses (latest run merged)
-  mm train --dataset DIR --instrument XAUUSD --out DIR [--profile quick|standard] [--only a,b] [--cancel-file F]
+  mm train --dataset DIR --instrument XAUUSD --out DIR [--profile quick|standard] [--only a,b] [--cancel-file F] [--no-activate]
   mm status --instrument XAUUSD                      latest run summary + artifacts + SHADOW pointer
   mm buzoa-bench [--budget N]                        BUZOA vs PSO/DE/Random on the benchmark functions
   mm mathbench-export --out DIR                      float64 MLP weights / vectors / float32 ONNX + Python checks (copy to MQL5\\Files\\PMW_MathFidelity)
   mm export-fixtures --out DIR [--parity NATIVE]     frozen inputs + Python reference outputs for the MQL5 self-test (Kalman/GPR/HDC/breakout);
-                                                     with --parity compares PMW_MM_NATIVE.txt written by PMW_MM_SelfTest.mq5
+                                                     with --parity compares PMW_MM_NATIVE.txt written by PMW_MM_SelfTest.mq5;
+                                                     exit code 0 = NATIVE_PARITY_PASS, 3 = NATIVE_NOT_EXECUTED (no native file yet),
+                                                     1 = NATIVE_PARITY_FAIL / NATIVE_OUTPUT_INVALID
   mm rollback --instrument XAUUSD --model MODEL_ID   previous SHADOW artifact back (pointer only)
 """
 from __future__ import annotations
@@ -17,6 +19,7 @@ import sys
 from pathlib import Path
 
 INSTR = ("XAUUSD", "BTC")      # instrument ids of the allowlist (never an MT5 broker symbol); always explicit, no default
+PARITY_RC = {"NATIVE_PARITY_PASS": 0, "NATIVE_NOT_EXECUTED": 3}      # export-fixtures --parity; anything else (FAIL / INVALID) -> 1
 
 
 def main(argv: list[str]) -> int:
@@ -33,6 +36,8 @@ def main(argv: list[str]) -> int:
     t.add_argument("--only", default="")
     t.add_argument("--seed", type=int, default=20261025)
     t.add_argument("--cancel-file")
+    t.add_argument("--no-activate", action="store_true",
+                   help="1.46: artefakty VALIDATED_SHADOW zapisane bez przesuwania wskaźnika SHADOW (profil TEST_INSTALACJI)")
     s = sub.add_parser("status")
     s.add_argument("--instrument", choices=INSTR, required=True)
     b = sub.add_parser("buzoa-bench")
@@ -57,7 +62,8 @@ def main(argv: list[str]) -> int:
         return 0
     if a.cmd == "train":
         from . import orchestrator
-        rep = orchestrator.run(a.dataset, a.instrument, a.out, a.profile, [x for x in a.only.split(",") if x] or None, a.seed, a.cancel_file)
+        rep = orchestrator.run(a.dataset, a.instrument, a.out, a.profile, [x for x in a.only.split(",") if x] or None, a.seed, a.cancel_file,
+                               activate=not a.no_activate)
         print(json.dumps({"run_id": rep.get("run_id"), "status": rep.get("status"), "jobs": {k: v["status"] for k, v in (rep.get("jobs") or {}).items()}},
                          ensure_ascii=False))
         return 0 if rep.get("status") == "FINISHED" else 1
@@ -82,7 +88,8 @@ def main(argv: list[str]) -> int:
                 fixtures.export(Path(a.out))
             res = fixtures.parity(Path(a.parity), Path(a.out))
             print(json.dumps(res, indent=1))
-            return 0 if res["status"] in ("NATIVE_PARITY_PASS", "NATIVE_NOT_EXECUTED") else 1
+            # 1.46 (I0489): NATIVE_NOT_EXECUTED returned 0 like a pass - a script could not tell "parity checked" from "never run"
+            return PARITY_RC.get(res["status"], 1)
         print(json.dumps(fixtures.export(Path(a.out)), indent=1))
         return 0
     if a.cmd == "rollback":

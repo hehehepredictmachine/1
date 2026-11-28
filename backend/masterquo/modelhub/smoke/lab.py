@@ -10,8 +10,9 @@ Training is grouped and cached on the Ctx of the area process (27 producers must
 * ONE Structure Intelligence run for all SI families (structure_task.train with a temporary in-memory smoke profile);
 * ONE MarketBridge on a FakeMT5 terminal (the composition of the demo bot) for the live paths: LabService.tick -> quant.adapters.lab,
   StructureIntelligenceService (forecast, quote collector, M1 cell with the flow sections), NeuralScalpService.
-Honesty gates (TEST_ONLY / FIXTURE_ONLY artefacts never selected for SHADOW / OBSERVE) are correct behaviour and reported as such; a
-producer without a live path is shown in `predict` exactly in the state the bot's own code returns.
+Honesty gates (TEST_ONLY / FIXTURE_ONLY artefacts never selected for SHADOW / OBSERVE; a TEST_ONLY Markov fit not loaded into the SI cell,
+decision D23 (b) - its live path is exercised with the test opt-in PMW_FLOW_ALLOW_TEST_MODEL=1 set in this area process only) are correct
+behaviour and reported as such; a producer without a live path is shown in `predict` exactly in the state the bot's own code returns.
 """
 from __future__ import annotations
 
@@ -751,13 +752,31 @@ def _flow_train(ctx) -> dict:
 
 
 def _flow_cell(ctx) -> dict:
-    """M1 cell of the SI snapshot (StructureIntelligenceService.cell -> FlowSections.update/summary) on the bridge bars."""
+    """M1 cell of the SI snapshot (StructureIntelligenceService.cell -> FlowSections.update/summary) on the bridge bars.
+
+    The smoke Markov fit is TEST_ONLY (synthetic export). Decision D23 (b): the bot does not load it into the SI cell - checked first on a
+    separate FlowSections without the test opt-in (MODEL_TEST_ONLY_NOT_LOADED expected); the SI service cell is then built with
+    PMW_FLOW_ALLOW_TEST_MODEL=1 so the live path of a loaded model is exercised. The variable is set only around that call (a flow key reads
+    it once, when it is created) in this area process, which runs on a temporary MASTERQUO_DATA_DIR."""
+    import os
+
+    from ...lab.flow_context import service as FS
     lv = _shared(ctx, "live", _live)
     si = _shared(ctx, "si_service", _si_service)
     _shared(ctx, "flow_train", _flow_train)
     m1 = lv.bars("M1")
-    cell = si.cell("M1", m1, lv.tick, [], INST)
-    return {"cell": cell, "flow": cell.get("flow") or {}}
+    prev = os.environ.pop(FS.ALLOW_TEST_MODEL_ENV, None)
+    try:
+        fs = FS.FlowSections()                                  # without the opt-in: the bot's own D23 gate
+        gated = fs.summary(fs.update(INST, "M1", m1, lv.point, lv.tick))
+        os.environ[FS.ALLOW_TEST_MODEL_ENV] = "1"
+        cell = si.cell("M1", m1, lv.tick, [], INST)
+    finally:
+        if prev is None:
+            os.environ.pop(FS.ALLOW_TEST_MODEL_ENV, None)
+        else:
+            os.environ[FS.ALLOW_TEST_MODEL_ENV] = prev
+    return {"cell": cell, "flow": cell.get("flow") or {}, "gated": gated}
 
 
 def _flow_markov3(ctx, out: dict) -> dict:
@@ -776,7 +795,8 @@ def _flow_markov3(ctx, out: dict) -> dict:
                          f"{(m3.get('dev_eval') or {}).get('n')}, rola TEST_ONLY" if m3.get("fit") else "brak",
                          f"train-markov: odmowa {tr['rc_blocked']} '{tr['blocked']}', wynik {({k: mk.get(k) for k in ('role', 'dir')})}")
     ctx.step = "artifact"
-    d = Path((FT.root(INST) / "markov" / "latest.txt").read_text(encoding="utf-8").strip())
+    # the fit just trained (train-markov "dir"); a TEST_ONLY fit does not replace a RESEARCH model in latest.txt (D23)
+    d = Path(mk.get("dir") or (FT.root(INST) / "markov" / "latest.txt").read_text(encoding="utf-8").strip())
     raw = json.loads((d / "markov3.json").read_text(encoding="utf-8"))
     back = json.loads(json.dumps(MK.Markov3.from_dict(raw).to_dict(), default=float))
     diff = [k for k in raw if raw[k] != back.get(k)]
@@ -786,22 +806,27 @@ def _flow_markov3(ctx, out: dict) -> dict:
                             f"MarkovDiff.load (sha256 emisji) K_eff={md.bins.get('K_effective')}",
                             f"różne pola po odczycie {diff}, K_eff {md.bins.get('K_effective')}")
     ctx.step = "predict"
-    fl = _shared(ctx, "flow_cell", _flow_cell)["flow"]
+    fc = _shared(ctx, "flow_cell", _flow_cell)
+    fl = fc["flow"]
+    g3 = (fc["gated"] or {}).get("markov3") or {}
     m3o = fl.get("markov3") or {}
     nxt = m3o.get("next") or {}
-    out["predict"] = check(fl.get("status") == "OK" and m3o.get("state") in ("DOWN", "FLAT", "UP") and _dist_ok(nxt),
+    out["predict"] = check(g3.get("status") == "MODEL_TEST_ONLY_NOT_LOADED" and "next" not in g3
+                           and fl.get("status") == "OK" and m3o.get("state") in ("DOWN", "FLAT", "UP") and _dist_ok(nxt),
+                           f"bramka D23: bez PMW_FLOW_ALLOW_TEST_MODEL komórka M1 nie wczytuje modelu TEST_ONLY ({g3.get('status')}, dane "
+                           f"{g3.get('data_kind')}) – zgodnie z bramką; z PMW_FLOW_ALLOW_TEST_MODEL=1 (tylko proces obszaru na folderze tymczasowym) "
                            f"StructureIntelligenceService.cell('M1') → FlowSections (MarketBridge/FakeMT5): Markov3 stan {m3o.get('state')}, następny "
                            f"{({k: round(v, 3) for k, v in nxt.items()})}, wiadra {sorted((fl.get('buckets') or {}).keys())}",
-                           f"komórka M1 flow: {fl.get('status')} markov3 {m3o}")
+                           f"bramka D23 bez zmiennej: {g3}; komórka M1 flow z PMW_FLOW_ALLOW_TEST_MODEL=1: {fl.get('status')} markov3 {m3o}")
     ctx.step = "contract"
-    marker = any(k in m3o for k in ("role", "data_kind", "model_role", "artifact_role"))
-    out["contract"] = check(_dist_ok(nxt) and marker,
+    marker = m3o.get("model_role") == "TEST_ONLY" and m3o.get("data_kind") == "SYNTHETIC_TEST"
+    gate_keys = {"status", "model_role", "data_kind", "reason"} <= set(g3)
+    out["contract"] = check(_dist_ok(nxt) and marker and gate_keys,
                             f"słownik markov3 z oznaczeniem pochodzenia (model_role {m3o.get('model_role')}, data_kind {m3o.get('data_kind')}), rozkład next "
-                            "suma 1; ładowanie modelu TEST_ONLY do komórki SI bez zmian – decyzja D23",
-                            "Markov3/MarkovDiff z danych SYNTHETIC_TEST (rola TEST_ONLY) aktywuje się sam i trafia do komórki SI bez oznaczenia: "
-                            "lab/flow_context/cli.py:298 zapisuje latest.txt bez względu na rolę, markov.py:184 artefakt bez data_kind/roli, "
-                            "service.py:40-52 ładuje bez sprawdzenia, service.py:108-110 publikuje markov3 bez znacznika (SI/NSS/flow reaction mają "
-                            f"bramkę TEST_ONLY; rozkład next {'poprawny' if _dist_ok(nxt) else 'NIEPOPRAWNY'})")
+                            "suma 1; decyzja D23 (b): model TEST_ONLY nie trafia do komórki SI (MODEL_TEST_ONLY_NOT_LOADED z model_role, data_kind, "
+                            "reason), wczytywany tylko ze zmienną testów PMW_FLOW_ALLOW_TEST_MODEL=1",
+                            f"markov3 bez oznaczenia TEST_ONLY/SYNTHETIC_TEST ({m3o.get('model_role')}/{m3o.get('data_kind')}), stan bramki bez pól "
+                            f"model_role/data_kind/reason ({sorted(g3)}) albo rozkład next {'poprawny' if _dist_ok(nxt) else 'NIEPOPRAWNY'}")
     return out
 
 

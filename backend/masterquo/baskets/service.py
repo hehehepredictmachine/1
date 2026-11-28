@@ -30,7 +30,6 @@ from .. import paths
 from . import catalog as CAT
 from . import detectors as D
 from . import hedge as HG
-from . import otc as OTC
 from . import rules as RL
 from .hyperliquid import Hyperliquid, HLError, TF_S as HL_TF_S
 
@@ -280,6 +279,19 @@ class Ledger:
             c.execute("INSERT OR REPLACE INTO hedge_plans VALUES(?,?,?,?,?,?,?,?)", (row["plan_id"], row["strategy_id"], row["basket_id"], row["profile_id"],
                                                                                    row["created_at"], row["state"], row.get("reason"), json.dumps(row.get("plan"), default=str)))
 
+    def proposed_hedges(self, profile: str, since: float) -> list[dict]:
+        """1.46 (I0763): plans of the PROPOSED hedge proposals of a profile created at / after `since` (read-only)."""
+        out = []
+        with self._c() as c:
+            for r in c.execute("SELECT plan FROM hedge_plans WHERE profile_id=? AND state='PROPOSED' AND created_at>=?", (profile, float(since))):
+                try:
+                    pl = json.loads(r["plan"]) if r["plan"] else None
+                except ValueError:
+                    continue
+                if isinstance(pl, dict):
+                    out.append(pl)
+        return out
+
     def declared(self, profile: str) -> list[dict]:
         with self._c() as c:
             return [{**json.loads(r["data"]), "id": r["id"], "status": r["status"]} for r in      # 1.46: the row id wins over an "id" in the payload
@@ -315,7 +327,7 @@ class Ctx:
         self.reason: str | None = None
         self.oi: list[tuple[float, float]] = []
         self.flow: list[dict] = []
-        self.cache: dict[str, tuple[float, list]] = {}
+        self.cache: dict[str, tuple] = {}                  # coin|tf -> (fetched_at, bars, requested n) - 1.46 (I0767): n remembered
         self.sfb: dict | None = None                       # TASK 018: last SFB snapshot meta for this scope (diagnostic)
 
 
@@ -326,10 +338,8 @@ class BasketService:
         self.base.mkdir(parents=True, exist_ok=True)
         self.ledger = Ledger(self.base / "ledger.sqlite")
         self.hl = hl or Hyperliquid()
-        # TASK 020: OTC retired - the feed object stays only as a lazy, read-only legacy history reader (never polled by cycle())
-        # 1.46: really lazy now (property `otc`) - it used to mkdir <data>/otc/import and read the whole ticks.jsonl at every start
-        self._otc_base = (self.base / "otc") if data_dir else None
-        self._otc_feed: OTC.OTCFeed | None = None
+        # TASK 020: OTC retired. 1.46 (I0112): the unreachable OTC feed reader (baskets/otc.py) was removed - nothing read it but tests;
+        # the stored history in <data>/otc is left on disk untouched (never read, written or created here)
         self.ctx: dict[str, Ctx] = {}
         self.hedge_state: dict[str, dict] = {}
         self._stop = threading.Event()
@@ -350,17 +360,6 @@ class BasketService:
             self.sfb_blocked = requested
         self.sfb = StrategyFilterBucket(cfg)
         self.sfb.mode_requested = requested
-
-    @property
-    def otc(self) -> OTC.OTCFeed:
-        """Retired Gold OTC legacy history reader (read-only), created on first use."""
-        if self._otc_feed is None:
-            self._otc_feed = OTC.OTCFeed(self._otc_base) if self._otc_base else OTC.OTCFeed()
-        return self._otc_feed
-
-    @otc.setter
-    def otc(self, feed) -> None:
-        self._otc_feed = feed
 
     # ------------------------------------------------------------------ settings
     def _read(self):
@@ -613,14 +612,19 @@ class BasketService:
         sec = HL_TF_S[tf]
         now = time.time()
         got = c.cache.get(key)
-        if got and now < (got[1][-1]["t"] + 2 * sec + 5 if got[1] else got[0] + 30):
-            return got[1]
+        # 1.46 (I0767): the cache remembers how many candles were requested - a smaller auxiliary request first (M15 300, BTC M1 400,
+        # ETH M5 300) truncated the signal series of the same coin / TF for the whole session; one refetch of max(n, cached n) per key
+        # and candle, the answer is the tail of n
+        have = (got[2] if len(got) > 2 else len(got[1])) if got else 0
+        if got and have >= n and now < (got[1][-1]["t"] + 2 * sec + 5 if got[1] else got[0] + 30):
+            return got[1][-n:]
+        want = max(n, have)
         try:
-            b = self.hl.candles(coin, tf, n)
+            b = self.hl.candles(coin, tf, want)
         except HLError:
-            return got[1] if got else []
-        c.cache[key] = (now, b)
-        return b
+            return got[1][-n:] if got else []
+        c.cache[key] = (now, b, want)
+        return b[-n:]
 
     def _crypto(self, st: dict) -> dict:
         pr = st["profiles"]["CRYPTO_FOMO_PERPS"]
@@ -689,10 +693,11 @@ class BasketService:
                      "funding": {k: (self.hl_ctx.get(k) or {}).get("funding_rate") for k in ("BTC", "ETH")}, "fees": pr.get("fees") or {},
                      "pair_map": pair_map, "same_underlying": same_underlying, "symbol": coin,
                      "market": {"mark": hc.get("mark"), "oracle": hc.get("oracle"), "funding_rate_1h": hc.get("funding_rate"), "open_interest": hc.get("open_interest")}}
-            out[coin] = self._run_ctx(c, st, lambda tf, n=500, c=c, coin=coin: self._hl_bars(c, coin, tf, min(n, 500)), q, extra)
+            # 1.46 (I0768): up to 600 candles (was 500 = 41.7 h of M5): CP_SMC_09 (previous UTC day) needs the whole previous day + today
+            out[coin] = self._run_ctx(c, st, lambda tf, n=600, c=c, coin=coin: self._hl_bars(c, coin, tf, min(n, 600)), q, extra)
         return out
 
-    # 1.46: the dead `_otc` scanner (retired in TASK 020, never called by cycle()) was removed - the legacy history reader stays (`otc`)
+    # 1.46: the dead `_otc` scanner and the OTC feed reader (retired in TASK 020, never called by cycle()) were removed
 
     # ------------------------------------------------------------------ evaluation
     def _regime(self, F: D.Feat) -> dict:
@@ -770,7 +775,8 @@ class BasketService:
                 continue
             x = {"htf": c.feats.get(s["context_timeframes"][0]) if s["context_timeframes"] else None,
                  "htf2": c.feats.get(s["context_timeframes"][1]) if len(s["context_timeframes"]) > 1 else None,
-                 "bench": extra.get("bench"), "oi": c.oi, "flow": c.flow, "now": time.time()}
+                 "bench": extra.get("bench"), "oi": c.oi, "flow": c.flow, "now": time.time(),
+                 "tf_s": TF_S[tf]}                     # 1.46 (I0765): signal candle length - the OI rules read ΔOI at the candle close
             p = self.params(s, st)
             fam = RL.FAMILIES[s["family_id"]]
             hit = None
@@ -858,9 +864,30 @@ class BasketService:
         scale = sum(25 for v in comp.values() if v is not None)
         out = {"setup_score": round(100 * score / scale, 1) if scale else None, "setup_components": comp, "model_agreement": None, "p_event_raw": None,
                "p_event_calibrated": None, "calibration_status": "UNCALIBRATED"}
+        out.update(self._score_info(s, h, comp))
         if s["profile_id"] == "FOREX_MT5" and s["plan_type"] == "PositionPlan":
             out.update(self._quant(c, s, side, plan))
         return out
+
+    @staticmethod
+    def _score_info(s: dict, h, comp: dict) -> dict:
+        """1.46 (I0718, informational only): setup_score above is computed exactly as in 1.46.0 - a declared but missing HTF context
+        counts 0 and 'confirmation' / 'data' are constants of 25 - because it ranks the plans of one event, is the SH score and the Quant
+        feature ctx:heuristic_score. Changing it would change which plan reaches SH / which Quant hold applies, so the honest reading is
+        shown NEXT to it: the basis of every component, a DATA_INCOMPLETE flag and a score of the measured components only."""
+        declared = bool(s["context_timeframes"])
+        htf = ("NOT_DECLARED" if not declared else "MISSING_CONTEXT" if h is None else "ALIGNED" if comp["htf_alignment"] else "NOT_ALIGNED")
+        measured = {"room": comp["room"]} if comp["room"] is not None else {}
+        if htf in ("ALIGNED", "NOT_ALIGNED"):
+            measured["htf_alignment"] = comp["htf_alignment"]
+        return {"setup_flags": ["DATA_INCOMPLETE"] if htf == "MISSING_CONTEXT" else [],
+                "setup_components_basis": {"htf_alignment": htf, "room": "MEASURED" if comp["room"] is not None else "NO_TARGET",
+                                           "confirmation": "CONSTANT_25 (brak definicji – stała, nie pomiar)",
+                                           "data": "CONSTANT_25 (brak definicji – stała, nie pomiar)"},
+                "setup_score_measured": round(100 * sum(measured.values()) / (25 * len(measured)), 1) if measured else None,
+                "setup_score_note": "setup_score (ranking zdarzenia, wynik w SH, cecha Quant) liczony jak w 1.46.0: brak kontekstu HTF = 0, "
+                                    "confirmation / data = stałe 25; setup_score_measured = tylko zmierzone składniki – informacyjnie, "
+                                    "nie wpływa na ranking ani na wejścia"}
 
     def _quant(self, c: Ctx, s: dict, side: int, plan: dict) -> dict:
         q = getattr(self.rt, "quant", None)
@@ -872,8 +899,11 @@ class BasketService:
                   "decision_ts": time.time(), "candidate_key": f"{s['strategy_id']}|{plan['entry_ref']}"}
             a = q.assess(cd, log_row=False)
             conf = a.get("confidence") or {}
+            ev_id = (a.get("event") or {}).get("event_id")
+            # 1.46 (I0539): the Quant event id (text, e.g. TP1_BEFORE_STOP) is 'quant_event_id' - NOT 'event_id' (that is the basket event of
+            # the signal) and not a probability. 'p_event' = the same value, a deprecated alias kept for one version (ledger rows / readers)
             return {"p_event_raw": conf.get("p_event_raw"), "confidence_state": conf.get("state"), "confidence_source": "TabICLv2 (Quant)",
-                    "p_event": (a.get("event") or {}).get("event_id")}
+                    "quant_event_id": ev_id, "p_event": ev_id}
         except Exception as exc:  # noqa: BLE001
             return {"confidence_state": "ERROR", "confidence_reason": f"{type(exc).__name__}: {exc}"[:120]}
 
@@ -920,6 +950,9 @@ class BasketService:
                       if c.sfb else {})}
             if self.ledger.add_signal(sig):
                 n += 1
+                # 1.46 (I0769): a signal published in THIS cycle counts for the next event groups (max_pending_intents / cooldown) -
+                # open_ was read once before the loop, so several events of one cycle could exceed the basket limit
+                open_.append(sig)
                 self._publish(sig)
             c.state[s["strategy_id"]] = {"state": "SIGNAL", "event_id": eid, "side": sig["side"], "bar_t": F.t[F.i]}
             for x in ranked[1:]:
@@ -1009,6 +1042,8 @@ class BasketService:
         ctx = {"strategy": s, "p": self.params(s, st), "F": F, "htf": c.feats.get(s["context_timeframes"][0]) if s["context_timeframes"] else None,
                "now": time.time(), **extra}
         try:
+            if s["profile_id"] == "FOREX_MT5":
+                ctx["layers_used"] = self._fx_layers(s, ctx["p"])
             r = HG.PLANNERS[s["family_id"]](ctx)
         except RL.Unavailable as exc:
             why = self._unsupplied_input(s, ctx)
@@ -1026,6 +1061,18 @@ class BasketService:
             pid = "HP-" + hashlib.sha256(f"{sid}|{json.dumps(r.get('plan'), sort_keys=True, default=str)}".encode()).hexdigest()[:14]
             self.ledger.add_hedge({"plan_id": pid, "strategy_id": sid, "basket_id": s["basket_id"], "profile_id": s["profile_id"], "created_at": time.time(),
                                    "state": "PROPOSED", "reason": r.get("reason"), "plan": r.get("plan")})
+
+    def _fx_layers(self, s: dict, p: dict) -> dict:
+        """1.46 (I0763): protection layers already proposed per parent id - PROPOSED FX hedge plans of the last timeout_bars x signal TF
+        (read-only; open HEDGE legs of the exposure are counted by the planner). The FX planners compare it with p['max_layers']."""
+        since = time.time() - float(p.get("timeout_bars", 6)) * TF_S[s["signal_timeframe"]]
+        out: dict = {}
+        for pl in self.ledger.proposed_hedges(s["profile_id"], since):
+            par = pl.get("parent")
+            pid = par.get("id") if isinstance(par, dict) else None
+            if pid is not None:
+                out[pid] = out.get(pid, 0) + 1
+        return out
 
     @staticmethod
     def _unsupplied_input(s: dict, ctx: dict) -> str | None:
