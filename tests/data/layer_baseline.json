@@ -33,6 +33,7 @@
   "ledgers": "L4 SHADOW/badania",
   "licensing": "L1 dane",
   "localapi": "L0 liście",
+  "locks": "L0 liście",
   "marketdata": "L1 dane",
   "markets": "L1 dane",
   "masterquo": "L0 liście",
@@ -77,7 +78,7 @@
   "wf32_services": "L5 kompozycja",
   "zones": "L2 analizy"
  },
- "count": 63,
+ "count": 53,
  "edges": {
   "masterquo.analytics.liquidity_cli -> masterquo.extind.cli": {
    "from": "L2 analizy",
@@ -138,7 +139,7 @@
     "FUNCTION"
    ],
    "lines": [
-    366
+    377
    ]
   },
   "masterquo.decision.coordinator -> masterquo.quant.ids": {
@@ -148,7 +149,7 @@
     "FUNCTION"
    ],
    "lines": [
-    65
+    67
    ]
   },
   "masterquo.decision.coordinator -> masterquo.tsfm.predictions": {
@@ -158,7 +159,7 @@
     "FUNCTION"
    ],
    "lines": [
-    361
+    372
    ]
   },
   "masterquo.engine.service -> masterquo.extind.knowledge": {
@@ -191,16 +192,6 @@
     101
    ]
   },
-  "masterquo.forecast.dataset_state -> masterquo.training.core": {
-   "from": "L4 SHADOW/badania",
-   "to": "L5 kompozycja",
-   "kinds": [
-    "FUNCTION"
-   ],
-   "lines": [
-    30
-   ]
-  },
   "masterquo.forecast.export -> masterquo.diagnostics": {
    "from": "L4 SHADOW/badania",
    "to": "L5 kompozycja",
@@ -214,16 +205,6 @@
     407,
     407,
     407
-   ]
-  },
-  "masterquo.forecast.export -> masterquo.studio.lock": {
-   "from": "L4 SHADOW/badania",
-   "to": "L5 kompozycja",
-   "kinds": [
-    "FUNCTION"
-   ],
-   "lines": [
-    360
    ]
   },
   "masterquo.forecast.export -> masterquo.training.requirements": {
@@ -276,16 +257,6 @@
    "lines": [
     57,
     251
-   ]
-  },
-  "masterquo.marketdata.export -> masterquo.studio.lock": {
-   "from": "L1 dane",
-   "to": "L5 kompozycja",
-   "kinds": [
-    "FUNCTION"
-   ],
-   "lines": [
-    122
    ]
   },
   "masterquo.marketdata.sources -> masterquo.diagnostics": {
@@ -360,17 +331,6 @@
     231
    ]
   },
-  "masterquo.ml.offline -> masterquo.training.promotion": {
-   "from": "L4 SHADOW/badania",
-   "to": "L5 kompozycja",
-   "kinds": [
-    "FUNCTION"
-   ],
-   "lines": [
-    114,
-    114
-   ]
-  },
   "masterquo.ml.service -> masterquo.training.core": {
    "from": "L4 SHADOW/badania",
    "to": "L5 kompozycja",
@@ -378,18 +338,7 @@
     "FUNCTION"
    ],
    "lines": [
-    374
-   ]
-  },
-  "masterquo.ml.service -> masterquo.training.promotion": {
-   "from": "L4 SHADOW/badania",
-   "to": "L5 kompozycja",
-   "kinds": [
-    "FUNCTION"
-   ],
-   "lines": [
-    341,
-    413
+    376
    ]
   },
   "masterquo.modelhub.check -> masterquo.runtime": {
@@ -401,26 +350,6 @@
    "lines": [
     135,
     141
-   ]
-  },
-  "masterquo.modelhub.families.base -> masterquo.training.core": {
-   "from": "L4 SHADOW/badania",
-   "to": "L5 kompozycja",
-   "kinds": [
-    "FUNCTION"
-   ],
-   "lines": [
-    212
-   ]
-  },
-  "masterquo.modelhub.families.run -> masterquo.training.dataset_ref": {
-   "from": "L4 SHADOW/badania",
-   "to": "L5 kompozycja",
-   "kinds": [
-    "FUNCTION"
-   ],
-   "lines": [
-    148
    ]
   },
   "masterquo.modelhub.families.service -> masterquo.training.core": {
@@ -515,16 +444,6 @@
     21
    ]
   },
-  "masterquo.procs -> masterquo.training.core": {
-   "from": "L0 liście",
-   "to": "L5 kompozycja",
-   "kinds": [
-    "FUNCTION"
-   ],
-   "lines": [
-    160
-   ]
-  },
   "masterquo.quant.service -> masterquo.training.core": {
    "from": "L4 SHADOW/badania",
    "to": "L5 kompozycja",
@@ -532,7 +451,7 @@
     "FUNCTION"
    ],
    "lines": [
-    670
+    751
    ]
   },
   "masterquo.sh.context -> masterquo.lab.context_ind.fractal": {
@@ -678,26 +597,6 @@
     290,
     290,
     309
-   ]
-  },
-  "masterquo.trainhub.pipeline -> masterquo.training.dataset_ref": {
-   "from": "L4 SHADOW/badania",
-   "to": "L5 kompozycja",
-   "kinds": [
-    "FUNCTION"
-   ],
-   "lines": [
-    194
-   ]
-  },
-  "masterquo.trainhub.registry -> masterquo.training.dataset_ref": {
-   "from": "L4 SHADOW/badania",
-   "to": "L5 kompozycja",
-   "kinds": [
-    "FUNCTION"
-   ],
-   "lines": [
-    89
    ]
   },
   "masterquo.zones.hlze -> masterquo.strategies.base": {

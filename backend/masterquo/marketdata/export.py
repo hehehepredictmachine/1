@@ -118,9 +118,9 @@ def run(source, store: Store, instrument: str, symbol: str, *, timeframes=EXPORT
     if _os.environ.get("MQ_STUDIO_DATA_DIR"):        # inside a Studio job: the Studio queue already holds the shared export lock
         return _run(source, store, instrument, symbol, timeframes=timeframes, mode=mode, start=start, end=end, lookback_days=lookback_days,
                     cfg=cfg, progress=progress, cancel=cancel, sleep=sleep, now=now)
-    from ..paths import data_dir
-    from ..studio.lock import Lock
-    lk = Lock(data_dir() / "locks" / "pmw_export.lock", app="PepeMarketWizard-export")
+    # 1.46 arch Etap 4: the lock service 'export:<inst>' (masterquo/locks.export_lock - the same PMW-LOCK-1 file as the Studio queue)
+    from .. import locks as LK
+    lk = LK.export_lock(LK.EXPORT_APP_BOT)
     ok, owner = lk.acquire(f"export:{instrument}")
     if not ok:
         # 1.46: the user sees display names (was the raw lock id 'PepeMarketWizard-export' + the old brand); lock app ids stay unchanged

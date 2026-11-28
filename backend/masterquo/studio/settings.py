@@ -129,8 +129,10 @@ def bot_config(s: dict | None = None) -> BotConfig | None:
 
 
 def export_lock_path(s: dict | None = None) -> Path:
-    """ONE lock file shared by every Studio instance and the bot's export (in the bot's data dir)."""
-    return bot_data_dir(s) / "locks" / "pmw_export.lock"
+    """ONE lock file shared by every Studio instance and the bot's export (in the bot's data dir) - the lock service 'export[:<inst>]'
+    (masterquo/locks.export_lock_path, 1.46 arch Etap 4: the same <bot data>/locks/pmw_export.lock)."""
+    from ..locks import export_lock_path as _elp
+    return _elp(bot_data_dir(s))
 
 
 if __name__ == "__main__":

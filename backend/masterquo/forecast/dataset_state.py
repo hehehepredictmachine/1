@@ -27,7 +27,8 @@ def dataset_state(ds: Path) -> dict:
         return {"state": "LEGACY_COMPLETE" if has_meta else "MISSING", "usable": has_meta}
     s = st.get("status")
     if s == "IN_PROGRESS":
-        from ..training.core import _pid_alive
+        # 1.46 arch Etap 4: owner liveness of the lock service (masterquo/locks.pid_alive = training.core._pid_alive)
+        from ..locks import pid_alive as _pid_alive
         if not _pid_alive(int(st.get("pid") or 0)):
             s = "INTERRUPTED"
     return {"state": s, "usable": s == "COMPLETE" and has_meta, "reason": st.get("reason"), "progress": st.get("progress"),

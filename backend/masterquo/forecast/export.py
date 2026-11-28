@@ -344,7 +344,7 @@ def export_candles(months: int = 12, out_dir: str | None = None, dst_model: str 
 
 
 EXPORT_LOCK_WAIT_S = 600.0        # wait for another MT5 history export before refusing (exit code 9)
-EXPORT_LOCK_HEARTBEAT_S = 30.0    # studio.lock.Lock treats a heartbeat older than 120 s as a stale (dead) owner
+EXPORT_LOCK_HEARTBEAT_S = 30.0    # the export lock (locks.OwnerLock) treats a heartbeat older than 120 s as a stale (dead) owner
 
 
 class _export_lock:
@@ -362,9 +362,9 @@ class _export_lock:
             return self
         import threading
 
-        from ..paths import data_dir
-        from ..studio.lock import Lock
-        self.lk = Lock(data_dir() / "locks" / "pmw_export.lock", app="PepeMarketWizard-export")
+        # 1.46 arch Etap 4: the lock service 'export:<inst>' (masterquo/locks.export_lock - the same PMW-LOCK-1 file as the Studio queue)
+        from .. import locks as LK
+        self.lk = LK.export_lock(LK.EXPORT_APP_BOT)
         end, said = time.monotonic() + EXPORT_LOCK_WAIT_S, False
         while True:
             ok, owner = self.lk.acquire(self.job)

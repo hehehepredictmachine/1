@@ -26,6 +26,7 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
+from .. import locks as _LOCKS
 from .. import paths
 
 EXEC = ("NIE_URUCHOMIONE", "W_TOKU", "UKONCZONE", "POMINIETE", "BLAD_TECHNICZNY", "ANULOWANE")
@@ -122,121 +123,54 @@ def task(tid: str, instrument: str, kind: str, title: str, **kw) -> dict:
             "integration": "NIEZAPISANY", "detail": None, "reasons": [], "artifacts": [], **kw}
 
 
-# ------------------------------------------------------------------ single runner lock
+# ------------------------------------------------------------------ the one lock service of training and export (1.46 arch Etap 4)
+# PMW-LOCKS-1 (masterquo/locks.py): names 'train[:<inst>]' (RUNNING.lock below), 'export[:<inst>]' (data/locks/pmw_export.lock, PMW-LOCK-1),
+# 'registry:<file>' (OS lock of a registry / activation pointer, trainhub reg_lock), 'job:<name>' (in-process job lock, ML in the bot).
+# The implementation is the L0 leaf masterquo/locks.py so that the data / model layers take the same lock without importing this
+# orchestrator; this module is the entry of the service and keeps its functions as thin wrappers (same files, records and answers).
+LOCKS = _LOCKS
+
+
+def lock_spec(name: str) -> dict:
+    """Description of a named lock of the service ('train:XAUUSD', 'export:BTC', 'registry:<file>', 'job:ml:train')."""
+    return _LOCKS.spec(name)
+
+
+# ------------------------------------------------------------------ single runner lock ('train[:<inst>]' - one runner for all instruments)
 def lock_path() -> Path:
     return training_dir() / "RUNNING.lock"
 
 
-def _pid_alive(pid: int) -> bool:
-    if pid <= 0:
-        return False
-    if os.name == "nt":
-        import ctypes
-        h = ctypes.windll.kernel32.OpenProcess(0x1000, False, pid)       # PROCESS_QUERY_LIMITED_INFORMATION
-        if not h:
-            return False
-        code = ctypes.c_ulong()
-        ctypes.windll.kernel32.GetExitCodeProcess(h, ctypes.byref(code))
-        ctypes.windll.kernel32.CloseHandle(h)
-        return code.value == 259                                        # STILL_ACTIVE
-    try:
-        os.kill(pid, 0)
-        return True
-    except OSError:
-        return False
-
-
-def _proc_start(pid: int) -> int | None:
-    """1.46: creation time of a live process (Windows: FILETIME from GetProcessTimes; Linux: start ticks from /proc/<pid>/stat). Together
-    with the pid it identifies the process - a pid reused by another program after a crash / restart has another start. None = unreadable."""
-    if pid <= 0:
-        return None
-    try:
-        if os.name == "nt":
-            import ctypes
-            from ctypes import wintypes
-            k = ctypes.windll.kernel32
-            k.OpenProcess.restype = wintypes.HANDLE
-            h = k.OpenProcess(0x1000, False, pid)                       # PROCESS_QUERY_LIMITED_INFORMATION
-            if not h:
-                return None
-            try:
-                c, e, kt, ut = (wintypes.FILETIME() for _ in range(4))
-                if not k.GetProcessTimes(wintypes.HANDLE(h), ctypes.byref(c), ctypes.byref(e), ctypes.byref(kt), ctypes.byref(ut)):
-                    return None
-                return (int(c.dwHighDateTime) << 32) | int(c.dwLowDateTime)
-            finally:
-                k.CloseHandle(wintypes.HANDLE(h))
-        txt = Path(f"/proc/{int(pid)}/stat").read_text(encoding="ascii", errors="replace")
-        return int(txt.rsplit(")", 1)[1].split()[19])                   # field 22 (starttime); the name in (...) may hold spaces
-    except Exception:  # noqa: BLE001 - no /proc (macOS) or no access: identity unknown
-        return None
-
-
-def pid_alive_as(pid: int, started) -> bool:
-    """1.46: `pid` lives AND is the process that recorded `started` (_proc_start). Without a recorded start (files of older versions) or when
-    the start cannot be read, only the pid is checked (as before)."""
-    if not _pid_alive(pid):
-        return False
-    if started is None:
-        return True
-    cur = _proc_start(pid)
-    return cur is None or str(cur) == str(started)
-
-
-def lock_owner_alive(cur: dict | None) -> bool:
-    """1.46: the training lock is held only by its LIVE owner - a lock left by a killed runner (closed console, hard kill after 120 s,
-    restart) whose pid now belongs to another program no longer blocks training (and the training center does not wait up to 12 h)."""
-    try:
-        return bool(cur) and pid_alive_as(int(cur.get("pid") or 0), cur.get("started"))
-    except (AttributeError, TypeError, ValueError):
-        return False
-
+# process identity of a lock owner - moved to masterquo/locks.py (alias zgodności: panel, training center, export_job, Studio, families)
+_pid_alive = _LOCKS.pid_alive
+_proc_start = _LOCKS.proc_start
+pid_alive_as = _LOCKS.pid_alive_as
+lock_owner_alive = _LOCKS.owner_alive
 
 LOCK_GUARD_TIMEOUT_S = 30.0
+
+
+def _run_lock() -> _LOCKS.RunLock:
+    """RUNNING.lock through the lock service (locks.RunLock - moved from here, same code). The functions of THIS module are late-bound:
+    callers and tests that replace write_json_atomic / lock_owner_alive / _proc_start / now on training.core keep doing so."""
+    return _LOCKS.RunLock(lock_path(), guard_timeout_s=LOCK_GUARD_TIMEOUT_S, write=lambda p, d: write_json_atomic(p, d),
+                          owner_alive_fn=lambda cur: lock_owner_alive(cur), proc_start_fn=lambda pid: _proc_start(pid), now_fn=lambda: now())
 
 
 def _lock_guard():
     """1.46 (I0063): OS file lock (registry_io.file_lock: fcntl.flock / msvcrt.locking, released by the OS when a process dies) around the
     read -> check -> write of RUNNING.lock. Without it two runners starting at the same moment both read "free" and both wrote themselves
     as the owner (both trained). The owner record stays in RUNNING.lock (readers: panel, training center, API) - unchanged format."""
-    from ..registry_io import file_lock
-    return file_lock(training_dir() / "RUNNING.lock.lck", timeout_s=LOCK_GUARD_TIMEOUT_S)
+    return _run_lock().guard()
 
 
 def acquire_lock(run_id: str) -> str | None:
-    """Returns None when acquired, otherwise the id of the run in progress."""
-    p = lock_path()
-
-    def locked() -> str | None:
-        try:
-            cur = json.loads(p.read_text(encoding="utf-8"))
-            pid = int(cur.get("pid", 0))
-            # 1.46: ANY other live process holds the lock - also for the same run_id (1.45.0 handed the lock of a running run to a second
-            # process resuming the same run: two processes wrote one run folder / state.json)
-            if lock_owner_alive(cur) and (pid != os.getpid() or cur.get("run_id") != run_id):   # re-entrant only for the SAME run in the SAME process
-                return cur.get("run_id")
-        except (OSError, ValueError, TypeError, AttributeError):
-            pass
-        # 1.46: + start time of the owner (the pid alone was taken for a live owner after pid reuse)
-        write_json_atomic(p, {"run_id": run_id, "pid": os.getpid(), "started": _proc_start(os.getpid()), "at": now()})
-        return None
-    with contextlib.ExitStack() as stack:
-        try:
-            stack.enter_context(_lock_guard())
-        except TimeoutError:                            # Windows: another process is inside the guard for > 30 s
-            return "BLOKADA_TRENINGU_ZAJETA"
-        return locked()
+    """Returns None when acquired, otherwise the id of the run in progress ('BLOKADA_TRENINGU_ZAJETA' when the guard stays taken)."""
+    return _run_lock().acquire(run_id)
 
 
 def release_lock(run_id: str) -> None:
-    p = lock_path()
-    try:
-        with _lock_guard():                             # 1.46 (I0063): never removes a lock another runner has just written
-            if json.loads(p.read_text(encoding="utf-8")).get("run_id") == run_id:
-                p.unlink()
-    except (OSError, ValueError, TimeoutError):
-        pass
+    _run_lock().release(run_id)
 
 
 # ------------------------------------------------------------------ resources

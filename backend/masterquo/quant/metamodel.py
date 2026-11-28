@@ -559,8 +559,10 @@ def pointer(inst: str, *, strict: bool = False) -> dict:
 
 
 def _ptr_lock(inst: str):
-    from .. import registry_io as RIO
-    return RIO.file_lock(RIO.lock_for(_ptr(inst)))
+    # 1.46 arch Etap 4: the lock service 'registry:<ACTIVE.json>' (masterquo/locks.registry_lock = registry_io.file_lock(lock_for(...)),
+    # the same ACTIVE.lock file and timeout)
+    from .. import locks as LK
+    return LK.registry_lock(_ptr(inst))
 
 
 def activate(inst: str, task_hash: str, ver: str) -> dict:

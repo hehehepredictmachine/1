@@ -144,8 +144,9 @@ def books_from_archive(db_path, symbol, limit: int | None = None, levels: int | 
 def _dataset_ref(inst: str, data: dict, dm: dict, bars: list) -> dict:
     """arch146 I0064: DatasetRef (training/dataset_ref.py) of the data this run fitted on - source as load_data read it (Store archive,
     live bot bars, book archive, text corpus), hash / range / rows of the fitted slice, data kind and the Store quality report."""
+    # 1.46 arch Etap 4: DatasetRef from the L0 leaf (training/dataset_ref.py is its alias)
+    from ...contracts import dataset_ref as DR
     from ...marketdata.store import iso
-    from ...training import dataset_ref as DR
     rng = dm.get("range")
     if rng and all(isinstance(x, (int, float)) for x in rng):
         rng = [iso(float(x)) for x in rng]

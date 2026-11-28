@@ -38,11 +38,13 @@ LAYERS: dict[str, int] = {
     # client of the CLI entry points (I0075/I0080, imports only config/paths), the model-runtime environment registry (I0117, paths only)
     "contracts": 0, "settings_store": 0, "localapi": 0, "runtimes": 0,
     # (after the merge of training_studio) the registry of the server's training child processes and kill_tree (I0100, stdlib only;
-    # one lazy helper import of training.core._proc_start - baseline edge, candidate for L0 in Etap 4)
+    # Etap 4: the process identity helper comes from locks.proc_start - the upward edge to training.core is gone)
     "procs": 0,
     # (Etap 4 pkt 4) the cost resolver PMW-COSTS-1: declared per-track cost policies + arithmetic, standard library only - every track
     # (risk / sh in L3, scalp / evaluation / quant in L4) imports it without an upward edge
     "costs": 0,
+    # (Etap 4, training) the one lock service of training and export PMW-LOCKS-1 (stdlib + paths + registry_io; entry: training.core.LOCKS)
+    "locks": 0,
     # L1 - data and external I/O: database, MT5 bridge, market data stores, data quality, news, notifications, licence
     "db": 1, "mt5": 1, "marketdata": 1, "data": 1, "markets": 1, "news": 1, "notify": 1, "licensing": 1, "stats": 1,
     # L2 - analyses (deterministic, no order path)
