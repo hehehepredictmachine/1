@@ -357,9 +357,15 @@ def _close(ref, nat, tol: float) -> bool:
 
 
 def _events_equal(rb, nb, tol: float) -> bool:
+    """Same events (bar time, direction) and zone bounds within tol. Zone bounds that could not be compared (a malformed native row:
+    missing columns, text bounds - _maxdiff None) never count as equal: no PASS without the comparison having run."""
     try:
-        return (isinstance(nb, list) and len(rb) == len(nb) and all(int(r[0]) == int(n[0]) and r[1] == n[1] for r, n in zip(rb, nb))
-                and (_maxdiff(rb, nb, (2, 3)) or 0.0) <= tol)
+        if not (isinstance(nb, list) and len(rb) == len(nb) and all(int(r[0]) == int(n[0]) and r[1] == n[1] for r, n in zip(rb, nb))):
+            return False
+        if not rb:
+            return True
+        d = _maxdiff(rb, nb, (2, 3))
+        return d is not None and d <= tol
     except (IndexError, TypeError, ValueError):
         return False
 
