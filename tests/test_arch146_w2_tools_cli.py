@@ -99,7 +99,7 @@ class TestStudioCliArgs(unittest.TestCase):
             return 0
 
         err = io.StringIO()
-        with mock.patch.object(M, "_load_dotenv", side_effect=lambda: calls.append("dotenv")), \
+        with mock.patch.object(M, "_load_dotenv", side_effect=lambda *a, **k: calls.append("dotenv")), \
                 mock.patch("masterquo.licensing.gate.LicenseGate", Gate), mock.patch("masterquo.studio.app.serve", serve), \
                 redirect_stderr(err):
             rc = M.main(["studio", *args])
@@ -128,6 +128,46 @@ class TestStudioCliArgs(unittest.TestCase):
         self.assertEqual(calls, ["dotenv", "gate", ("serve", None)])
         rc, calls, _ = self._main("--extra", "x", "--port", "8792")       # other arguments were ignored before - still ignored
         self.assertEqual((rc, calls[-1]), (0, ("serve", 8792)))
+
+    def test_error_messages_state_the_accepted_range_with_0_default(self):
+        _, _, err = self._main("--port", "abc")
+        self.assertIn("0-65535 (0 = domyślny port Studio)", err)
+        _, _, err = self._main("--port", "70000")
+        self.assertIn("0-65535 (0 = domyślny port Studio)", err)
+        _, _, err = self._main("--port")
+        self.assertIn("0-65535 (0 = domyślny port Studio)", err)
+
+    def test_dotenv_never_points_studio_data_dir_at_the_bot_folder(self):
+        # uwaga recenzenta: MASTERQUO_DATA_DIR z .env (folder bota) wygrywał z os.environ.setdefault(..., S.data_dir()) w
+        # studio/app.create_app ("Studio's own registries / logs - never the bot's"); pozostałe zmienne .env są brane jak w innych gałęziach
+        from masterquo import __main__ as M
+        tmp = Path(tempfile.mkdtemp(prefix="mq_t_w2tc_dotenv_"))
+        seen = {}
+
+        class Gate:
+            locked = False
+
+            def evaluate(self, refresh_net=False):
+                return {"message": ""}
+
+        def serve(port=None):
+            seen.update(data=os.environ.get("MASTERQUO_DATA_DIR"), fred=os.environ.get("FRED_API_KEY"))
+            return 0
+        try:
+            (tmp / ".env").write_text(f"MASTERQUO_DATA_DIR={tmp / 'bot_data'}\nFRED_API_KEY=fred-from-dotenv\n", encoding="utf-8")
+            env = {k: v for k, v in os.environ.items() if k not in ("MASTERQUO_DATA_DIR", "FRED_API_KEY")}
+            with mock.patch.dict(os.environ, env, clear=True), mock.patch.object(M.paths, "ROOT_DIR", tmp), \
+                    mock.patch("masterquo.licensing.gate.LicenseGate", Gate), mock.patch("masterquo.studio.app.serve", serve):
+                self.assertEqual(M.main(["studio"]), 0)
+                self.assertIsNone(os.environ.get("MASTERQUO_DATA_DIR"))
+            self.assertIsNone(seen["data"])                     # create_app sets it to the Studio's own data_studio
+            self.assertEqual(seen["fred"], "fred-from-dotenv")
+            # the other branches still take MASTERQUO_DATA_DIR from .env (behaviour unchanged)
+            with mock.patch.dict(os.environ, env, clear=True), mock.patch.object(M.paths, "ROOT_DIR", tmp):
+                M._load_dotenv()
+                self.assertEqual(os.environ.get("MASTERQUO_DATA_DIR"), str(tmp / "bot_data"))
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
 
 
 # ============================================================================================== I0132 `masterquo train-all`

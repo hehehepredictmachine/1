@@ -228,10 +228,10 @@ def cmd_stop(args) -> int:
     return 4
 
 
-def _load_dotenv() -> None:
+def _load_dotenv(skip: tuple[str, ...] = ()) -> None:
     """Optional <root>/.env (never packaged). Only secrets_store.DOTENV_VARS are taken (ANTHROPIC_API_KEY, ANTHROPIC_MODEL,
     MASTERQUO_DATA_DIR, FRED_API_KEY, TELEGRAM_BOT_TOKEN - 1.46 arch I0118: one list, the same as before); a variable already set in the
-    environment wins."""
+    environment wins. `skip`: names this entry point never takes from .env (the Studio: MASTERQUO_DATA_DIR)."""
     from .secrets_store import DOTENV_VARS
     f = paths.ROOT_DIR / ".env"
     if not f.exists():
@@ -241,7 +241,7 @@ def _load_dotenv() -> None:
         if not line or line.startswith("#") or "=" not in line:
             continue
         k, v = (x.strip() for x in line.split("=", 1))
-        if k in DOTENV_VARS and v and not os.environ.get(k):
+        if k in DOTENV_VARS and k not in skip and v and not os.environ.get(k):
             os.environ[k] = v.strip('"')
 
 
@@ -270,20 +270,21 @@ def _studio_port(rest: list[str]) -> int | None:
     """1.46 (I0137): `studio [--port N]` (also --port=N). Was read by hand (int(argv[argv.index('--port') + 1])) - a missing or non-numeric
     value ended in a traceback. N: integer 0-65535 (0 = the Studio default, as serve() treated it before); other arguments are ignored
     as before. ValueError carries the Polish message for the console (exit code 2)."""
+    rng = "liczba całkowita 0-65535 (0 = domyślny port Studio)"
     ap = argparse.ArgumentParser(prog="masterquo studio", add_help=False, exit_on_error=False)
     ap.add_argument("--port", default=None)
     try:
         ns, _ignored = ap.parse_known_args(rest)
     except (argparse.ArgumentError, SystemExit):
-        raise ValueError("--port wymaga wartości: liczba całkowita 1-65535, np. --port 8780") from None
+        raise ValueError(f"--port wymaga wartości: {rng}, np. --port 8780") from None
     if ns.port is None:
         return None
     try:
         p = int(ns.port)
     except ValueError:
-        raise ValueError(f"--port musi być liczbą całkowitą 1-65535, podano {ns.port!r}") from None
+        raise ValueError(f"--port: oczekiwana {rng}, podano {ns.port!r}") from None
     if not 0 <= p <= 65535:
-        raise ValueError(f"--port poza zakresem 1-65535: {p}")
+        raise ValueError(f"--port poza zakresem: {rng}, podano {p}")
     return p
 
 
@@ -327,7 +328,9 @@ def main(argv=None) -> int:
         from .montecarlo.cli import main as mc_main
         return mc_main(argv[1:])
     if argv[:1] == ["studio"]:                       # 1.33 Pepe Data & Training Studio - separate app (own port / data dir, no bot Runtime)
-        _load_dotenv()                               # 1.46 (I0137): like every other branch (.env MASTERQUO_DATA_DIR; the .bat sets its own first)
+        # 1.46 (I0137): .env like every other branch, EXCEPT MASTERQUO_DATA_DIR - there it is the BOT's folder, while the Studio's own
+        # registries / logs live in its data_studio (studio/app.create_app setdefault; 36_STUDIO.bat and the desktop set it themselves)
+        _load_dotenv(skip=("MASTERQUO_DATA_DIR",))
         try:
             port = _studio_port(argv[1:])
         except ValueError as e:
