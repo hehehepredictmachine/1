@@ -11,6 +11,7 @@ przypadków), w tym z lukami, duplikatami, cofnięciami czasu, złą geometrią,
 """
 from __future__ import annotations
 
+import ast
 import hashlib
 import math
 import random
@@ -833,6 +834,130 @@ class TestOfflineReportsSameAsBefore(unittest.TestCase):
         for case in range(3000):
             o, h, lo, c = _price_tuple(rnd, True)
             self.assertEqual(EX._geometry_ok(o, h, lo, c), _legacy_export_geometry_ok(o, h, lo, c), case)
+
+
+# ============================================================================================ Kronos / TSFM input, Kronos steps, Monte Carlo
+class _Calendar:
+    def expected_missing(self, t_raws, tf_sec):
+        miss = sum(max(0, (b - a) // tf_sec - 1) for a, b in pairwise(t_raws))
+        return {"missing_open_slots": miss, "ambiguous_slots": 0}
+
+
+def _kronos_bars(rnd, n, sec, faults):
+    out = []
+    for t in _times(rnd, n, sec, 1_793_000_000 // sec * sec, faults):
+        o, h, lo, c = _price_tuple(rnd, faults, bad=(NAN, INF, -1.0, 0.0, None, True, False, "2400.5"))
+        b = {"t_raw": t + 7200, "open_utc": datetime.fromtimestamp(t, UTC).isoformat().replace("+00:00", "Z"), "o": o, "h": h, "l": lo, "c": c,
+             "tv": rnd.choice((0, 50, 50, 50)), "rv": rnd.choice((0, 3, 3)), "closed": True}
+        if faults and rnd.random() < 0.05:
+            b["closed"] = False
+        if faults and rnd.random() < 0.03:
+            b["t_raw"] = None
+        if faults and rnd.random() < 0.02:
+            b["open_utc"] = rnd.choice((None, ""))
+        out.append(b)
+        if faults and rnd.random() < 0.05:
+            out.append(dict(b, c=b["c"] if rnd.random() < 0.5 else 2399.0))     # identical or conflicting copy
+    return out
+
+
+class TestKronosMonteCarloSameAsBefore(unittest.TestCase):
+    def test_kronos_input_check(self):
+        from masterquo.kronos import quality as KQ
+        rnd = random.Random(440)
+        statuses = Counter()
+        for case in range(400):
+            sec = rnd.choice((60, 300, 900, 3600))
+            bars = _kronos_bars(rnd, rnd.choice((0, 1, 5, 60, 250)), sec, case % 4 != 0)
+            last = max((b["t_raw"] - 7200 for b in bars if b.get("t_raw") is not None), default=1_793_000_000)
+            kw = {"now_utc": last + sec + rnd.choice((0, 30, 2 * sec + 60, 2 * sec + 61, 10**5)), "lookback": rnd.choice((10, 120, 512)),
+                  "min_context": rnd.choice((0, 32, 200)), "calendar": rnd.choice((None, _Calendar())),
+                  "volume_setting": rnd.choice(("AUTO", "NONE", "TICK")), "max_staleness_bars": rnd.choice((2.0, 1e9))}
+            got, exp = _outcome(KQ.check, bars, sec, **kw), _outcome(_legacy_kronos_check, bars, sec, **kw)
+            self.assertEqual(got, exp, f"case {case}")
+            statuses[got[0] if got[0] == "raise" else re.search(r"'status': '(\w+)'", got[1]).group(1)] += 1
+        for st in ("OK", "BLOCK", "STALE", "WARMUP"):
+            self.assertGreater(statuses[st], 0, statuses)
+
+    def test_kronos_finite_pos_alias(self):
+        from masterquo.kronos import quality as KQ
+        rnd = random.Random(441)
+        pool = (1.0, 2400.5, 0, -3, NAN, INF, None, True, False, "2400.5", 7)
+        for _ in range(500):
+            xs = tuple(rnd.choice(pool) for _ in range(4))
+            self.assertEqual(KQ._finite_pos(*xs), _legacy_finite_pos(*xs), xs)
+
+    def test_kronos_forecast_step_geometry(self):
+        from masterquo.data import quality as Q
+        rnd = random.Random(442)
+        for case in range(3000):
+            o, h, lo, c = _price_tuple(rnd, True)
+            self.assertEqual(Q.ohlc_crossed(o, h, lo, c), _legacy_kronos_step_bad(o, h, lo, c), case)
+        src = (BACKEND / "kronos" / "service.py").read_text(encoding="utf-8")
+        self.assertIn("if DQ.ohlc_crossed(o, h, low, c):", src)               # the step loop calls exactly this
+
+    def test_montecarlo_history(self):
+        import numpy as np
+        from masterquo.montecarlo import engine as E
+        rnd = random.Random(443)
+        for case in range(250):
+            tf = rnd.choice(("M1", "M5", "M15"))
+            sec = E.TF_S[tf]
+            ts = _times(rnd, rnd.choice((0, 1, 30, 400)), sec, 1_793_000_000 // sec * sec, case % 3 != 0)
+            bars = []
+            for t in ts:
+                o, h, lo, c = _price_tuple(rnd, case % 3 != 0, bad=(NAN, INF, -1.0, 0.0, "2400.5", "nan"))
+                b = {rnd.choice(("open_utc", "open_utc", "t")): rnd.choice((t, datetime.fromtimestamp(t, UTC).isoformat())), "o": o, "h": h, "l": lo, "c": c}
+                k = rnd.random()
+                if k < 0.4:
+                    b["spread"] = rnd.choice((10, 12.5))
+                elif k < 0.6:
+                    b["spread_price"] = 0.15
+                if case % 50 == 0 and rnd.random() < 0.05:
+                    b["c"] = None                                               # float(None) raises the same TypeError
+                if rnd.random() < 0.02:
+                    b.pop("open_utc", None)
+                    b.pop("t", None)
+                bars.append(b)
+            as_of = (ts[-1] if ts else 1_793_000_000) + sec * rnd.choice((0, 1, 2, 20))
+            kw = {"tf": tf, "point": rnd.choice((0.01, None, 0.001)), "window": rnd.choice((6000, 50)), "stale_after_s": rnd.choice((None, 120.0))}
+
+            def run(fn, bars=bars, as_of=as_of, kw=kw):
+                try:
+                    h = fn(bars, as_of, **kw)
+                except Exception as exc:  # noqa: BLE001 - the exception type and text are part of the parity
+                    return ("raise", type(exc).__name__, str(exc))
+                return ("ok", h.tf, h.flags, h.dropped, h.data_hash, [np.asarray(getattr(h, f)).tolist() for f in ("t", "o", "h", "lo", "c")],
+                        np.isnan(h.spread).tolist(), np.nan_to_num(h.spread, nan=-1.0).tolist())
+            self.assertEqual(run(E.history), run(_legacy_mc_history), f"case {case}")
+
+
+# ============================================================================================ one place for the geometry rule
+class TestNoInlineGeometryLeft(unittest.TestCase):
+    """The tracks moved to the core do not keep their own copy of the OHLC bound expressions (a new copy = a new, unchecked policy)."""
+    FILES = ("quant/snapshot.py", "marketdata/quality.py", "forecast/export.py", "kronos/quality.py", "kronos/service.py", "montecarlo/engine.py",
+             "sh/context.py")
+
+    @staticmethod
+    def _body_bounds(tree) -> list[int]:
+        """Lines of code (not docstrings / comments) that compare against max(o, c) / min(o, c)."""
+        out = []
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Compare):
+                for part in (node.left, *node.comparators):
+                    for sub in ast.walk(part):
+                        if (isinstance(sub, ast.Call) and isinstance(sub.func, ast.Name) and sub.func.id in ("max", "min") and len(sub.args) == 2
+                                and all(isinstance(a, ast.Name) for a in sub.args) and [a.id for a in sub.args] == ["o", "c"]):
+                            out.append(node.lineno)
+        return out
+
+    def test_no_inline_bounds(self):
+        for rel in self.FILES:
+            src = (BACKEND / rel).read_text(encoding="utf-8")
+            self.assertEqual(self._body_bounds(ast.parse(src)), [], rel)
+            self.assertIn("quality as DQ", src, rel)
+        core = ast.parse((BACKEND / "data" / "quality.py").read_text(encoding="utf-8"))
+        self.assertTrue(self._body_bounds(core))                               # the rule lives in the core
 
 
 if __name__ == "__main__":

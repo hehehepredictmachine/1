@@ -24,6 +24,8 @@ from datetime import datetime, timezone
 
 import numpy as np
 
+from ..data import quality as DQ
+
 VERSION = "PMW-MC-1"
 VARIANTS = ("IID", "BLOCK", "REGIME")
 MIN_BARS = 300
@@ -75,7 +77,8 @@ def history(bars: list[dict], as_of: float, tf: str = "M1", point: float | None 
         if t + step > as_of + 1e-6:
             continue
         o, h, lo, c = (float(b[k]) for k in ("o", "h", "l", "c"))
-        if not (o > 0 and h >= max(o, c) and lo <= min(o, c) and h >= lo and all(math.isfinite(x) for x in (o, h, lo, c))):
+        # Etap 4 (PMW-DQ-CORE-1): the shared checks of data/quality.py, this policy unchanged (positive open, bounds, finite after float())
+        if not (DQ.prices_positive(o) and DQ.ohlc_ordered(o, h, lo, c) and DQ.finite_values(o, h, lo, c, mode="number")):
             dropped += 1
             continue
         sp = b.get("spread_price")
