@@ -954,8 +954,10 @@ class TestStudioLaunchVerified(_Base):
         from masterquo.api import app as A
         rt = make_rt()
         fn = ep(A.create_app(rt, PORT), "POST", "/api/v1/studio/launch")
+        # Etap 4 krok B: studio_launch moved to api/routes/studio.py and reads STUDIO_LAUNCH_WAIT_S of that module
+        from masterquo.api.routes import studio
         with mock.patch("subprocess.Popen", mock.MagicMock(return_value=proc)), mock.patch("urllib.request.urlopen", urlopen), \
-                mock.patch.object(A, "STUDIO_LAUNCH_WAIT_S", wait):
+                mock.patch.object(studio, "STUDIO_LAUNCH_WAIT_S", wait):
             return fn(), rt
 
     def test_route_stays_sync(self):

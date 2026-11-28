@@ -253,7 +253,9 @@ class StudioLaunchBreakaway(_Base):
         rt = make_rt()
         app = A.create_app(rt, PORT)
         fn = ep(app, "POST", "/api/v1/studio/launch")
-        with mock.patch.object(A, "os", _OsNT()), mock.patch("subprocess.Popen", popen), \
+        # Etap 4 krok B: studio_launch moved to api/routes/studio.py and reads `os` of that module
+        from masterquo.api.routes import studio
+        with mock.patch.object(studio, "os", _OsNT()), mock.patch("subprocess.Popen", popen), \
                 mock.patch("urllib.request.urlopen", side_effect=OSError("not running")):
             return fn()
 

@@ -632,7 +632,7 @@ class TestI0100ProcessRegistry(unittest.TestCase):
         self.assertEqual(sorted(PR._python_tree(100, procs, start.get)), [101, 104])
 
     def test_api_and_panel_export_register_their_children(self):
-        api = (_env.ROOT / "backend" / "masterquo" / "api" / "app.py").read_text(encoding="utf-8")
+        api = _env.api_sources()                          # Etap 4 krok B: the training route block is in api/routes/lab.py
         self.assertIn('REGISTRY.register(f"api:{kind}", train_procs[kind], "training")', api)
         ex = (_env.ROOT / "backend" / "masterquo" / "training" / "export_job.py").read_text(encoding="utf-8")
         self.assertIn('REGISTRY.register(f"export:{p.pid}", p, "export")', ex)

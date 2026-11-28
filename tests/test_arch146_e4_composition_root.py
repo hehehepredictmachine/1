@@ -394,8 +394,10 @@ class TestApiReadsRuntimeServices(unittest.TestCase):
         from masterquo.api import app as A
         self.assertTrue(hasattr(A, "LocalSecurity"))                                     # old name importable from api.app
         src = (_env.ROOT / "backend" / "masterquo" / "api" / "app.py").read_text(encoding="utf-8")
-        self.assertIn('REGISTRY.register(f"api:{kind}", train_procs[kind], "training")', src)      # I0100 pin (training studio test)
+        routes = _env.api_sources()                                                      # Etap 4 krok B: handlers in api/routes/*.py
+        self.assertIn('REGISTRY.register(f"api:{kind}", train_procs[kind], "training")', routes)   # I0100 pin (training studio test)
         create = src[src.index("def create_app(rt, port: int) -> FastAPI:"):src.index("\ndef _api_services(")]
+        create += routes[len(src):]                                                      # + api/schemas.py and every route block
         for old in ("LocalSecurity(port)", "PresetStore(", "IndicatorEngine(", "train_procs: dict = {}", "nss_jobs: dict = {}"):
             self.assertNotIn(old, create, old)                                           # create_app builds none of them itself
         wf = (_env.ROOT / "backend" / "masterquo" / "api" / "wf32_routes.py").read_text(encoding="utf-8")

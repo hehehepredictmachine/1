@@ -126,7 +126,8 @@ FAMILIES = ["TS_ARIMA", "TS_SARIMAX", "VOL_GARCH", "MICROSTRUCTURE", "PAIR_COINT
 
 def _routes() -> set[str]:
     out = set()
-    for p in (ROOT / B / "api/app.py", ROOT / B / "studio/app.py"):
+    # Etap 4 krok B: the handlers of create_app moved unchanged from api/app.py to api/routes/<domain>.py - scan both
+    for p in (ROOT / B / "api/app.py", *sorted((ROOT / B / "api/routes").glob("*.py")), ROOT / B / "studio/app.py"):
         out |= set(re.findall(r'@app\.(?:get|post|put|patch|delete)\("([^"]+)"', p.read_text(encoding="utf-8")))
     return out
 

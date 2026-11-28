@@ -50,7 +50,7 @@ class TestInstallGuide(unittest.TestCase):
         for k in ("risk_per_trade_pct", "max_total_open_risk_pct", "daily_loss_limit_pct", "max_drawdown_pct", "max_open_positions"):
             self.assertIn(k, SRC)
             self.assertTrue(hasattr(c.risk, k), k)
-        app = (ROOT / "backend" / "masterquo" / "api" / "app.py").read_text(encoding="utf-8")
+        app = _env.api_sources()                         # Etap 4 krok B: api/app.py + api/routes/*.py
         for ep in set(re.findall(r"(/api/v1/[a-z0-9/\-]+)", SRC)):
             self.assertIn(f'"{ep}"', app, ep)
         modes = (ROOT / "backend" / "masterquo" / "execution" / "modes.py").read_text(encoding="utf-8")

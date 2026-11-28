@@ -747,7 +747,8 @@ class TestPackOverrideValidation(_Data):
     def test_api_maps_type_errors_to_400(self):
         import inspect
 
-        from masterquo.api import app as A
+        # Etap 4 krok B: the SH route block moved from api/app.py to api/routes/sh.py
+        from masterquo.api.routes import sh as A
         src = inspect.getsource(A)
         i = src.index("def sh_strategies_config")
         self.assertIn("TypeError", src[i:i + 700])
