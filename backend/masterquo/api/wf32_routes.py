@@ -173,8 +173,8 @@ def register(app, rt) -> None:
 
     # ------------------------------------------------------------------ TASK 007: Modular Indicator & Smoothing Engine
     from ..indicators import smoothing as SM
-    _ind = SM.IndicatorEngine()
-    _ind_lock = threading.Lock()                     # 1.46: the incremental state is shared by every request (race corrupted it)
+    _ind, _ind_lock = _indicator_engine(rt)          # Etap 4 (krok A): owned by the composition root (rt.api_services.indicator_engine)
+    # 1.46: the incremental state is shared by every request (race corrupted it) - _ind_lock is the engine's own lock
 
     def _bars(tf: str, count: int) -> list[dict]:
         b = getattr(rt, "bridge", None)
@@ -637,3 +637,15 @@ def register(app, rt) -> None:
 
     # 1.46: the exporters (api/export_routes.py) read THESE objects - one ledger / journal, never a copy
     app.state.wf32 = svc.public          # 1.46 arch (I0088): the same dict object as rt.wf32 (alias kept for the exporters)
+
+
+def _indicator_engine(rt):
+    """Etap 4 (krok A): the TASK 007 indicator engine and its lock are built by the composition root (runtime.compose_api_services, one
+    pair per create_app call - as register built them per call before) and read here from rt.api_services. register() called without
+    create_app (tests with a plain namespace, tools) builds its own pair exactly as before."""
+    from ..runtime import ApiServices
+    api = getattr(rt, "api_services", None)
+    if isinstance(api, ApiServices):
+        return api.indicator_engine, api.indicator_lock
+    from ..indicators import smoothing as SM
+    return SM.IndicatorEngine(), threading.Lock()

@@ -1,10 +1,18 @@
-"""Wires all components into one supervised application process."""
+"""Wires all components into one supervised application process.
+
+Etap 4 (docs/arch146/ETAP2_PROJEKT.md §3, §5): this module is the ONE composition root - Runtime.__init__ builds and wires every
+service; the objects of the HTTP layer that api/app.create_app and api/wf32_routes.register built themselves before Etap 4 (LocalSecurity,
+the training / NSS child-process registries, the strategy preset store, the TASK 007 indicator engine) are built by compose_api_services
+(Runtime.compose_api, called first by create_app) and the API only reads them (rt.api_services, rt.security). The wf32 services
+(ledger, trials, journal, TraderLifeGame, Hyperliquid / Universe, Telegram AccountCenter) are rt.wf32_services (I0088), Bootstrap is
+rt.bootstrap (I0092), the child-process registry rt.procs (I0100)."""
 from __future__ import annotations
 
 import logging
 import os
 import sys
 import threading
+from dataclasses import dataclass
 from datetime import timedelta
 
 from . import paths
@@ -36,6 +44,41 @@ log = logging.getLogger("masterquo.runtime")
 def real_mt5_factory():
     import MetaTrader5  # noqa: F401  (Windows only; raises ImportError elsewhere)
     return MetaTrader5
+
+
+@dataclass
+class ApiServices:
+    """Etap 4 (krok A): the services of ONE HTTP app (create_app(rt, port)), built by the composition root (compose_api_services).
+    Before Etap 4 create_app / wf32_routes.register built each of them in their own body; the API now reads them from here under the same
+    local names (sec, train_procs, train_procs_lock, nss_jobs, preset_store, _ind, _ind_lock) - the handlers are unchanged.
+
+    None of them starts a thread, reads a file or touches the clock at construction (memory only; PresetStore stores its path and reads
+    strategy.json on each request, LocalSecurity draws the shutdown token from the OS random source) - building them at the start of
+    create_app instead of in the middle / at the end of its body is not observable."""
+    security: object                        # api.security.LocalSecurity(port): sessions, CSRF tokens, shutdown token (Guard, /session)
+    train_procs: dict                       # kind -> Popen: one heavy training process per kind (POST /api/v1/indicator-context/train ...)
+    train_procs_lock: object                # threading.Lock: check + start atomically
+    nss_jobs: dict                          # job id -> Popen: Neural Scalp System jobs (one heavy NSS job at a time)
+    presets: object                         # presets.PresetStore(<data>): named strategy presets (/api/v1/presets/strategy)
+    indicator_engine: object                # indicators.smoothing.IndicatorEngine: TASK 007 incremental state (/api/v1/indicators/...)
+    indicator_lock: object                  # threading.Lock: the engine state is shared by every request
+
+
+def compose_api_services(port: int) -> ApiServices:
+    """A NEW set per call - as before Etap 4 every create_app call had its own sessions, shutdown token, process registries, preset store
+    and indicator engine. Built in the order the old create_app body / wf32_routes.register built them."""
+    from . import presets as _presets
+    from .api.security import LocalSecurity
+    from .indicators import smoothing as _SM
+    security = LocalSecurity(port)
+    train_procs: dict = {}
+    train_procs_lock = threading.Lock()
+    nss_jobs: dict = {}
+    preset_store = _presets.PresetStore(paths.data_dir())
+    indicator_engine = _SM.IndicatorEngine()
+    indicator_lock = threading.Lock()
+    return ApiServices(security=security, train_procs=train_procs, train_procs_lock=train_procs_lock, nss_jobs=nss_jobs,
+                       presets=preset_store, indicator_engine=indicator_engine, indicator_lock=indicator_lock)
 
 
 class Runtime:
@@ -89,6 +132,9 @@ class Runtime:
         self.pcclock = PCClockCheck(c.reference_url, c.max_pc_clock_skew_seconds)
         self.modes = ModeManager(self.cfg, self.db, self.bus, self.log,
                                  account_provider=lambda: (self.bridge.account_status(), self.bridge.account_key, self.bridge.synthetic))
+        # arch146 D1 (description only - the condition stays exactly as it is, decision D1): mt5_factory is always set above, so this
+        # condition is never true and apply_start_mode() never runs; the engine starts in the stored execution.mode
+        # (ModeManager.status(): start_mode_effective = NOT_APPLIED). Etap 4 composition root: reproduced bit for bit, not repaired.
         if not demo and mt5_factory is None:                                # 1.39: real terminal only - start in execution.start_mode (AUTO_LIVE)
             self.modes.apply_start_mode()
         self.news = NewsService(self.cfg, self.secrets, self.bus, self.log)
@@ -244,6 +290,7 @@ class Runtime:
         self._engine_started = False
         self._engine_lock = threading.Lock()
         self.security = None
+        self.api_services: ApiServices | None = None   # Etap 4 (krok A): set by compose_api(port) - create_app builds nothing itself
         self.shutdown_hook = None  # set by the server launcher
         # 1.46 arch (I0088): services of the workflow v3.2 routes (ledgers, journal, game, Hyperliquid / Universe, Telegram account center)
         # are owned here, not by the HTTP layer; rt.wf32 is the dict the routes publish as app.state.wf32 and the exporters read
@@ -275,6 +322,15 @@ class Runtime:
         if getattr(self, "research", None) is not None:
             self.research.governor = self.governor                     # 1.41 SDformerFlow training / inference (heavy slot)
         self.tsfm.register_with(self.governor)
+
+    def compose_api(self, port: int) -> ApiServices:
+        """Etap 4 (krok A): the services of one HTTP app - api/app.create_app(rt, port) calls this first, where it built LocalSecurity
+        itself. A new set per call (compose_api_services); the latest is rt.api_services and its LocalSecurity rt.security (as
+        create_app set it before: __main__ writes rt.security.shutdown_token, tests open sessions on it)."""
+        svc = compose_api_services(port)
+        self.api_services = svc
+        self.security = svc.security
+        return svc
 
     def _publish_prefs(self) -> None:
         try:

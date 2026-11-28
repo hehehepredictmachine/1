@@ -31,7 +31,7 @@ from ..timeutil import TIMEFRAMES, iso, utcnow
 from ..version import API_CONTRACT_VERSION, APP_NAME, APP_VERSION, DISPLAY_NAME
 from . import deps as _deps  # 1.46 arch I0087: one instrument validator
 from .common import body_num  # 1.46 arch I0081: old name kept
-from .security import SESSION_COOKIE, LocalSecurity
+from .security import SESSION_COOKIE, LocalSecurity  # noqa: F401 - Etap 4 (krok A): LocalSecurity built by runtime.compose_api_services; old name kept
 
 log = logging.getLogger("masterquo.api")
 
@@ -173,7 +173,7 @@ class MemoryReq(BaseModel):
 
 
 def create_app(rt, port: int) -> FastAPI:
-    sec = LocalSecurity(port)
+    sec = _api_services(rt, port).security          # Etap 4 (krok A): built by the composition root (runtime.compose_api_services)
     rt.security = sec
 
     @asynccontextmanager
@@ -484,8 +484,8 @@ def create_app(rt, port: int) -> FastAPI:
             raise HTTPException(400, str(exc)) from exc
 
     # 1.46: one heavy training process per kind - every POST started another one (4 CPU) and parallel runs raced on registry.json
-    train_procs: dict = {}
-    train_procs_lock = __import__("threading").Lock()
+    train_procs: dict = rt.api_services.train_procs                    # Etap 4 (krok A): owned by the composition root (rt.api_services)
+    train_procs_lock = rt.api_services.train_procs_lock
 
     def _train_start(kind: str, start):
         with train_procs_lock:                                         # check + start atomically (a double click runs in 2 pool threads)
@@ -3671,7 +3671,7 @@ def create_app(rt, port: int) -> FastAPI:
         return snap
 
     # ------------------------------------------------------------ PMW-UPD-04 Neural Scalp System (CAUSAL_MTF_TCN_V1)
-    nss_jobs: dict = {}
+    nss_jobs: dict = rt.api_services.nss_jobs                           # Etap 4 (krok A): owned by the composition root (rt.api_services)
 
     def _nss_job(args: list[str]):
         import subprocess
@@ -4070,7 +4070,7 @@ def create_app(rt, port: int) -> FastAPI:
     def system_resources():
         return sysres.snapshot()
 
-    preset_store = presets.PresetStore(paths.data_dir())
+    preset_store = rt.api_services.presets                              # Etap 4 (krok A): owned by the composition root (rt.api_services)
 
     @app.get("/api/v1/presets/strategy")
     def presets_list():
@@ -4199,3 +4199,17 @@ def create_app(rt, port: int) -> FastAPI:
     from .export_routes import register as _exports_register
     _exports_register(app, rt)            # 1.46: data exporters (GET /api/v1/exports/...), write only into <data>/exports
     return app
+
+
+def _api_services(rt, port: int):
+    """Etap 4 (krok A, docs/arch146/ETAP2_PROJEKT.md §5): the objects create_app built in its own body before Etap 4 (LocalSecurity, the
+    training / NSS child-process registries, the strategy preset store) and the TASK 007 indicator engine of wf32_routes come from the
+    composition root. A Runtime builds them (Runtime.compose_api: one new set per create_app call, as before; rt.api_services and
+    rt.security); any other runtime object (tests, tools/routes_inventory with a MagicMock) gets a set from the same function
+    (runtime.compose_api_services), published as rt.api_services exactly as create_app publishes rt.security."""
+    from .. import runtime as _runtime
+    if isinstance(rt, _runtime.Runtime):
+        return rt.compose_api(port)
+    svc = _runtime.compose_api_services(port)
+    rt.api_services = svc
+    return svc
