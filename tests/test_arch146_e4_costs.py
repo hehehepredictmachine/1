@@ -94,6 +94,8 @@ class TestDeclarations(unittest.TestCase):
             C.profile("SOMETHING_ELSE")
         with self.assertRaises(dataclasses.FrozenInstanceError):
             C.profile("SH").spread_policy = "IN_FILL"                     # type: ignore[misc]
+        with self.assertRaises(TypeError):
+            C.POLICIES["SH"] = C.POLICIES["ACTIVE"]                       # type: ignore[index]
         src = "\n".join((_env.ROOT / "backend" / "masterquo" / "costs" / f).read_text(encoding="utf-8")
                         for f in ("__init__.py", "policy.py", "resolver.py", "commission.py"))
         for word in ("unified_v2", "environ", "cfg_store", "ConfigStore", "def set_", "global "):

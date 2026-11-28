@@ -16,6 +16,7 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass
 from functools import lru_cache
+from types import MappingProxyType
 
 SCHEMA = "PMW-COSTS-1"
 
@@ -114,7 +115,8 @@ class CostProfile:
     schema: str = SCHEMA
 
 
-POLICIES: dict[str, CostPolicy] = {
+# read-only mapping of frozen records: a policy cannot be switched at run time (a change is a code change with its own review)
+POLICIES: MappingProxyType[str, CostPolicy] = MappingProxyType({
     ACTIVE: CostPolicy(
         spread_policy=SPREAD_IN_FILL, unknown_commission_policy=UNKNOWN_REASON_CODE, unknown_slippage_policy=SLIP_UNKNOWN_REASON_CODE,
         commission_source=SOURCE_COSTS_CONFIG, commission_conversion=CONV_MONEY, slippage_unit=SLIP_POINTS_BROKER,
@@ -153,7 +155,7 @@ POLICIES: dict[str, CostPolicy] = {
         sizing_commission=SIZING_NOT_APPLICABLE, cost_unit=UNIT_PRICE, known_requires_conversion=False,
         where="quant/events.spec_from_candidate (EventSpec.cost_price and the BE offset of the label simulation)",
         decisions=("D3",)),
-}
+})
 
 TRACKS: tuple[str, ...] = tuple(POLICIES)
 
