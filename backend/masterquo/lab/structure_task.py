@@ -37,7 +37,22 @@ from . import structure_nets as SN
 TASK_MOVE = "STRUCTURE_MOVE_M1_V1"
 TASK_SETUP = "SCALP_STRUCTURE_CONTEXT_V1"
 FEATURE_SCHEMA = "SMF-1.0.0"
-LABELS_VERSION = "SML-1.0.0"
+LABELS_VERSION = "SML-1.0.0"            # STRUCTURE_MOVE_M1_V1 (its dataset did not change)
+# 1.46: SCALP_STRUCTURE_CONTEXT_V1 rows moved to the TRIGGER bar (setup_bar_index - 1.45.0 used the entry bar, a look-ahead) without a
+# version bump; SETUP datasets / candidates labelled SML-1.0.0 are legacy (flagged; a legacy SETUP dataset is not trained again)
+SETUP_LABELS_VERSION = "SML-1.0.1"
+
+
+def labels_version_for(task: str) -> str:
+    return SETUP_LABELS_VERSION if task == TASK_SETUP else LABELS_VERSION
+
+
+def labels_status(task: str | None, labels_version: str | None) -> dict:
+    """Legacy flag of a dataset / candidate manifest: SETUP labels older than SETUP_LABELS_VERSION (no deletion, status only)."""
+    legacy = task == TASK_SETUP and labels_version != SETUP_LABELS_VERSION
+    return {"labels_legacy": legacy, "labels_warning": (f"LEGACY_LABELS: {labels_version} – etykiety SETUP sprzed 1.46 (świeca wejścia zamiast "
+                                                         f"świecy wyzwalającej, look-ahead); przebuduj dataset ({SETUP_LABELS_VERSION}) i "
+                                                         "przetrenuj") if legacy else None}
 PROTOCOL_ID = "SI-PROTO-1.0.0"
 HORIZONS = (3, 5, 15)
 WINDOW = 128
@@ -248,7 +263,8 @@ def save_dataset(inst: str, data: dict) -> dict:
     np.savez(d / "data.npz", F=data["fe"]["F"], t=data["fe"]["t"], c=data["fe"]["c"], atr=data["fe"]["atr"], Y=data["Y"], R=data["R"],
              rows_idx=data["rows_idx"], **({"setup_y": data["setup_y"], "setup_r": data["setup_r"], "setup_idx": data["setup_idx"]} if "setup_y" in data else {}))
     man = {"dataset_id": did, "task": data["task"], "instrument": inst, "symbol": data["symbol"], "raw_dataset": data["raw"], "raw_dataset_id": data["dataset_id"],
-           "data_kind": data["data_kind"], "feature_schema": FEATURE_SCHEMA, "labels_version": LABELS_VERSION, "indicator_profile": data["profile"],
+           "data_kind": data["data_kind"], "feature_schema": FEATURE_SCHEMA, "labels_version": labels_version_for(data["task"]),
+           "indicator_profile": data["profile"],
            "tick": data["tick"], "rows": int(len(data["rows_idx"])), "content_hash": data["content_hash"], "created_at": datetime.now(timezone.utc).isoformat(),
            "time_convention": "UTC open time of M1; decision at bar close", "range": [_iso(data["fe"]["t"][0]), _iso(data["fe"]["t"][-1])],
            "knowledge_cutoff": _iso(data["fe"]["t"][-1] + 60), "sha256": hashlib.sha256((d / "data.npz").read_bytes()).hexdigest()}
@@ -570,6 +586,10 @@ def train(inst: str, dsdir: Path, task: str, families: list[str], profile: str =
     if man["indicator_profile"]["hash"] != prof_now["hash"]:
         return {"status": "STALE_DATASET", "reason": f"profil wskaźników zmieniony ({man['indicator_profile']['hash']} → {prof_now['hash']})",
                 "rebuild": f"python -m masterquo structure-intelligence dataset --asset {inst} --task {task}"}
+    if task == TASK_SETUP and man.get("labels_version") != SETUP_LABELS_VERSION:
+        return {"status": "STALE_DATASET", "reason": f"etykiety SETUP {man.get('labels_version')} (sprzed 1.46: świeca wejścia, look-ahead) – "
+                                                     f"wymagane {SETUP_LABELS_VERSION}",
+                "rebuild": f"python -m masterquo structure-intelligence dataset --asset {inst} --task {task}"}
     if task == TASK_SETUP and not len(data.get("setup_idx", [])):
         return {"status": "NO_SETUP", "reason": "brak rzeczywistych setupów strategii w danych"}
     prof = dict(PROFILES[profile], spike_cfg=dict(spike_cfg or {}))
@@ -582,7 +602,7 @@ def train(inst: str, dsdir: Path, task: str, families: list[str], profile: str =
     rd.mkdir(parents=True)
     ev = evidence(data, sp, task)
     rep = {"run_id": rid, "task_id": task, "protocol_id": PROTOCOL_ID, "split_hash": sp["hash"], "dataset_id": man["dataset_id"], "data_kind": man["data_kind"],
-           "feature_schema": FEATURE_SCHEMA, "labels_version": LABELS_VERSION, "indicator_profile": man["indicator_profile"], "profile": profile,
+           "feature_schema": FEATURE_SCHEMA, "labels_version": labels_version_for(task), "indicator_profile": man["indicator_profile"], "profile": profile,
            "profile_note": "quick = niepełny smoke" if profile == "quick" else None, "families": families, "evidence": ev, "holdout_from": sp["cut"],
            "class_order": list(SN.CLASSES) if task == TASK_MOVE else list(SETUP_CLASSES), "horizons": list(HORIZONS) if task == TASK_MOVE else None,
            "role": "TEST_ONLY" if synthetic else "RESEARCH", "folds": [], "created_at": datetime.now(timezone.utc).isoformat(), "criteria": CRITERIA,
@@ -667,7 +687,8 @@ def train(inst: str, dsdir: Path, task: str, families: list[str], profile: str =
                                       "holdout": "NOT_EVALUATED_ON_HOLDOUT_BY_DESIGN"}
     rep["run_dir"] = str(rd)
     (rd / "report.json").write_text(json.dumps(rep, indent=1, default=_jd), encoding="utf-8")
-    ent = {"run_dir": str(rd), "task": task, "status": rep["status"], "role": rep["role"], "created_at": rep["created_at"]}
+    ent = {"run_dir": str(rd), "task": task, "status": rep["status"], "role": rep["role"], "created_at": rep["created_at"],
+           "labels_version": rep["labels_version"]}
     _update_reg(inst, lambda reg: reg["runs"].update({rid: ent}))
     return rep
 
@@ -722,7 +743,8 @@ def _diag(model, info: dict) -> dict:
 def save_candidate(d: Path, fam: str, model, temps: list, rep: dict, man: dict, info: dict | None = None) -> str:
     d.mkdir(parents=True, exist_ok=False)
     meta = {"task_id": rep["task_id"], "family": fam, "instrument": man["instrument"], "symbol": man["symbol"], "feature_schema": FEATURE_SCHEMA,
-            "labels_version": LABELS_VERSION, "indicator_profile_hash": man["indicator_profile"]["hash"], "class_order": rep["class_order"],
+            "labels_version": labels_version_for(rep["task_id"]), "indicator_profile_hash": man["indicator_profile"]["hash"],
+            "class_order": rep["class_order"],
             "horizons": rep["horizons"], "calibration": temps, "role": rep["role"], "protocol_id": PROTOCOL_ID, "dataset_id": man["dataset_id"],
             "created_at": datetime.now(timezone.utc).isoformat(), "state_policy": "RESET_EACH_WINDOW" if (fam in SN.FAMILIES or fam == SF.SB_FAMILY) else None}
     if fam == SF.MR_FAMILY:
@@ -767,6 +789,7 @@ def load_candidate(d: Path, expect: dict | None = None):
     for k, v in (expect or {}).items():
         if meta.get(k) != v:
             raise ValueError(f"INCOMPATIBLE_ARTIFACT: {k}={meta.get(k)} (oczekiwano {v})")
+    meta.update(labels_status(meta.get("task_id"), meta.get("labels_version")))      # 1.46: legacy SETUP labels flagged (status only)
     fam = meta["family"]
     if fam == SF.MR_FAMILY:
         return meta, SF.load_minirocket(d / "mr2", meta)
@@ -844,7 +867,8 @@ def select_shadow(inst: str, candidate_id: str) -> dict:
         reg["shadow"][meta["task_id"]] = {"candidate_id": candidate_id, "dir": str(d), "model_hash": meta["model_hash"],
                                           "at": datetime.now(timezone.utc).isoformat()}
         reg["history"].append({"task": meta["task_id"], "from": prev, "to": candidate_id, "at": datetime.now(timezone.utc).isoformat()})
-        return {"ok": True, "shadow": reg["shadow"][meta["task_id"]], "previous": prev, "execution": "NEVER_AUTOMATIC"}
+        return {"ok": True, "shadow": reg["shadow"][meta["task_id"]], "previous": prev, "execution": "NEVER_AUTOMATIC",
+                "labels_warning": meta.get("labels_warning")}
     return _update_reg(inst, fn)
 
 

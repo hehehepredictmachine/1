@@ -90,7 +90,11 @@ def _structure(bars: list[dict], tick: float) -> dict:
 class IncRegime:
     """MQ_REGIME_MULTI_V2 on closed M5 bars fed ONE bar at a time with exactly the per-bar step of market_v2.regime_series (same
     RegimeMachine, MarketBehavior, ATR14 rolling mean, volatility axis) - O(1) per bar instead of re-running 400 bars at every
-    close. The hysteresis state is path dependent: live and replay both start from the window available at their first call."""
+    close. The hysteresis state is path dependent: live and replay both start from the window available at their first call.
+    1.46: the MarketBehavior inside is trimmed (MarketBehavior.trim, identical results) - it grew without bound in the session cache."""
+
+    MB_MAX_BARS = 3000                      # MarketBehavior bars kept before a trim ...
+    MB_KEEP_BARS = 1000                     # ... down to this many (pivot / ATR windows need < 30)
 
     def __init__(self, tick: float):
         from ..lab import market_v2 as MV
@@ -126,6 +130,8 @@ class IncRegime:
                                  self.MV.vol_axis(ar, len(ar) - 1, cf["vol_window"], cf["vol_min"], cf["vol_lo"], cf["vol_hi"]))
         if len(self.c) > 2000:                              # bounded memory; windows use at most the last 400 values
             del self.c[:1000], self.tr[:1000], self.atr_rel[:1000]
+        if self.mb.retained_bars() > self.MB_MAX_BARS:     # 1.46: MarketBehavior lists / swings / bias history bounded too
+            self.mb.trim(self.MB_KEEP_BARS)
 
     def public(self) -> dict:
         v = self.view or {}
