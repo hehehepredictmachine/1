@@ -13,6 +13,7 @@
   "baskets": "L3 rdzeń handlowy",
   "bootstrap": "L5 kompozycja",
   "config": "L0 liście",
+  "contracts": "L0 liście",
   "data": "L1 dane",
   "db": "L1 dane",
   "decision": "L3 rdzeń handlowy",
@@ -24,11 +25,14 @@
   "execution": "L3 rdzeń handlowy",
   "exports": "L5 kompozycja",
   "extind": "L4 SHADOW/badania",
+  "features": "L4 SHADOW/badania",
   "forecast": "L4 SHADOW/badania",
   "indicators": "L2 analizy",
   "kronos": "L4 SHADOW/badania",
   "lab": "L4 SHADOW/badania",
+  "ledgers": "L4 SHADOW/badania",
   "licensing": "L1 dane",
+  "localapi": "L0 liście",
   "marketdata": "L1 dane",
   "markets": "L1 dane",
   "masterquo": "L0 liście",
@@ -51,8 +55,10 @@
   "resources": "L0 liście",
   "risk": "L3 rdzeń handlowy",
   "runtime": "L5 kompozycja",
+  "runtimes": "L0 liście",
   "scalp": "L4 SHADOW/badania",
   "secrets_store": "L0 liście",
+  "settings_store": "L0 liście",
   "sh": "L3 rdzeń handlowy",
   "stats": "L1 dane",
   "strategies": "L3 rdzeń handlowy",
@@ -67,60 +73,11 @@
   "tsfm": "L4 SHADOW/badania",
   "upgrade": "L5 kompozycja",
   "version": "L0 liście",
+  "wf32_services": "L5 kompozycja",
   "zones": "L2 analizy"
  },
- "count": 57,
+ "count": 56,
  "edges": {
-  "masterquo.analysis.chart_patterns -> masterquo.strategies.indicators": {
-   "from": "L2 analizy",
-   "to": "L3 rdzeń handlowy",
-   "kinds": [
-    "MODULE"
-   ],
-   "lines": [
-    39
-   ]
-  },
-  "masterquo.analysis.levels -> masterquo.strategies.indicators": {
-   "from": "L2 analizy",
-   "to": "L3 rdzeń handlowy",
-   "kinds": [
-    "MODULE"
-   ],
-   "lines": [
-    22
-   ]
-  },
-  "masterquo.analysis.mitp -> masterquo.strategies.indicators": {
-   "from": "L2 analizy",
-   "to": "L3 rdzeń handlowy",
-   "kinds": [
-    "MODULE"
-   ],
-   "lines": [
-    24
-   ]
-  },
-  "masterquo.analysis.structure_knowledge -> masterquo.lab.context_ind.knowledge": {
-   "from": "L2 analizy",
-   "to": "L4 SHADOW/badania",
-   "kinds": [
-    "FUNCTION"
-   ],
-   "lines": [
-    122
-   ]
-  },
-  "masterquo.analysis.structure_knowledge -> masterquo.lab.flow_context.knowledge": {
-   "from": "L2 analizy",
-   "to": "L4 SHADOW/badania",
-   "kinds": [
-    "FUNCTION"
-   ],
-   "lines": [
-    123
-   ]
-  },
   "masterquo.analytics.liquidity_cli -> masterquo.extind.cli": {
    "from": "L2 analizy",
    "to": "L4 SHADOW/badania",
@@ -168,18 +125,29 @@
     "FUNCTION"
    ],
    "lines": [
-    581
+    580
    ]
   },
-  "masterquo.config -> masterquo.strategies.registry": {
+  "masterquo.config -> masterquo.quant.ids": {
+   "from": "L0 liście",
+   "to": "L4 SHADOW/badania",
+   "kinds": [
+    "FUNCTION"
+   ],
+   "lines": [
+    834,
+    844
+   ]
+  },
+  "masterquo.config -> masterquo.strategies.ids": {
    "from": "L0 liście",
    "to": "L3 rdzeń handlowy",
    "kinds": [
     "FUNCTION"
    ],
    "lines": [
-    300,
-    327
+    319,
+    346
    ]
   },
   "masterquo.decision.coordinator -> masterquo.evaluation.contract": {
@@ -189,7 +157,7 @@
     "FUNCTION"
    ],
    "lines": [
-    340
+    352
    ]
   },
   "masterquo.decision.coordinator -> masterquo.quant.ids": {
@@ -199,7 +167,7 @@
     "FUNCTION"
    ],
    "lines": [
-    61
+    65
    ]
   },
   "masterquo.decision.coordinator -> masterquo.tsfm.predictions": {
@@ -209,7 +177,7 @@
     "FUNCTION"
    ],
    "lines": [
-    335
+    347
    ]
   },
   "masterquo.engine.service -> masterquo.extind.knowledge": {
@@ -219,7 +187,7 @@
     "FUNCTION"
    ],
    "lines": [
-    618
+    687
    ]
   },
   "masterquo.engine.service -> masterquo.scalp.indicators": {
@@ -229,7 +197,7 @@
     "FUNCTION"
    ],
    "lines": [
-    619
+    688
    ]
   },
   "masterquo.events -> masterquo.db.database": {
@@ -397,8 +365,30 @@
     "FUNCTION"
    ],
    "lines": [
-    140,
-    232
+    139,
+    231
+   ]
+  },
+  "masterquo.ml.offline -> masterquo.training.promotion": {
+   "from": "L4 SHADOW/badania",
+   "to": "L5 kompozycja",
+   "kinds": [
+    "FUNCTION"
+   ],
+   "lines": [
+    114,
+    114
+   ]
+  },
+  "masterquo.ml.service -> masterquo.training.promotion": {
+   "from": "L4 SHADOW/badania",
+   "to": "L5 kompozycja",
+   "kinds": [
+    "FUNCTION"
+   ],
+   "lines": [
+    341,
+    410
    ]
   },
   "masterquo.modelhub.check -> masterquo.runtime": {
@@ -419,7 +409,7 @@
     "FUNCTION"
    ],
    "lines": [
-    202
+    212
    ]
   },
   "masterquo.modelhub.families.service -> masterquo.training.core": {
@@ -429,7 +419,7 @@
     "FUNCTION"
    ],
    "lines": [
-    508
+    808
    ]
   },
   "masterquo.modelhub.smoke.lab -> masterquo.training.cli": {
@@ -439,7 +429,7 @@
     "FUNCTION"
    ],
    "lines": [
-    200
+    201
    ]
   },
   "masterquo.modelhub.smoke.ml -> masterquo.agent.schema": {
@@ -449,7 +439,7 @@
     "FUNCTION"
    ],
    "lines": [
-    509
+    516
    ]
   },
   "masterquo.modelhub.smoke.ml -> masterquo.agent.service": {
@@ -459,7 +449,7 @@
     "FUNCTION"
    ],
    "lines": [
-    508
+    515
    ]
   },
   "masterquo.modelhub.smoke.ml -> masterquo.agent.tools": {
@@ -469,7 +459,7 @@
     "FUNCTION"
    ],
    "lines": [
-    510
+    517
    ]
   },
   "masterquo.modelhub.smoke.ml -> masterquo.api.wf32_routes": {
@@ -565,6 +555,16 @@
     235
    ]
   },
+  "masterquo.sh.models -> masterquo.quant.ids": {
+   "from": "L3 rdzeń handlowy",
+   "to": "L4 SHADOW/badania",
+   "kinds": [
+    "FUNCTION"
+   ],
+   "lines": [
+    236
+   ]
+  },
   "masterquo.sh.models -> masterquo.trainhub.registry": {
    "from": "L3 rdzeń handlowy",
    "to": "L4 SHADOW/badania",
@@ -572,7 +572,7 @@
     "FUNCTION"
    ],
    "lines": [
-    291
+    294
    ]
   },
   "masterquo.sh.scenario -> masterquo.montecarlo.engine": {
@@ -592,7 +592,7 @@
     "FUNCTION"
    ],
    "lines": [
-    478
+    499
    ]
   },
   "masterquo.sh.service -> masterquo.modelhub.families.service": {
@@ -602,8 +602,8 @@
     "FUNCTION"
    ],
    "lines": [
-    243,
-    339
+    263,
+    360
    ]
   },
   "masterquo.sh.service -> masterquo.tsfm.predictions": {
@@ -613,7 +613,7 @@
     "FUNCTION"
    ],
    "lines": [
-    496
+    517
    ]
   },
   "masterquo.trainhub.jobs -> masterquo.training.core": {
@@ -623,8 +623,8 @@
     "FUNCTION"
    ],
    "lines": [
-    290,
-    307
+    291,
+    309
    ]
   },
   "masterquo.zones.hlze -> masterquo.strategies.base": {

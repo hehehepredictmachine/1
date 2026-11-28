@@ -34,6 +34,9 @@ LAYERS: dict[str, int] = {
     # L0 - leaves: paths, clocks, version, bus, registry I/O, config and its presets, small shared registries
     "masterquo": 0, "paths": 0, "timeutil": 0, "version": 0, "events": 0, "registry_io": 0, "sysres": 0, "secrets_store": 0,
     "resources": 0, "assets": 0, "media": 0, "prefs": 0, "config": 0, "presets": 0,
+    # (after the merge of wave 2b) import-free / stdlib-only leaves: contract records (I0082), settings files (I0097), the local-API
+    # client of the CLI entry points (I0075/I0080, imports only config/paths), the model-runtime environment registry (I0117, paths only)
+    "contracts": 0, "settings_store": 0, "localapi": 0, "runtimes": 0,
     # L1 - data and external I/O: database, MT5 bridge, market data stores, data quality, news, notifications, licence
     "db": 1, "mt5": 1, "marketdata": 1, "data": 1, "markets": 1, "news": 1, "notify": 1, "licensing": 1, "stats": 1,
     # L2 - analyses (deterministic, no order path)
@@ -46,6 +49,7 @@ LAYERS: dict[str, int] = {
     # L5 - composition roots
     "runtime": 5, "api": 5, "__main__": 5, "train_all": 5, "bootstrap": 5, "diagnostics": 5, "upgrade": 5, "desktop": 5, "agent": 5,
     "exports": 5, "studio": 5, "training": 5,
+    "wf32_services": 5,      # services of the workflow v3.2 modules owned and built by the Runtime (I0088/I0092); imported by runtime / api
 }
 
 

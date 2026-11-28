@@ -275,12 +275,18 @@ class TestLayerGuard(unittest.TestCase):
         cls.C = importlib.reload(cycles)
 
     def test_every_component_has_a_layer(self):
-        self.assertEqual(self.C.unclassified(), [])
+        self.assertEqual(self.C.unclassified(), [], "dopisz komponent do tools/cycles.LAYERS (i do tabeli ETAP2_PROJEKT §3a)")
+
+    def test_merged_wave2b_components_are_classified(self):
+        # I0084 (integracja): komponenty dodane przez scalone grupy fali 2b - liście L0 i usługi Runtime w L5
+        for name, layer in (("contracts", 0), ("settings_store", 0), ("localapi", 0), ("runtimes", 0), ("wf32_services", 5)):
+            self.assertEqual(self.C.LAYERS.get(name), layer, name)
 
     def test_no_new_upward_edges(self):
         up = self.C.upward(self.C.edges())
         new, _gone = self.C.compare(up, self.C.load_baseline())
-        self.assertEqual(new, [], "\n".join(f"{k}: {up[k]}" for k in new))
+        self.assertEqual(new, [], "\n".join(f"{k}: {up[k]}" for k in new)
+                         + "\nprzejrzyj nowe pary; zamierzone -> python tools/cycles.py --write-baseline")
 
     def test_lazy_and_dynamic_upward_edges_are_detected(self):
         tmp = Path(tempfile.mkdtemp(prefix="mq_t_layers_"))
