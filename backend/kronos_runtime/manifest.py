@@ -3,7 +3,10 @@
 <weights_dir>/kronos_manifest.json, written by the installer after every file matched its SOURCE metadata:
   {"schema", "installed_at", "source", "components": [{"repo", "revision", "dir", "files": [{"name", "size", "sha256",
    "source_check": "lfs_sha256" | "git_blob_sha1", "source_value"}]}], "tools": {...}}
-verify() recomputes the sha256 of every file locally (offline) - a changed or truncated file is reported, never loaded.
+verify() recomputes the sha256 of every file locally (offline) - a changed or truncated file is reported, never loaded. Arch 1.46 I0194:
+a file with a sha256 pinned in lock.py (model.safetensors of the model and the tokenizer) must also equal that pin - a replaced file
+together with a regenerated manifest is refused (CHECKSUM). Only a test fixture manifest ("fixture": true, accepted solely with
+MQ_KRONOS_ALLOW_FIXTURE=1) is exempt - its random weights cannot have the official sums.
 """
 from __future__ import annotations
 
@@ -89,13 +92,23 @@ def summary(weights_dir) -> dict:
             "components": [{k: comps[c["kind"]].get(k) for k in ("kind", "repo", "revision")} for c in lock.COMPONENTS]}
 
 
+def pinned_sha256(kind: str | None, name: str) -> str | None:
+    """sha256 of `name` pinned in lock.py for the component `kind` (model / tokenizer), else None."""
+    for c in lock.COMPONENTS:
+        if c["kind"] == kind:
+            return (c.get("sha256") or {}).get(name)
+    return None
+
+
 def verify(weights_dir) -> dict:
-    """Offline integrity check: every file of the manifest exists with the recorded sha256. Raises ManifestError."""
+    """Offline integrity check: every file of the manifest exists with the recorded sha256 (and the sha256 pinned in lock.py, where
+    there is one - arch 1.46 I0194). Raises ManifestError."""
     s = summary(weights_dir)
     if not s["installed"]:
         raise ManifestError("NO_WEIGHTS", s["reason"])
     dirs = component_dirs(weights_dir)
     checked = []
+    fixture = bool(s["manifest"].get("fixture"))                # accepted by summary() only with MQ_KRONOS_ALLOW_FIXTURE=1 (tests)
     for comp in s["manifest"]["components"]:
         names = {f["name"] for f in comp.get("files") or []}
         for need in lock.REQUIRED_FILES:
@@ -108,5 +121,9 @@ def verify(weights_dir) -> dict:
             got = sha256_file(p)
             if got != f["sha256"]:
                 raise ManifestError("CHECKSUM", f"{comp['repo']}/{f['name']}: SHA-256 {got[:16]}… ≠ {f['sha256'][:16]}… z manifestu (plik zmieniony)")
+            pin = None if fixture else pinned_sha256(comp.get("kind"), f["name"])
+            if pin and got != pin:
+                raise ManifestError("CHECKSUM", f"{comp['repo']}/{f['name']}: SHA-256 {got[:16]}… ≠ {pin[:16]}… przypięty w lock.py "
+                                                "(inne wagi niż przypięte – nie zostaną użyte)")
             checked.append({"file": f"{comp['repo']}/{f['name']}", "sha256": got, "size": f["size"]})
     return {"ok": True, "files": checked}

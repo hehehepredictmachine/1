@@ -5,8 +5,10 @@ Run with the Kronos interpreter:  .venv_kronos\\Scripts\\python -m unittest test
 * manifest: tamper detection, test fixtures refused outside the tests;
 * engine on a RANDOM-WEIGHT fixture (test only - kronos_fixture.py): offline load (network blocked), eval/no grad, compatibility of the
   pair, CPU fallback when CUDA is requested without a GPU, seeded determinism, equality with the original KronosPredictor call,
-  independent paths + quantiles, input errors, worker protocol, timing at the published Kronos-small architecture size (random-weight fixture; the real Kronos-base is tested in test_foundation_real.py);
-* installer download logic with a mocked Hugging Face API: checksum mismatch, wrong revision, missing safetensors, offline;
+  independent paths + quantiles, input errors, worker protocol, timing at the published Kronos-small architecture size (random-weight
+  fixture; the official Kronos-small weights are checked in TestOfficialWeights below when MQ_KRONOS_WEIGHTS_DIR is set);
+* installer download logic with a mocked Hugging Face API: checksum mismatch (source metadata and the sha256 pinned in lock.py),
+  wrong revision, missing safetensors, offline;
 * the upstream regression comparison with the OFFICIAL weights runs only when MQ_KRONOS_WEIGHTS_DIR points to a real installation
   (on the user's computer after 33_KRONOS_INSTALUJ.bat) - here it is skipped, never faked.
 """
@@ -211,18 +213,29 @@ class TestKronosRuntime(unittest.TestCase):
             shutil.copy(self.small / lock.component_dir_name(c) / name, part)
 
         os.environ.pop("HF_HUB_OFFLINE", None)          # the engine (test_03) sets it for its own process; the installer runs separately
+        # arch 1.46 I0194: the sha256 pinned in lock.py is enforced - the random-weight fixture stands for the pinned files here (pins
+        # patched to its sums); with the real pins the same, source-consistent files are refused (case "real_pins")
+        fx_pin = {c["kind"]: M.sha256_file(self.small / lock.component_dir_name(c) / "model.safetensors") for c in lock.COMPONENTS}
         cases = [({}, True, None), ({"bad_sha": True}, False, "CHECKSUM_MISMATCH"), ({"rev_ok": False}, False, "REVISION_MISMATCH"),
-                 ({"drop_safetensors": True}, False, "FILE_MISSING")]
+                 ({"drop_safetensors": True}, False, "FILE_MISSING"), ({"real_pins": True}, False, "CHECKSUM_MISMATCH_PIN")]
         for kw, ok, code in cases:
             dest = self.tmp / f"dl_{code}"
             shutil.rmtree(dest, ignore_errors=True)
+            kw = dict(kw)
+            real = kw.pop("real_pins", False)
+            pins = {} if real else {"model": fx_pin["model"], "tokenizer": fx_pin["tokenizer"]}
             with mock.patch("huggingface_hub.HfApi.model_info", side_effect=lambda *a, **k: info_for(**kw)(a[0] if a else k["repo_id"], k.get("revision"), True)), \
                     mock.patch.object(I, "_fetch", side_effect=fake_download), \
+                    mock.patch.dict(lock.MODEL["sha256"], {"model.safetensors": pins.get("model", lock.MODEL["sha256"]["model.safetensors"])}), \
+                    mock.patch.dict(lock.TOKENIZER["sha256"], {"model.safetensors": pins.get("tokenizer", lock.TOKENIZER["sha256"]["model.safetensors"])}), \
                     mock.patch("builtins.print"):
                 rc = I.download(str(dest), None)
+                if ok:
+                    self.assertTrue(M.verify(dest)["ok"])
             self.assertEqual(rc == 0, ok, (kw, code))
             if ok:
-                self.assertTrue(M.verify(dest)["ok"])
+                with self.assertRaises(M.ManifestError):        # arch 1.46 I0194: the same files under the real pins of lock.py are refused
+                    M.verify(dest)
                 # Windows MAX_PATH: nothing deeper than <dir>\<repo>__<name>@<40-char revision>\<file> is ever created (no .cache tree)
                 longest = max(len(str(x.relative_to(dest))) for x in dest.rglob("*"))
                 self.assertLess(longest, 120, longest)          # was ~200 with the huggingface_hub .cache tree

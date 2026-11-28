@@ -91,6 +91,8 @@ class ForecastService:
             return False
         env = dict(os.environ, PYTHONPATH=str(paths.ROOT_DIR / "backend"), MASTERQUO_DATA_DIR=str(paths.data_dir()), PYTHONIOENCODING="utf-8",
                    MQ_INSTRUMENT=self.inst)
+        from ..licensing import edition as _ed
+        _ed.warn_model_test_hooks(self.log, "FORECAST", env)               # arch 1.46 I0116: information only (env unchanged)
         flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
         self.proc = subprocess.Popen([py, "-m", "gold_candles_runtime.worker"], cwd=str(paths.ROOT_DIR / "backend"), env=env, text=True,
                                      encoding="utf-8", stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, bufsize=1,

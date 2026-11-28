@@ -3,11 +3,13 @@
   python -m kronos_runtime.install download --weights-dir DIR [--status-file F]
   python -m kronos_runtime.install verify   --weights-dir DIR [--reference] [--device AUTO|CPU|CUDA] [--status-file F]
 
-download: for the pinned pair of lock.py (1.37: NeoQuasar/Kronos-base + Kronos-Tokenizer-base) at the revisions of lock.py -
+download: for the pinned pair of lock.py (since 1.42.8: NeoQuasar/Kronos-small + Kronos-Tokenizer-base; Kronos-base 1.37-1.42.7) at the
+  revisions of lock.py -
   1. the revision must exist (model_info at that commit; the returned sha must equal the pinned commit),
   2. config.json + model.safetensors must be present (a pickle checkpoint is never accepted),
   3. each file is downloaded into DIR/.partial, checked against the SOURCE metadata (LFS sha256 for model.safetensors, git blob sha1
-     for config.json) and its size; only when both components pass are they moved into place and kronos_manifest.json is written.
+     for config.json), against the sha256 pinned in lock.py where there is one (arch 1.46 I0194: model.safetensors of both components)
+     and its size; only when both components pass are they moved into place and kronos_manifest.json is written.
 verify: offline - manifest sha256 of every file, load once (eval, no grad), model/tokenizer compatibility, a short real forecast on the
   bundled upstream regression input, timing and device; --reference also compares with the upstream expected outputs (CPU, greedy).
 Messages: human lines on stdout ("[KRONOS] ..."), the last line is "RESULT <json>". Nothing here talks to MetaTrader 5.
@@ -129,6 +131,40 @@ def _fetch(url: str, part: Path, size: int | None, label: str, rep, step: int, r
     raise err if err else OSError("pobieranie nie powiodło się")
 
 
+def _redirect_host(url: str, timeout: float = 15.0) -> str | None:
+    """Host the source redirects `url` to (huggingface.co sends LFS / xet files to a CDN, e.g. us.aws.cdn.hf.co or
+    cas-bridge.xethub.hf.co) - one HEAD request without following the redirect; None when there is none or it cannot be read."""
+    import urllib.error
+    import urllib.request
+    from urllib.parse import urljoin, urlparse
+
+    class _NoRedirect(urllib.request.HTTPRedirectHandler):
+        def redirect_request(self, req, fp, code, msg, headers, newurl):
+            return None
+    try:
+        urllib.request.build_opener(_NoRedirect).open(
+            urllib.request.Request(url, method="HEAD", headers={"User-Agent": "PepeMarketWizard-kronos-setup"}), timeout=timeout)
+    except urllib.error.HTTPError as exc:
+        loc = exc.headers.get("Location") if exc.code in (301, 302, 303, 307, 308) and exc.headers else None
+        return urlparse(urljoin(url, loc)).hostname if loc else None
+    except Exception:  # noqa: BLE001 - the source itself is unreachable: no redirect to report
+        return None
+    return None
+
+
+def network_hosts(url: str, exc: Exception | None = None) -> list[str]:
+    """P003 (arch 1.46): the hosts a failed download needed - the source host and, when the source redirects the file (LFS / xet CDN),
+    the CDN host. A firewall / proxy that allows huggingface.co but blocks the CDN used to get the hint "odblokuj huggingface.co" only."""
+    from urllib.parse import urlparse
+    hosts = [urlparse(url).hostname]
+    final = getattr(exc, "url", None) or (exc.geturl() if hasattr(exc, "geturl") else None)
+    if final:
+        hosts.append(urlparse(final).hostname)
+    else:
+        hosts.append(_redirect_host(url))
+    return [h for i, h in enumerate(hosts) if h and h not in hosts[:i]]
+
+
 def download(weights_dir: str, status_file: str | None) -> int:
     rep = Reporter(status_file, 6)
     try:
@@ -160,7 +196,9 @@ def download(weights_dir: str, status_file: str | None) -> int:
         try:
             info = api.model_info(c["repo"], revision=c["revision"], files_metadata=True)
         except Exception as exc:  # noqa: BLE001
-            return result(False, _classify(exc), rep, error=f"{c['repo']}@{c['revision'][:12]}: {type(exc).__name__}: {exc}"[:400])
+            code = _classify(exc)
+            hosts = [lock.SOURCE.split("//", 1)[-1]] if code == "NETWORK" else None
+            return result(False, code, rep, error=f"{c['repo']}@{c['revision'][:12]}: {type(exc).__name__}: {exc}"[:400], hosts=hosts)
         if getattr(info, "sha", None) != c["revision"]:
             return result(False, "REVISION_MISMATCH", rep, error=f"{c['repo']}: źródło zwróciło commit {getattr(info, 'sha', None)} ≠ {c['revision']}")
         sib = {s.rfilename: s for s in (info.siblings or [])}
@@ -181,8 +219,9 @@ def download(weights_dir: str, status_file: str | None) -> int:
             t0 = time.time()
             p = dest / name
             part = dest / (name + ".part")
+            url = f"{lock.SOURCE}/{c['repo']}/resolve/{c['revision']}/{name}"
             try:
-                _fetch(f"{lock.SOURCE}/{c['repo']}/resolve/{c['revision']}/{name}", part, size, f"{c['repo']}/{name}", rep, step)
+                _fetch(url, part, size, f"{c['repo']}/{name}", rep, step)
                 part.replace(p)
             except Exception as exc:  # noqa: BLE001
                 code = _classify(exc)
@@ -192,7 +231,9 @@ def download(weights_dir: str, status_file: str | None) -> int:
                     code = "REPO_NOT_FOUND"
                 elif isinstance(exc, (OSError, TimeoutError)) and code == "DOWNLOAD_ERROR":
                     code = "NETWORK"
-                return result(False, code, rep, error=f"{c['repo']}/{name}: {type(exc).__name__}: {exc}"[:400])
+                hosts = network_hosts(url, exc) if code == "NETWORK" else None      # P003: the real host (CDN) of the failed file
+                where = f" (host: {', '.join(hosts)})" if hosts else ""
+                return result(False, code, rep, error=f"{c['repo']}/{name}{where}: {type(exc).__name__}: {exc}"[:400], hosts=hosts)
             lfs = getattr(s, "lfs", None)
             lfs_sha = (lfs.get("sha256") if isinstance(lfs, dict) else getattr(lfs, "sha256", None)) if lfs else None
             if lfs_sha:
@@ -206,6 +247,12 @@ def download(weights_dir: str, status_file: str | None) -> int:
                 src = blob
             if not ok:
                 return result(False, "CHECKSUM_MISMATCH", rep, error=f"{c['repo']}/{name}: {check} {got[:16]}… ≠ źródło {str(src)[:16]}…")
+            pin = (c.get("sha256") or {}).get(name)          # arch 1.46 I0194: the pin of lock.py is enforced, not only the source metadata
+            if pin:
+                got_sha = got if check == "lfs_sha256" else M.sha256_file(p)
+                if got_sha != pin:
+                    return result(False, "CHECKSUM_MISMATCH", rep,
+                                  error=f"{c['repo']}/{name}: SHA-256 {got_sha[:16]}… ≠ przypięty w lock.py {pin[:16]}…")
             if size is not None and p.stat().st_size != size:
                 return result(False, "CHECKSUM_MISMATCH", rep, error=f"{c['repo']}/{name}: rozmiar {p.stat().st_size} B ≠ {size} B ze źródła")
             files.append({"name": name, "size": p.stat().st_size, "sha256": M.sha256_file(p), "source_check": check, "source_value": src,
