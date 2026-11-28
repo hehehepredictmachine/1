@@ -183,9 +183,10 @@ def reg_lock(inst: str, timeout_s: float = 60.0):
     """1.46: registry.json was rewritten read-modify-write without any lock while the training process (save_package) and the panel
     (activate / rollback / deactivate / remove_version) wrote it concurrently - the later writer dropped the other's new version or
     activation. One exclusive OS file lock per instrument (models/<inst>/registry.lock) plus a thread lock; re-entrant in the same
-    thread. 1.46 arch: the implementation moved to masterquo/registry_io.file_lock (one lock for every registry of the bot)."""
-    from .. import registry_io as RIO
-    with RIO.file_lock(_reg_path(inst).with_name("registry.lock"), timeout_s):
+    thread. 1.46 arch: the implementation moved to masterquo/registry_io.file_lock (one lock for every registry of the bot); Etap 4: taken
+    through the lock service 'registry:<registry.json>' (masterquo/locks.registry_lock -> the same models/<inst>/registry.lock)."""
+    from .. import locks as LK
+    with LK.registry_lock(_reg_path(inst), timeout_s):
         yield
 
 

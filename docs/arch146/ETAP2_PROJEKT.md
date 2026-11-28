@@ -80,6 +80,7 @@ backend/masterquo/
 ├── data/quality.py             + **dq core** (czyste kontrole); sh/context.py mapuje na swoje obecne kontrole
 ├── training/
 │   ├── core.py                 + **jedna usługa blokad treningu** ('train:<inst>', 'export:<inst>'), DatasetRef w manifeście
+│   │                           (Etap 4: implementacja w liściu L0 `locks.py`, core = wejście `LOCKS` + cienkie wrappery RUNNING.lock)
 │   └── **promotion.py**        jedna polityka promocji/aktywacji (krok 1: tylko liczy i loguje; egzekwowanie = decyzja D6/D7)
 ├── indicators/                 + wskaźniki z strategies/indicators.py (shim zostaje) – zrywa cykl pakietów analysis↔strategies
 └── api/
@@ -96,7 +97,7 @@ Mapa jest danymi w `tools/cycles.py` (`LAYERS`, każdy pakiet i moduł najwyższ
 
 | Warstwa | Komponenty |
 |---|---|
-| L0 liście | `masterquo` (pakiet), paths, timeutil, version, events, registry_io, sysres, secrets_store, resources, assets, media, prefs, config, presets, contracts (rekordy kontraktów, tylko stdlib), settings_store (pliki ustawień), localapi (klient lokalnego API dla CLI), runtimes (rejestr środowisk modeli), procs (rejestr procesów treningu serwera, I0100) |
+| L0 liście | `masterquo` (pakiet), paths, timeutil, version, events, registry_io, sysres, secrets_store, resources, assets, media, prefs, config, presets, contracts (rekordy kontraktów, tylko stdlib), settings_store (pliki ustawień), localapi (klient lokalnego API dla CLI), runtimes (rejestr środowisk modeli), procs (rejestr procesów treningu serwera, I0100), locks (jedna usługa blokad treningu i eksportu PMW-LOCKS-1, Etap 4; wejście `training.core.LOCKS`) |
 | L1 dane | db, mt5, marketdata, data, markets, news, notify, licensing, stats |
 | L2 analizy | indicators, analysis, analytics, svp, zones, orderflow, plans |
 | L3 rdzeń handlowy | strategies, risk, engine, execution, decision, sh, baskets |
@@ -142,7 +143,7 @@ Klucz to para modułów, numery linii są informacyjne (edycja pliku nie psuje s
 | `strategies/indicators.py` | `indicators/` (ten sam kod) | shim `from masterquo.indicators... import *` |
 | `risk/costs.py`, `sh/setup.py:244-261`, `sh/risk.py:99-101`, `scalp/strategy.py:553`, `evaluation/service.py:124-138`, `quant/events.py:225-230`, etykiety ML/trainhub/extind | `costs/` (resolver + polityki per tor) | wywołania resolvera z dzisiejszą polityką |
 | `data/quality.py` i `sh/context.py` (kontrole DQ) | wspólny rdzeń w `data/quality.py` | polityki per tor |
-| locki: `training/runner` `RUNNING.lock`, `trainhub/registry.reg_lock`, blokady rodzin, Studio, Quant train, ML w bocie, 12_/17_ `.bat` | `training/core.py` – usługa blokad | cienkie wrappery |
+| locki: `training/runner` `RUNNING.lock`, `trainhub/registry.reg_lock`, blokady rodzin, Studio, Quant train, ML w bocie, 12_/17_ `.bat` | `training/core.py` – usługa blokad (Etap 4: `locks.py` L0, nazwy `train`/`export`/`registry`/`job`) | cienkie wrappery (te same pliki blokad, rekordy właściciela i TTL) |
 | reguła „APPROX/syntetyczny nigdy championem” (tylko w `ml/offline.py`) | `training/promotion.py` (krok 1: liczy i loguje dla wszystkich ścieżek) | egzekwowanie dla ścieżki w bocie = D6 |
 | ledgery: `evaluation`, `quant/ledger`, `mm` ledger, `decision/ledger`, `scalp`, `ml` (+3 pliki) | `ledgers/` (widok) | writery bez zmian |
 | `docs/quant/INVENTORY.*`, `MAPA_MODELI`, `COMPONENT_INVENTORY` (tabele ręczne, 7 nieaktualnych) | generowane z `quant/ids.PRODUCERS` + `models check` | – |

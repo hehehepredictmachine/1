@@ -157,8 +157,9 @@ def _python_tree(root: int, procs: list[tuple[int, int, str]], started=None) -> 
 
 def _win_python_descendants(root: int) -> list[int]:
     try:
-        from .training.core import _proc_start
-        return _python_tree(root, _win_processes(), _proc_start)
+        # 1.46 arch Etap 4: process identity of the lock service (masterquo/locks.proc_start = training.core._proc_start)
+        from .locks import proc_start
+        return _python_tree(root, _win_processes(), proc_start)
     except Exception:  # noqa: BLE001 - no snapshot: the process itself is still ended by the caller
         return []
 

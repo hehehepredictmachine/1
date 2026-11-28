@@ -101,7 +101,8 @@ class MLService:
         self.ticks: collections.deque = collections.deque(maxlen=200_000)   # (epoch s, bid, ask) for SL/TP ordering inside one M1
         self._last_tick_key = None
         self._lock = threading.RLock()
-        self._job_lock = threading.Lock()
+        from .. import locks as LK
+        self._job_lock = LK.job_lock(f"ml:train:{self.inst}")   # 1.46 arch Etap 4: the lock service 'job:<name>' (a plain thread lock, as before)
         self._proc: subprocess.Popen | None = None
         self._job: dict | None = None
         self._stop = threading.Event()

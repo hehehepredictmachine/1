@@ -209,7 +209,8 @@ class Store:
         """1.46: .tmp-<run> dirs of a training that never finished (cancel = terminate, crash, out of memory, app closed) stayed forever -
         SEQ left its whole dataset there (seq_data.npz, up to ~200 MB). An unfinished run is never an artifact (runs() skips it, nothing
         loads it); it is removed only when its owner process is no longer alive (a running training keeps its directory)."""
-        from ...training.core import _pid_alive
+        # 1.46 arch Etap 4: owner liveness of the lock service (masterquo/locks.pid_alive = training.core._pid_alive)
+        from ...locks import pid_alive as _pid_alive
         removed = []
         for p in self.fam_dir(family, inst).glob(".tmp-*"):
             if not p.is_dir():
