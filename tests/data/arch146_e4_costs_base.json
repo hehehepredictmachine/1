@@ -1,0 +1,17 @@
+{
+ "base": "cf5d941",
+ "digests": {
+  "evaluation.service._active_cost": "f19663d9deaa1f72d0436d5285292515f3b607aafca51a2eb6d23d7e75a25666",
+  "evaluation.service._sh": "dd249e58433b380769648f70fcc797f25adee951ed33ca27f63daa02eae8372d",
+  "quant.events.spec_from_candidate": "8126d0dc09137970decca82457931d809946957cef6649f79b6a4a8b91e21200",
+  "risk.costs.commission": "729fa6e97977c340e3a19b78c224dbd7187d658c22186187b3debcebb3eefac5",
+  "risk.engine.evaluate": "449887f3691972b44c493bb29833d0ffded65d144f5a4d705fbd7fac2a02fe03",
+  "scalp.service.economics_gate": "08fadfb1024264c28aa1c2f9d1658c8f0ca5e9d931d15e77a581914e0b0d131f",
+  "sh.risk.evaluate": "43f9392dd1e0e731c8ad5fd9a5d85768764cc413ec96b16ec6a2ee23b258863a",
+  "sh.setup.evaluate": "4e19e0be88e1791433274aea08542bb834445d9f5f9b16637373e6424e3ff591"
+ },
+ "n": 300,
+ "note": "sha256 of the float.hex form (_bits) of the outputs of each whole function at the base commit on the fixed random inputs of tests/test_arch146_e4_costs.py - the Etap 4 neutrality proof without git (release package). Regenerate only from the base: python tests/test_arch146_e4_costs.py --freeze",
+ "schema": "ARCH146-E4-COSTS-FROZEN-1",
+ "seed": 1464
+}

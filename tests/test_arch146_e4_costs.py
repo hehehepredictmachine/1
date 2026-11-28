@@ -3,12 +3,19 @@
 For every track the cost code from before Etap 4 is the reference:
   * `_old_*` below - the old cost expression of the track copied verbatim (runs everywhere, also in a release package without git);
   * where git has the base commit (cf5d941 = the branch after all repair waves), the WHOLE old function of the track loaded from it
-    (risk.engine.evaluate, sh.setup.evaluate, sh.risk.evaluate, scalp economics_gate, evaluation _active_cost, quant spec_from_candidate).
-Both are compared with the resolver / the new call site on >= 200 random inputs with a fixed seed, bit for bit (float.hex), including
-None / 0 / unknown-commission and unconvertible cases. The declarations themselves are checked against the design (no flag, no setter,
-an undeclared policy value is refused)."""
+    (risk.engine.evaluate, sh.setup.evaluate, sh.risk.evaluate, scalp economics_gate, evaluation _active_cost / _sh, quant
+    spec_from_candidate, commission_from_history / resolve_commission);
+  * without git (release package): the outputs of those whole old functions frozen at the base as sha256 of their float.hex form
+    (tests/data/arch146_e4_costs_base.json, TestFrozenAtBase) - the new code is compared with them on the same inputs.
+Both are compared with the resolver / the new call site (the production function: risk.engine.evaluate, sh.setup.evaluate,
+EvaluationService._active_cost, ...) on >= 200 random inputs with a fixed seed, bit for bit (float.hex), including None / 0 /
+unknown-commission and unconvertible cases. The declarations themselves are checked against the design (no switch, no setter, an
+undeclared policy value is refused)."""
 from __future__ import annotations
 
+import copy
+import hashlib
+import json
 import math
 import random
 import subprocess
@@ -38,7 +45,14 @@ def _bits(x):
         return {k: _bits(v) for k, v in x.items()}
     if isinstance(x, (list, tuple)):
         return type(x)(_bits(v) for v in x)
+    if isinstance(x, (set, frozenset)):
+        return ("SET", sorted((_bits(v) for v in x), key=repr))      # canonical order (no hash-seed dependence in the digests)
     return repr(x)
+
+
+def _digest(outs) -> str:
+    """sha256 of the float.hex form of a list of outputs - the frozen base vectors (TestFrozenAtBase)."""
+    return hashlib.sha256(json.dumps(_bits(outs), sort_keys=True, ensure_ascii=True).encode("ascii")).hexdigest()
 
 
 def _old_module(rel: str, modname: str):
@@ -46,7 +60,7 @@ def _old_module(rel: str, modname: str):
     try:
         r = subprocess.run(["git", "-C", str(_env.ROOT), "show", f"{BASE}:{rel}"], capture_output=True, text=True, check=False)
     except OSError:
-        raise unittest.SkipTest("brak git - porównanie z całą starą funkcją pominięte (wzory _old_* nadal sprawdzone)") from None
+        raise unittest.SkipTest("brak git - porównanie z całą starą funkcją pominięte (zamrożone wyniki bazy i wzory _old_* nadal sprawdzone)") from None
     if r.returncode != 0:
         raise unittest.SkipTest(f"brak commitu bazowego {BASE} (paczka wydania)")
     m = types.ModuleType(modname)
@@ -201,51 +215,81 @@ class TestActive(unittest.TestCase):
 
     def test_whole_risk_evaluate_old_vs_new(self):
         old = _old_module("backend/masterquo/risk/engine.py", "masterquo.risk._e4_old_engine")
-        from datetime import UTC, datetime
-
-        from masterquo.config import ConfigStore
         from masterquo.risk import engine as new
-        td = TempData()
-        try:
-            base = ConfigStore().get().risk
-        finally:
-            td.close()
-        rng = random.Random(SEED + 1)
-        now = datetime(2026, 3, 4, 8, tzinfo=UTC)
+        a, b = _out_risk_engine(old), _out_risk_engine(new)
         for i in range(N):
-            side = rng.choice(["LONG", "SHORT"])
-            bid = round(rng.uniform(100, 3000), 2)
-            ask = round(bid + rng.choice([0.0, 0.01, 0.2, 1.5]), 2)
-            e = ask if side == "LONG" else bid
-            sgn = 1 if side == "LONG" else -1
-            sl_d, t1, t2 = rng.uniform(0.5, 30), rng.uniform(0.5, 60), rng.uniform(0.5, 90)
-            levels = {"status": "AVAILABLE", "stop_loss": e - sgn * sl_d,
-                      "targets": [{"price": e + sgn * t1, "weight": 0.5}, {"price": e + sgn * max(t1, t2), "weight": 0.5}]}
-            sym = {"point": rng.choice([0.01, 0.001, 0.0]), "trade_stops_level": rng.choice([0, 10]), "trade_mode": 4,
-                   "volume_min": 0.01, "volume_max": rng.choice([1.0, 100.0]), "volume_step": 0.01}
-            eq = rng.choice([300.0, 5000.0, 10000.0, 250000.0])
-            lim = base.model_copy(update={"risk_per_trade_pct": rng.choice([0.5, 1.0, 2.0]), "max_total_open_risk_pct": 3.0,
-                                          "daily_loss_limit_pct": 5.0, "max_drawdown_pct": 10.0, "max_open_positions": 3})
-            kw = {"side": side, "levels": levels, "quote": {"bid": bid, "ask": ask, "spread_points": round((ask - bid) * 100)},
-                  "symbol_info": sym, "account": {"equity": eq, "free_margin": eq, "currency": "USD"}, "limits": lim,
-                  "costs_cfg": SimpleNamespace(slippage_stress_points=_maybe(rng, rng.choice([0.0, 5.0, rng.uniform(0, 40)]))),
-                  "commission": {"per_lot_per_side": _maybe(rng, rng.choice([0.0, 3.5, rng.uniform(0, 10)]), 0.25), "source": "TEST"},
-                  "profit_fn": _profit_fn(rng), "margin_fn": lambda s, v, p: v * p / 100, "positions": [], "deals": [], "day_start_raw": 0,
-                  "equity_peak": eq, "open_risk_info": {"open_risk": 0.0, "positions_without_sl": []}, "margin_mode": "HEDGING",
-                  "last_bot_loss_at": None, "now": now, "max_spread_points": None, "symbol": "XAUUSD-"}
-            self.assertEqual(_bits(new.evaluate(**kw)), _bits(old.evaluate(**kw)), i)
+            self.assertEqual(b[i], a[i], i)
+
+    def test_call_site_in_risk_evaluate_equals_old_formula(self):
+        """The production call site (risk/engine.evaluate -> active_cost_per_lot, its move_value lambda and reason codes) against the
+        old cost expression - runs without git too: every cost number evaluate reports is rebuilt from _old_active."""
+        from masterquo.risk import engine as new
+        reached = unknown = 0
+        for i, kw in enumerate(_cases_risk_engine()):
+            res = new.evaluate(**kw)
+            if "per_lot" not in res:
+                continue
+            reached += 1
+            side = "BUY" if kw["side"] == "LONG" else "SELL"
+            entry = float(kw["quote"]["ask"] if side == "BUY" else kw["quote"]["bid"])
+            pf, comm = kw["profit_fn"], kw["commission"]["per_lot_per_side"]
+            c_rt, slip, cost, reasons = _old_active(comm, kw["costs_cfg"].slippage_stress_points, float(kw["symbol_info"]["point"] or 0) or None,
+                                                    pf, side, entry)
+            stop = max(0.0, -pf(side, 1.0, entry, float(kw["levels"]["stop_loss"])))
+            reward = sum(t["weight"] * pf(side, 1.0, entry, t["price"]) for t in kw["levels"]["targets"])
+            got = (res["per_lot"]["commission_roundtrip"], res["per_lot"]["slippage_stress"], res["per_lot"]["total_loss_stress"],
+                   res["rr_net"], res["rr_complete"])
+            exp = (c_rt, None if slip is None else round(slip, 2), round(stop + cost, 2), round((reward - cost) / (stop + cost), 3),
+                   comm is not None and slip is not None)
+            self.assertEqual(_bits(got), _bits(exp), i)
+            for code in ("COST_MODEL_UNKNOWN_COMMISSION", "SLIPPAGE_STRESS_NOT_CONFIGURED"):
+                self.assertEqual(code in res["reason_codes"], code in reasons, (i, code))
+            unknown += comm is None
+        self.assertGreater(reached, N // 2)
+        self.assertGreater(unknown, 10)
+
+
+def _cases_risk_engine():
+    """N random risk.engine.evaluate requests (seed SEED + 1); generated afresh for every run (old, new, frozen)."""
+    from datetime import UTC, datetime
+
+    from masterquo.config import ConfigStore
+    td = TempData()
+    try:
+        base = ConfigStore().get().risk
+    finally:
+        td.close()
+    rng = random.Random(SEED + 1)
+    now = datetime(2026, 3, 4, 8, tzinfo=UTC)
+    for _ in range(N):
+        side = rng.choice(["LONG", "SHORT"])
+        bid = round(rng.uniform(100, 3000), 2)
+        ask = round(bid + rng.choice([0.0, 0.01, 0.2, 1.5]), 2)
+        e = ask if side == "LONG" else bid
+        sgn = 1 if side == "LONG" else -1
+        sl_d, t1, t2 = rng.uniform(0.5, 30), rng.uniform(0.5, 60), rng.uniform(0.5, 90)
+        levels = {"status": "AVAILABLE", "stop_loss": e - sgn * sl_d,
+                  "targets": [{"price": e + sgn * t1, "weight": 0.5}, {"price": e + sgn * max(t1, t2), "weight": 0.5}]}
+        sym = {"point": rng.choice([0.01, 0.001, 0.0]), "trade_stops_level": rng.choice([0, 10]), "trade_mode": 4,
+               "volume_min": 0.01, "volume_max": rng.choice([1.0, 100.0]), "volume_step": 0.01}
+        eq = rng.choice([300.0, 5000.0, 10000.0, 250000.0])
+        lim = base.model_copy(update={"risk_per_trade_pct": rng.choice([0.5, 1.0, 2.0]), "max_total_open_risk_pct": 3.0,
+                                      "daily_loss_limit_pct": 5.0, "max_drawdown_pct": 10.0, "max_open_positions": 3})
+        yield {"side": side, "levels": levels, "quote": {"bid": bid, "ask": ask, "spread_points": round((ask - bid) * 100)},
+               "symbol_info": sym, "account": {"equity": eq, "free_margin": eq, "currency": "USD"}, "limits": lim,
+               "costs_cfg": SimpleNamespace(slippage_stress_points=_maybe(rng, rng.choice([0.0, 5.0, rng.uniform(0, 40)]))),
+               "commission": {"per_lot_per_side": _maybe(rng, rng.choice([0.0, 3.5, rng.uniform(0, 10)]), 0.25), "source": "TEST"},
+               "profit_fn": _profit_fn(rng), "margin_fn": lambda s, v, p: v * p / 100, "positions": [], "deals": [], "day_start_raw": 0,
+               "equity_peak": eq, "open_risk_info": {"open_risk": 0.0, "positions_without_sl": []}, "margin_mode": "HEDGING",
+               "last_bot_loss_at": None, "now": now, "max_spread_points": None, "symbol": "XAUUSD-"}
+
+
+def _out_risk_engine(mod):
+    return [_outcome(mod.evaluate, **kw) for kw in _cases_risk_engine()]
 
 
 class TestCommissionSourceMoved(unittest.TestCase):
     """commission_from_history / resolve_commission moved verbatim to costs.commission; risk.costs keeps aliases."""
-
-    def _deals(self, rng):
-        out = []
-        for _ in range(rng.randint(0, 12)):
-            out.append({"symbol": rng.choice(["XAUUSD-", "XAUUSD-", "EURUSD"]), "type": rng.choice([0, 1, 2]),
-                        "volume": rng.choice([0, 0.01, 0.1, 1.0, rng.uniform(0, 3)]), "entry": rng.choice([0, 1, 2, 3]),
-                        "commission": rng.choice([0.0, -3.5, -0.35, rng.uniform(-10, 0), None]), "fee": rng.choice([0.0, None, -0.1])})
-        return out
 
     def test_aliases_are_the_moved_functions(self):
         from masterquo import costs as C
@@ -258,14 +302,31 @@ class TestCommissionSourceMoved(unittest.TestCase):
     def test_moved_functions_equal_the_old_ones(self):
         old = _old_module("backend/masterquo/risk/costs.py", "masterquo.risk._e4_old_costs")
         from masterquo.costs import commission as new
-        rng = random.Random(SEED + 2)
+        a, b = _out_commission(old), _out_commission(new)
         for i in range(N):
-            deals = self._deals(rng)
-            ms = rng.choice([1, 3, 5])
-            self.assertEqual(_bits(new.commission_from_history(deals, "XAUUSD-", ms)), _bits(old.commission_from_history(deals, "XAUUSD-", ms)), i)
-            cfg = SimpleNamespace(commission_mode=rng.choice(["CONFIGURED", "FROM_DEAL_HISTORY", "UNKNOWN"]),
-                                  commission_per_lot_per_side=_maybe(rng, rng.choice([0.0, 3.5, rng.uniform(0, 9)]), 0.4))
-            self.assertEqual(_bits(new.resolve_commission(cfg, deals, "XAUUSD-")), _bits(old.resolve_commission(cfg, deals, "XAUUSD-")), i)
+            self.assertEqual(b[i], a[i], i)
+
+
+def _deals(rng):
+    out = []
+    for _ in range(rng.randint(0, 12)):
+        out.append({"symbol": rng.choice(["XAUUSD-", "XAUUSD-", "EURUSD"]), "type": rng.choice([0, 1, 2]),
+                    "volume": rng.choice([0, 0.01, 0.1, 1.0, rng.uniform(0, 3)]), "entry": rng.choice([0, 1, 2, 3]),
+                    "commission": rng.choice([0.0, -3.5, -0.35, rng.uniform(-10, 0), None]), "fee": rng.choice([0.0, None, -0.1])})
+    return out
+
+
+def _out_commission(mod):
+    """commission_from_history + resolve_commission of `mod` on N random deal histories / cost configs (seed SEED + 2)."""
+    rng = random.Random(SEED + 2)
+    outs = []
+    for _ in range(N):
+        deals = _deals(rng)
+        ms = rng.choice([1, 3, 5])
+        cfg = SimpleNamespace(commission_mode=rng.choice(["CONFIGURED", "FROM_DEAL_HISTORY", "UNKNOWN"]),
+                              commission_per_lot_per_side=_maybe(rng, rng.choice([0.0, 3.5, rng.uniform(0, 9)]), 0.4))
+        outs.append((_outcome(mod.commission_from_history, deals, "XAUUSD-", ms), _outcome(mod.resolve_commission, cfg, deals, "XAUUSD-")))
+    return outs
 
 
 def _outcome(fn, *a, **kw):
@@ -303,6 +364,63 @@ def _sh_spec(rng):
                       0.01, 0.01, rng.choice([100, 5]), 2, "USD", source="TEST")
 
 
+def _sh_ic(rng):
+    return {"slippage_usd": _maybe(rng, rng.choice([0.0, 0.05, rng.uniform(0, 0.5)])),
+            "commission_per_lot_side": _maybe(rng, rng.choice([0.0, 0.5, 3.5, rng.uniform(0, 8)]), 0.3)}
+
+
+def _cases_sh_setup(SC, cfg):
+    """N random sh.setup.evaluate calls (seed SEED + 12): (strategy, snapshot, spec, profile, kwargs)."""
+    import test_sh_setup as TS
+    rng = random.Random(SEED + 12)
+    for _ in range(N):
+        side, strat = rng.choice(["BUY", "SELL"]), rng.choice(["SCALPING", "HEDGING"])
+        prof = copy.deepcopy(SC.profile(cfg, "XAUUSD", strat))
+        prof["_instrument"] = dict(prof.get("_instrument") or {}, **_sh_ic(rng))
+        prof["min_net_rr"] = rng.choice([prof["min_net_rr"], 0.5, 0.8, 0.9, 1.2])
+        if rng.random() < 0.3:
+            prof["be_rule"] = rng.choice(["ENTRY_PLUS_COSTS", "ENTRY"])
+        snap = TS._snap(side)
+        snap["data"] = dict(snap["data"], spread=rng.choice([0.0, 0.05, 0.2, 0.6, rng.uniform(0, 1.2)]))
+        yield strat, snap, _sh_spec(rng), prof, {"now": TS.NOW, "m1": TS._m1(side)}
+
+
+def _out_sh_setup(mod):
+    from masterquo.sh import config as SC
+    td = TempData()
+    try:
+        cfg = SC.load()
+        return [_outcome(mod.evaluate, strat, "XAUUSD", copy.deepcopy(snap), spec, copy.deepcopy(prof), **kw)
+                for strat, snap, spec, prof, kw in _cases_sh_setup(SC, cfg)]
+    finally:
+        td.close()
+
+
+def _out_sh_risk(mod):
+    """N random sh.risk.evaluate calls (seed SEED + 13)."""
+    import test_sh_risk_state as TR
+    from masterquo.sh import config as SC
+    td = TempData()
+    try:
+        cfg = SC.load()
+        rng = random.Random(SEED + 13)
+        outs = []
+        for _ in range(N):
+            strat, side = rng.choice(["SCALPING", "HEDGING"]), rng.choice(["BUY", "SELL"])
+            prof = copy.deepcopy(SC.profile(cfg, "XAUUSD", strat))
+            prof["_instrument"] = dict(prof.get("_instrument") or {}, **_sh_ic(rng))
+            sl = 2000.2 - rng.uniform(0.3, 8) if side == "BUY" else 2000.2 + rng.uniform(0.3, 8)
+            setup = TR._setup(strat, side, sl=sl, costs=_maybe(rng, {"round_trip_price": _maybe(rng, rng.choice([0.0, 0.3, rng.uniform(0, 2)]))}, 0.1))
+            spec = _sh_spec(rng)
+            acc = dict(TR.ACC, equity=rng.choice([300.0, 2000.0, 10000.0, 80000.0]), margin_mode=rng.choice(["HEDGING", "NETTING"]))
+            kw = {"setup": setup, "spec": spec, "prof": prof, "cfg": cfg, "inst": "XAUUSD", "account": acc, "state": {},
+                  "exec_mode": rng.choice(["PAPER", "AUTO_DEMO", "SIGNALS"]), "now": TR.NOW, "quote": TR.Q}
+            outs.append(_outcome(mod.evaluate, **copy.deepcopy(kw)))
+        return outs
+    finally:
+        td.close()
+
+
 class TestSH(unittest.TestCase):
     def setUp(self):
         self.td = TempData()
@@ -313,15 +431,11 @@ class TestSH(unittest.TestCase):
     def tearDown(self):
         self.td.close()
 
-    def _ic(self, rng):
-        return {"slippage_usd": _maybe(rng, rng.choice([0.0, 0.05, rng.uniform(0, 0.5)])),
-                "commission_per_lot_side": _maybe(rng, rng.choice([0.0, 0.5, 3.5, rng.uniform(0, 8)]), 0.3)}
-
     def test_round_trip_resolver_equals_old_formula(self):
         from masterquo import costs as C
         rng = random.Random(SEED + 10)
         for i in range(N):
-            spec, ic = _sh_spec(rng), self._ic(rng)
+            spec, ic = _sh_spec(rng), _sh_ic(rng)
             d = {"spread": _maybe(rng, rng.choice([0.0, 0.2, rng.uniform(0, 1.5)]))}
             comm = ic.get("commission_per_lot_side")
             cb = C.resolve(C.profile(C.SH, "XAUUSD"), spread=d.get("spread"), slippage=ic.get("slippage_usd"), commission_per_lot_side=comm,
@@ -329,11 +443,31 @@ class TestSH(unittest.TestCase):
             self.assertEqual(_bits((cb.total, cb.commission_known, list(cb.warnings))), _bits(_old_sh_cost(d, ic, spec)), i)
             self.assertEqual(cb.spread, d.get("spread") or 0.0)                       # O7: the spread IS a cost line of SH
 
+    def test_call_site_in_setup_evaluate_equals_old_formula(self):
+        """The production call site (sh/setup.evaluate step 7: resolver inputs, money_per_price guard, warnings into args_against)
+        against the old cost expression - runs without git too: costs.round_trip_price / commission_known / the warning of every
+        evaluation that reaches the cost step are rebuilt from _old_sh_cost."""
+        from masterquo.sh import setup as new
+        reached = set()
+        for i, (strat, snap, spec, prof, kw) in enumerate(_cases_sh_setup(self.SC, self.cfg)):
+            r = new.evaluate(strat, "XAUUSD", copy.deepcopy(snap), spec, copy.deepcopy(prof), **kw)
+            if "costs" not in r:
+                continue
+            cost, known, con = _old_sh_cost(snap["data"], prof["_instrument"], spec)
+            self.assertEqual(_bits((r["costs"]["round_trip_price"], r["costs"]["commission_known"], r["costs"]["spread"])),
+                             _bits((round(cost, 4), known, snap["data"].get("spread"))), i)
+            for w in ("prowizja nieznana – koszt bez prowizji (AUTO wymaga znanej prowizji)",):
+                self.assertEqual(w in r["args_against"], w in con, i)
+            if r["status"] == "READY":
+                self.assertEqual(_bits(r["be"]["offset_price"]), _bits(round(cost if prof.get("be_rule") == "ENTRY_PLUS_COSTS" else 0.0, 4)), i)
+            reached.add((r["status"], known))
+        self.assertLessEqual({("READY", True), ("READY", False)}, reached)
+
     def test_sizing_resolver_equals_old_formula(self):
         from masterquo import costs as C
         rng = random.Random(SEED + 11)
         for i in range(N):
-            ic = self._ic(rng)
+            ic = _sh_ic(rng)
             setup = {"costs": _maybe(rng, {"round_trip_price": _maybe(rng, rng.choice([0.0, 0.3, rng.uniform(0, 2)]))}, 0.1)}
             mpp, sl_dist = rng.choice([100.0, 10.0, rng.uniform(0.5, 500)]), rng.uniform(0.1, 30)
             cost_price = float((setup.get("costs") or {}).get("round_trip_price") or 0.0)
@@ -342,54 +476,22 @@ class TestSH(unittest.TestCase):
             self.assertEqual(_bits(new), _bits(_old_sh_loss_per_lot(setup, ic, mpp, sl_dist)), i)
 
     def test_whole_setup_evaluate_old_vs_new(self):
-        import copy
-
-        import test_sh_setup as TS
         old = _old_module("backend/masterquo/sh/setup.py", "masterquo.sh._e4_old_setup")
         from masterquo.sh import setup as new
-        rng = random.Random(SEED + 12)
-        seen = set()
+        a, b = _out_sh_setup(old), _out_sh_setup(new)
         for i in range(N):
-            side, strat = rng.choice(["BUY", "SELL"]), rng.choice(["SCALPING", "HEDGING"])
-            prof = copy.deepcopy(self.SC.profile(self.cfg, "XAUUSD", strat))
-            prof["_instrument"] = dict(prof.get("_instrument") or {}, **self._ic(rng))
-            prof["min_net_rr"] = rng.choice([prof["min_net_rr"], 0.5, 0.8, 0.9, 1.2])
-            if rng.random() < 0.3:
-                prof["be_rule"] = rng.choice(["ENTRY_PLUS_COSTS", "ENTRY"])
-            snap = TS._snap(side)
-            snap["data"] = dict(snap["data"], spread=rng.choice([0.0, 0.05, 0.2, 0.6, rng.uniform(0, 1.2)]))
-            spec = _sh_spec(rng)
-            kw = {"now": TS.NOW, "m1": TS._m1(side)}
-            a = _outcome(old.evaluate, strat, "XAUUSD", copy.deepcopy(snap), spec, copy.deepcopy(prof), **kw)
-            b = _outcome(new.evaluate, strat, "XAUUSD", copy.deepcopy(snap), spec, copy.deepcopy(prof), **kw)
-            self.assertEqual(b, a, i)
-            seen.add(a[0] if isinstance(a, tuple) else (a.get("status"), "costs" in a))
+            self.assertEqual(b[i], a[i], i)
+        seen = {x[0] if isinstance(x, tuple) else (x.get("status"), "costs" in x) for x in a}
         self.assertIn(("READY", True), seen)                    # the cost step is reached and passed ...
         self.assertTrue({s for s in seen if s[0] == "NO_TRADE" and s[1]}, seen)   # ... and fails on net RR in some cases
 
     def test_whole_risk_evaluate_old_vs_new(self):
-        import copy
-
-        import test_sh_risk_state as TR
         old = _old_module("backend/masterquo/sh/risk.py", "masterquo.sh._e4_old_risk")
         from masterquo.sh import risk as new
-        rng = random.Random(SEED + 13)
-        statuses = set()
+        a, b = _out_sh_risk(old), _out_sh_risk(new)
         for i in range(N):
-            strat, side = rng.choice(["SCALPING", "HEDGING"]), rng.choice(["BUY", "SELL"])
-            prof = copy.deepcopy(self.SC.profile(self.cfg, "XAUUSD", strat))
-            prof["_instrument"] = dict(prof.get("_instrument") or {}, **self._ic(rng))
-            sl = 2000.2 - rng.uniform(0.3, 8) if side == "BUY" else 2000.2 + rng.uniform(0.3, 8)
-            setup = TR._setup(strat, side, sl=sl, costs=_maybe(rng, {"round_trip_price": _maybe(rng, rng.choice([0.0, 0.3, rng.uniform(0, 2)]))}, 0.1))
-            spec = _sh_spec(rng)
-            acc = dict(TR.ACC, equity=rng.choice([300.0, 2000.0, 10000.0, 80000.0]), margin_mode=rng.choice(["HEDGING", "NETTING"]))
-            kw = {"setup": setup, "spec": spec, "prof": prof, "cfg": self.cfg, "inst": "XAUUSD", "account": acc, "state": {},
-                  "exec_mode": rng.choice(["PAPER", "AUTO_DEMO", "SIGNALS"]), "now": TR.NOW, "quote": TR.Q}
-            a = _outcome(old.evaluate, **copy.deepcopy(kw))
-            b = _outcome(new.evaluate, **copy.deepcopy(kw))
-            self.assertEqual(b, a, i)
-            statuses.add(a.get("status") if isinstance(a, dict) else a[0])
-        self.assertIn("PASS", statuses)
+            self.assertEqual(b[i], a[i], i)
+        self.assertIn("PASS", {x.get("status") if isinstance(x, dict) else x[0] for x in a})
 
 
 # ====================================================================================================================== SCALP
@@ -406,20 +508,41 @@ def _old_scalp_extras(com, contract_size, mpp, slippage_ticks, tick):
     return extra, extra0
 
 
-class TestScalp(unittest.TestCase):
-    def _inputs(self, rng):
-        com = rng.choice([0.0, -0.0, 3.5, 7.0, rng.uniform(0, 12)])
-        cs = rng.choice([100.0, 1.0, 10.0, 100000.0, rng.uniform(0.5, 500)])
-        mpp = rng.choice([None, 0.0, 50.0, 92.0, 100.0, 400.0, rng.uniform(0.1, 1000)])
-        return com, cs, mpp, rng.choice([0, 0.0, 1, 2.0, rng.uniform(0, 10)]), rng.choice([0.01, 0.001, 0.1, 0.00001])
+def _scalp_inputs(rng):
+    com = rng.choice([0.0, -0.0, 3.5, 7.0, rng.uniform(0, 12)])
+    cs = rng.choice([100.0, 1.0, 10.0, 100000.0, rng.uniform(0.5, 500)])
+    mpp = rng.choice([None, 0.0, 50.0, 92.0, 100.0, 400.0, rng.uniform(0.1, 1000)])
+    return com, cs, mpp, rng.choice([0, 0.0, 1, 2.0, rng.uniform(0, 10)]), rng.choice([0.01, 0.001, 0.1, 0.00001])
 
+
+def _out_scalp_gate(mod):
+    """scalp economics_gate of `mod` on N random plans / fills / costs (seed SEED + 21)."""
+    from masterquo.scalp import strategy as st
+    p = st.load_profile()
+    rng = random.Random(SEED + 21)
+    outs = []
+    for _ in range(N):
+        com, cs, mpp, slip, tick = _scalp_inputs(rng)
+        cs = cs or 100.0                                                        # the service calls the gate only with cs > 0
+        side = rng.choice(["BUY", "SELL"])
+        sgn = 1 if side == "BUY" else -1
+        sl_d, t1 = rng.uniform(0.2, 6), rng.uniform(0.2, 8)
+        plan = {"direction": side, "sl": round(2000 - sgn * sl_d, 2), "tp1": round(2000 + sgn * t1, 2),
+                "tp2": round(2000 + sgn * (t1 + rng.uniform(0, 6)), 2)}
+        fill = round(2000 + sgn * rng.uniform(-sl_d - 0.5, t1 + 0.5), 2)
+        sp = rng.choice([0.0, 0.05, 0.3, rng.uniform(0, 1)])
+        outs.append(_outcome(mod.economics_gate, plan, fill, sp, com, cs, mpp, slip, tick, p))
+    return outs
+
+
+class TestScalp(unittest.TestCase):
     def test_resolver_equals_old_formula(self):
         from masterquo import costs as C
         from masterquo.scalp import service as svc
         from masterquo.scalp import strategy as st
         rng = random.Random(SEED + 20)
         for i in range(N):
-            com, cs, mpp, slip, tick = self._inputs(rng)
+            com, cs, mpp, slip, tick = _scalp_inputs(rng)
             self.assertEqual(_bits(svc.commission_price(com, cs, mpp)), _bits(_old_commission_price(com, cs, mpp)), i)
             self.assertEqual(_bits(C.commission_price_side(com, cs, mpp)), _bits(_old_commission_price(com, cs, mpp)), i)
             new = (st.cost_extra(com, cs, mpp, slip, tick), st.cost_extra(com, cs, mpp, slip, tick, pre_146=True))
@@ -430,25 +553,10 @@ class TestScalp(unittest.TestCase):
     def test_whole_economics_gate_old_vs_new(self):
         old = _old_module("backend/masterquo/scalp/service.py", "masterquo.scalp._e4_old_service")
         from masterquo.scalp import service as new
-        from masterquo.scalp import strategy as st
-        p = st.load_profile()
-        rng = random.Random(SEED + 21)
-        oks = set()
+        a, b = _out_scalp_gate(old), _out_scalp_gate(new)
         for i in range(N):
-            com, cs, mpp, slip, tick = self._inputs(rng)
-            cs = cs or 100.0                                                        # the service calls the gate only with cs > 0
-            side = rng.choice(["BUY", "SELL"])
-            sgn = 1 if side == "BUY" else -1
-            sl_d, t1 = rng.uniform(0.2, 6), rng.uniform(0.2, 8)
-            plan = {"direction": side, "sl": round(2000 - sgn * sl_d, 2), "tp1": round(2000 + sgn * t1, 2),
-                    "tp2": round(2000 + sgn * (t1 + rng.uniform(0, 6)), 2)}
-            fill = round(2000 + sgn * rng.uniform(-sl_d - 0.5, t1 + 0.5), 2)
-            sp = rng.choice([0.0, 0.05, 0.3, rng.uniform(0, 1)])
-            a = _outcome(old.economics_gate, plan, fill, sp, com, cs, mpp, slip, tick, p)
-            b = _outcome(new.economics_gate, plan, fill, sp, com, cs, mpp, slip, tick, p)
-            self.assertEqual(b, a, i)
-            oks.add(a[2] if isinstance(a, tuple) and len(a) == 4 else a)
-        self.assertEqual(oks, {True, False})
+            self.assertEqual(b[i], a[i], i)
+        self.assertEqual({x[2] if isinstance(x, tuple) and len(x) == 4 else x for x in a}, {True, False})
 
 
 # ====================================================================================================================== EVALUATION
@@ -478,46 +586,87 @@ def _info(rng):
     return out
 
 
+def _eval_fake(rng, cfg=None):
+    """A stand-in EvaluationService with a cost config and a deal history (random unless `cfg` is given)."""
+    import threading
+    deals = [{"symbol": "XAUUSD-", "type": rng.choice([0, 1]), "volume": 1.0, "entry": rng.choice([0, 1]),
+              "commission": -rng.choice([0.0, 3.5, 7.0]), "fee": 0.0} for _ in range(rng.randint(0, 8))] if cfg is None else []
+    if cfg is None:
+        cfg = SimpleNamespace(costs=SimpleNamespace(commission_mode=rng.choice(["CONFIGURED", "FROM_DEAL_HISTORY", "UNKNOWN"]),
+                                                    commission_per_lot_per_side=_maybe(rng, rng.choice([0.0, 3.5, rng.uniform(0, 9)]), 0.3),
+                                                    slippage_stress_points=_maybe(rng, rng.choice([0.0, 20.0, rng.uniform(0, 50)]))),
+                              mt5=SimpleNamespace(symbol="XAUUSD-"))
+    return SimpleNamespace(cfg_store=SimpleNamespace(get=lambda: cfg), bridge=SimpleNamespace(_lock=threading.Lock(), deals=deals))
+
+
+def _out_eval_active(mod):
+    """EvaluationService._active_cost of `mod` on N random cost configs / deal histories / symbol infos (seed SEED + 31)."""
+    rng = random.Random(SEED + 31)
+    outs = []
+    for _ in range(N):
+        fake, info = _eval_fake(rng), _info(rng)
+        outs.append(_outcome(mod.EvaluationService._active_cost, fake, info))
+    return outs
+
+
+def _out_eval_sh(mod):
+    """EvaluationService._sh of `mod` on N READY SH setups with random costs (seed SEED + 33): its result and the logged candidate."""
+    import test_sh_setup as TS
+    from masterquo.sh import config as SC
+    from masterquo.sh import setup as SU
+    td = TempData()
+    try:
+        cfg = SC.load()
+        rng = random.Random(SEED + 33)
+        ready = []
+        for side in ("BUY", "SELL"):
+            for strat in ("SCALPING", "HEDGING"):
+                r = SU.evaluate(strat, "XAUUSD", TS._snap(side), _sh_spec(random.Random(1)), SC.profile(cfg, "XAUUSD", strat), now=TS.NOW,
+                                m1=TS._m1(side))
+                if r["status"] == "READY":
+                    ready.append(r)
+        assert ready, "no READY SH setup to evaluate"
+        outs = []
+        for _ in range(N):
+            su = copy.deepcopy(rng.choice(ready))
+            su["costs"] = {k: v for k, v in (("round_trip_price", _maybe(rng, rng.uniform(0, 2))), ("spread", _maybe(rng, rng.uniform(0, 1.5))),
+                                              ("commission_known", rng.choice([True, False]))) if rng.random() > 0.1}
+            cap = []
+            fake = SimpleNamespace(_log=lambda c, prob, extra, cap=cap: cap.append((c.to_dict(), prob, extra)), _sh_n_cal=lambda inst, strat: None)
+            outs.append((_outcome(mod.EvaluationService._sh, fake, copy.deepcopy(su), "XAUUSD", None, TS.NOW), _bits(cap)))
+        return outs
+    finally:
+        td.close()
+
+
 class TestEvaluation(unittest.TestCase):
-    def test_active_resolver_equals_old_formula(self):
-        from masterquo import costs as C
+    def test_call_site_active_cost_equals_old_formula(self):
+        """The production function EvaluationService._active_cost (tick-value conversion, resolver call, failure branch) on a
+        stand-in service with a CONFIGURED commission against the old cost expression - runs without git too."""
+        from masterquo.evaluation import service as new
         rng = random.Random(SEED + 30)
+        branches = set()
         for i in range(N):
             info = _info(rng)
             comm = _maybe(rng, rng.choice([0.0, 3.5, rng.uniform(0, 9)]), 0.3)
             pts = _maybe(rng, rng.choice([0.0, 20.0, rng.uniform(0, 50)]))
             a = _outcome(_old_eval_active_formula, comm, info, pts)
-
-            def new(comm=comm, info=info, pts=pts):
-                tv, ts = float(info.get("trade_tick_value") or 0), float(info.get("trade_tick_size") or info.get("point") or 0)
-                mpp = tv / ts if tv > 0 and ts > 0 else None
-                cb = C.resolve(C.profile(C.EVALUATION_ACTIVE), commission_per_lot_side=comm, money_per_price=mpp, slippage=pts,
-                               point=float(info.get("point") or 0.0))
-                return cb.total, cb.commission_known
-            self.assertEqual(_outcome(new), a, i)
-
-    def _fake(self, rng, cls):
-        import threading
-        deals = [{"symbol": "XAUUSD-", "type": rng.choice([0, 1]), "volume": 1.0, "entry": rng.choice([0, 1]),
-                  "commission": -rng.choice([0.0, 3.5, 7.0]), "fee": 0.0} for _ in range(rng.randint(0, 8))]
-        cfg = SimpleNamespace(costs=SimpleNamespace(commission_mode=rng.choice(["CONFIGURED", "FROM_DEAL_HISTORY", "UNKNOWN"]),
-                                                    commission_per_lot_per_side=_maybe(rng, rng.choice([0.0, 3.5, rng.uniform(0, 9)]), 0.3),
-                                                    slippage_stress_points=_maybe(rng, rng.choice([0.0, 20.0, rng.uniform(0, 50)]))),
-                              mt5=SimpleNamespace(symbol="XAUUSD-"))
-        fake = SimpleNamespace(cfg_store=SimpleNamespace(get=lambda: cfg), bridge=SimpleNamespace(_lock=threading.Lock(), deals=deals))
-        return fake
+            if a[0] == "EXC":
+                a = (None, None)                                         # the production function reports a failure as (None, None)
+            cfg = SimpleNamespace(costs=SimpleNamespace(commission_mode="CONFIGURED" if comm is not None else "UNKNOWN",
+                                                        commission_per_lot_per_side=comm, slippage_stress_points=pts),
+                                  mt5=SimpleNamespace(symbol="XAUUSD-"))
+            self.assertEqual(_outcome(new.EvaluationService._active_cost, _eval_fake(rng, cfg), info), a, i)
+            branches.add(a[1])
+        self.assertEqual(branches, {True, False, None})
 
     def test_whole_active_cost_old_vs_new(self):
         old = _old_module("backend/masterquo/evaluation/service.py", "masterquo.evaluation._e4_old_service")
         from masterquo.evaluation import service as new
-        rng = random.Random(SEED + 31)
-        known = set()
+        a, b = _out_eval_active(old), _out_eval_active(new)
         for i in range(N):
-            fake, info = self._fake(rng, None), _info(rng)
-            a = _outcome(old.EvaluationService._active_cost, fake, info)
-            self.assertEqual(_outcome(new.EvaluationService._active_cost, fake, info), a, i)
-            known.add(a[1])
-        self.assertEqual(known, {True, False, None})                 # known, unknown / unconvertible, and the failure branch
+            self.assertEqual(b[i], a[i], i)
+        self.assertEqual({x[1] for x in a}, {True, False, None})     # known, unknown / unconvertible, and the failure branch
 
     def test_sh_extra_resolver_equals_old_formula(self):
         from masterquo import costs as C
@@ -533,42 +682,13 @@ class TestEvaluation(unittest.TestCase):
             self.assertEqual(b, a, i)
 
     def test_whole_sh_old_vs_new(self):
-        import copy
-
-        import test_sh_setup as TS
         old = _old_module("backend/masterquo/evaluation/service.py", "masterquo.evaluation._e4_old_service2")
         from masterquo.evaluation import service as new
-        from masterquo.sh import config as SC
-        from masterquo.sh import setup as SU
-        td = TempData()
-        try:
-            cfg = SC.load()
-            rng = random.Random(SEED + 33)
-            ready = []
-            for side in ("BUY", "SELL"):
-                for strat in ("SCALPING", "HEDGING"):
-                    r = SU.evaluate(strat, "XAUUSD", TS._snap(side), _sh_spec(random.Random(1)), SC.profile(cfg, "XAUUSD", strat), now=TS.NOW,
-                                    m1=TS._m1(side))
-                    if r["status"] == "READY":
-                        ready.append(r)
-            self.assertTrue(ready)
-            extras = set()
-            for i in range(N):
-                su = copy.deepcopy(rng.choice(ready))
-                su["costs"] = {k: v for k, v in (("round_trip_price", _maybe(rng, rng.uniform(0, 2))), ("spread", _maybe(rng, rng.uniform(0, 1.5))),
-                                                  ("commission_known", rng.choice([True, False]))) if rng.random() > 0.1}
-                got = []
-                for mod in (old, new):
-                    cap = []
-                    fake = SimpleNamespace(_log=lambda c, prob, extra, cap=cap: cap.append((c.to_dict(), prob, extra)),
-                                           _sh_n_cal=lambda inst, strat: None)
-                    got.append((_outcome(mod.EvaluationService._sh, fake, copy.deepcopy(su), "XAUUSD", None, TS.NOW), _bits(cap)))
-                self.assertEqual(got[1], got[0], i)
-                self.assertEqual(len(got[0][1]), 1, got[0])                      # the candidate was logged with its extra cost
-                extras.add(got[0][1][0][2] is None)
-            self.assertEqual(extras, {True, False})
-        finally:
-            td.close()
+        a, b = _out_eval_sh(old), _out_eval_sh(new)
+        for i in range(N):
+            self.assertEqual(b[i], a[i], i)
+            self.assertEqual(len(a[i][1]), 1, a[i])                      # the candidate was logged with its extra cost
+        self.assertEqual({x[1][0][2] is None for x in a}, {True, False})
 
 
 # ====================================================================================================================== QUANT LABELS
@@ -595,6 +715,25 @@ def _candidate(rng):
             "entry_type": rng.choice([None, "MARKET", "LIMIT_EDGE"]), "execution_context": ec}
 
 
+def _out_quant_spec(mod):
+    """quant/events.spec_from_candidate of `mod` on N random candidates (seed SEED + 41)."""
+    from dataclasses import asdict
+    rng = random.Random(SEED + 41)
+    outs = []
+    for _ in range(N):
+        c = _candidate(rng)
+        kw = {"be_after": rng.choice([None, None, "TP1", "TP2"]), "ambiguity": rng.choice(["SL_FIRST", "BOUNDS"])}
+        outs.append(_outcome(lambda m=mod, c=c, kw=kw: asdict(m.spec_from_candidate(c, **kw))))
+    return outs
+
+
+def _spec_or_none(mod, c, kw):
+    try:
+        return mod.spec_from_candidate(c, **kw)
+    except Exception:  # noqa: BLE001 - a refused candidate
+        return None
+
+
 class TestQuantLabels(unittest.TestCase):
     def test_resolver_equals_old_formula(self):
         from masterquo import costs as C
@@ -606,21 +745,89 @@ class TestQuantLabels(unittest.TestCase):
             new = (C.be_offset(p, cost) if be else 0.0), C.label_cost(p, cost, known)
             self.assertEqual(_bits(new), _bits(_old_label(cost, known, be)), i)
 
-    def test_whole_spec_from_candidate_old_vs_new(self):
-        from dataclasses import asdict
-        old = _old_module("backend/masterquo/quant/events.py", "masterquo.quant._e4_old_events")
+    def test_call_site_in_spec_from_candidate_equals_old_formula(self):
+        """The production call site (quant/events.spec_from_candidate: EventSpec.be_offset_price / cost_price) against the old label
+        expression for the BE rule the spec itself resolved - runs without git too."""
         from masterquo.quant import events as new
         rng = random.Random(SEED + 41)
-        labels = set()
+        seen = set()
         for i in range(N):
             c = _candidate(rng)
             kw = {"be_after": rng.choice([None, None, "TP1", "TP2"]), "ambiguity": rng.choice(["SL_FIRST", "BOUNDS"])}
-            a = _outcome(lambda m=old, c=c, kw=kw: asdict(m.spec_from_candidate(c, **kw)))
-            b = _outcome(lambda m=new, c=c, kw=kw: asdict(m.spec_from_candidate(c, **kw)))
-            self.assertEqual(b, a, i)
-            labels.add("EXC" if isinstance(a, tuple) else a["cost_price"] is None)
+            spec = _spec_or_none(new, c, kw)
+            if spec is None:                                          # the same refusals as before: test_whole_spec_from_candidate_old_vs_new
+                continue
+            ec = c["execution_context"]
+            exp = _old_label(ec.get("cost_price"), ec.get("commission_known"), spec.be_after)
+            self.assertEqual(_bits((spec.be_offset_price, spec.cost_price)), _bits(exp), i)
+            seen.add((spec.be_after is not None, spec.cost_price is None))
+        self.assertEqual(len(seen), 4, seen)                          # with / without BE x with / without a net label
+
+    def test_whole_spec_from_candidate_old_vs_new(self):
+        old = _old_module("backend/masterquo/quant/events.py", "masterquo.quant._e4_old_events")
+        from masterquo.quant import events as new
+        a, b = _out_quant_spec(old), _out_quant_spec(new)
+        for i in range(N):
+            self.assertEqual(b[i], a[i], i)
+        labels = {"EXC" if isinstance(x, tuple) else x["cost_price"] is None for x in a}
         self.assertLessEqual({True, False}, labels)                   # net labels with and without a known cost (EXC = same refusal)
 
 
+# ====================================================================================================================== FROZEN AT BASE
+FROZEN = _env.ROOT / "tests" / "data" / "arch146_e4_costs_base.json"
+
+# name -> (file at BASE, module name of the old copy, the module of today, outputs of one module on the fixed random inputs)
+WHOLE = {
+    "risk.engine.evaluate": ("backend/masterquo/risk/engine.py", "masterquo.risk._e4_old_engine", "masterquo.risk.engine", _out_risk_engine),
+    "risk.costs.commission": ("backend/masterquo/risk/costs.py", "masterquo.risk._e4_old_costs", "masterquo.costs.commission",
+                              _out_commission),
+    "sh.setup.evaluate": ("backend/masterquo/sh/setup.py", "masterquo.sh._e4_old_setup", "masterquo.sh.setup", _out_sh_setup),
+    "sh.risk.evaluate": ("backend/masterquo/sh/risk.py", "masterquo.sh._e4_old_risk", "masterquo.sh.risk", _out_sh_risk),
+    "scalp.service.economics_gate": ("backend/masterquo/scalp/service.py", "masterquo.scalp._e4_old_service", "masterquo.scalp.service",
+                                     _out_scalp_gate),
+    "evaluation.service._active_cost": ("backend/masterquo/evaluation/service.py", "masterquo.evaluation._e4_old_service",
+                                        "masterquo.evaluation.service", _out_eval_active),
+    "evaluation.service._sh": ("backend/masterquo/evaluation/service.py", "masterquo.evaluation._e4_old_service2",
+                               "masterquo.evaluation.service", _out_eval_sh),
+    "quant.events.spec_from_candidate": ("backend/masterquo/quant/events.py", "masterquo.quant._e4_old_events", "masterquo.quant.events",
+                                         _out_quant_spec),
+}
+
+
+def _freeze() -> dict:
+    """The digests of the WHOLE old functions at BASE (needs git with the base commit)."""
+    return {"schema": "ARCH146-E4-COSTS-FROZEN-1", "base": BASE, "n": N, "seed": SEED,
+            "note": "sha256 of the float.hex form (_bits) of the outputs of each whole function at the base commit on the fixed random "
+                    "inputs of tests/test_arch146_e4_costs.py - the Etap 4 neutrality proof without git (release package). "
+                    "Regenerate only from the base: python tests/test_arch146_e4_costs.py --freeze",
+            "digests": {name: _digest(fn(_old_module(rel, modname))) for name, (rel, modname, _new, fn) in WHOLE.items()}}
+
+
+class TestFrozenAtBase(unittest.TestCase):
+    """The whole old functions' outputs at BASE, frozen as digests (tests/data/arch146_e4_costs_base.json): the new code is compared
+    with them on the same inputs also where git or the base commit is missing (release package), so the proof of the call sites does
+    not depend on git. With git the file itself is checked to be the base's (the old functions give the same digests)."""
+
+    def setUp(self):
+        self.frozen = json.loads(FROZEN.read_text(encoding="utf-8"))
+        self.assertEqual((self.frozen["base"], self.frozen["n"], self.frozen["seed"]), (BASE, N, SEED))
+        self.assertEqual(set(self.frozen["digests"]), set(WHOLE))
+
+    def test_new_code_equals_the_frozen_base_outputs(self):
+        import importlib
+        for name, (_rel, _modname, new, fn) in WHOLE.items():
+            with self.subTest(name):
+                self.assertEqual(_digest(fn(importlib.import_module(new))), self.frozen["digests"][name], name)
+
+    def test_frozen_file_is_the_base(self):
+        for name, (rel, modname, _new, fn) in WHOLE.items():
+            with self.subTest(name):
+                self.assertEqual(_digest(fn(_old_module(rel, modname))), self.frozen["digests"][name], name)
+
+
 if __name__ == "__main__":
-    unittest.main()
+    if "--freeze" in sys.argv:
+        FROZEN.write_text(json.dumps(_freeze(), indent=1, sort_keys=True) + "\n", encoding="utf-8")
+        print(f"zapisano {FROZEN}")
+    else:
+        unittest.main()
