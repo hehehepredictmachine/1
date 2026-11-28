@@ -5,6 +5,8 @@ the latest orchestrator run (`merge_run`). A status is never stronger than its e
 not reconstructed from its name); native MQL5 code is NOT_COMPILED until 44_MASTERMODELS_NATIVE.bat records its compilation in a real
 MT5 terminal (COMPILED) and the self-test output passes the Python parity gates (NATIVE_PARITY_PASS), and the native status names its scope
 (`native_scope`: what of the module is ported, what stays Python-only). UNIT_TESTED needs a declared unit test class (UNIT_TESTS).
+1.46 arch Etap 4: a VIEW of the canonical registry for the MM area - a module id is an alias of an mm:* producer of quant/ids.ALIASES or a
+quant/ids.MM_MODULES entry (canonical id: quant/ids.mm_module_id); the ids and fields of /api/v1/mm/inventory are unchanged.
 """
 from __future__ import annotations
 

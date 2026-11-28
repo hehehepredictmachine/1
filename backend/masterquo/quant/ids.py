@@ -16,6 +16,10 @@ Known alias groups found in the 1.33/1.34 code (docs/quant/INVENTORY.md lists al
 * SH rows chronos2 / granite_ttm and model_name Chronos-2 / Granite TTM -> `tsfm:chronos2` / `tsfm:granite_ttm` (1.37, 1.40);
   `tsfm:fincast` stays as a HISTORY id (FinCast retired in 1.40 - old records keep it, it is never given to Granite TTM);
 * SH row th_direction is a GROUP (all active trainhub packages), SH rows lab / si_move are GROUPS of several families.
+
+1.46 arch Etap 4: PRODUCERS (end of the module) = every producer id of the bot with the table declaring it. sh/models.REGISTRY,
+modelhub/catalog, mm/inventory, quant/inventory and tools/model_map are VIEWS: they describe producers and derive canonical ids here
+(sh_row_id, mm_module_id, CATALOG_ROWS) - none of them declares an id of its own.
 """
 from __future__ import annotations
 
@@ -293,3 +297,73 @@ def unknown_required(names) -> list[tuple[str, str | None]]:
     """[(id, hint)] for every id that no producer's record can carry - such an id stays MISSING (MODEL_REQUIRED_UNAVAILABLE) for ever."""
     valid = set(required_ids())
     return [(str(n), required_hint(n)) for n in names or [] if str(n) not in valid]
+
+
+# ---------------------------------------------------------------------------------------------------------------- PRODUCERS (Etap 4)
+# 1.46 arch Etap 4 (ETAP2 §3/§4 "tożsamość modelu"): this module is the ONLY source of producer ids. The views - sh/models.REGISTRY (SH
+# rows = aliases / GROUPS keys), modelhub/catalog (rows + canonical_id), mm/inventory.MODULES (module ids = aliases or MM_MODULES),
+# quant/inventory (one entry per PRODUCERS id + the GROUPS rows) and tools/model_map (overlay keyed by canonical ids) - carry descriptions
+# only and derive every canonical id with the functions below (tests/test_arch146_architecture.py::TestNoSecondIdSource).
+# Metadata only, like EXTRA_PRODUCERS: resolve() / canonical() / identity() / dedup() and the Quant feature names never read the tables of
+# this section (a new name in _ALIAS_TO could rename a trained MetaModel's input column). Values were literals of the views (same values).
+
+# analysis services wired in runtime.py (+ the Quant MetaModel) -> inventory category; one inventory row each (source_registry runtime.py,
+# descriptions in quant/inventory._ANALYSIS). Was a literal list of quant/inventory._analysis_rows (order kept: the inventory row order).
+SERVICES: dict[str, str] = {"analysis:montecarlo": "SIMULATION", "analysis:zones": "ANALYSIS", "analysis:market_zones": "ANALYSIS",
+                            "analysis:indicators": "ANALYSIS", "analysis:svp": "ANALYSIS", "analysis:dxy_correlation": "ANALYSIS",
+                            "analysis:walls": "ANALYSIS", "analysis:evaluation": "ANALYSIS", QUANT_METAMODEL: "META_MODEL"}
+# producers only named in documentation / traceability (no code): an inventory row with code_state NOT_IMPLEMENTED, never an adapter
+NOT_IMPLEMENTED: tuple[str, ...] = ("ext:catboost",)
+# PMW-MM modules of mm/inventory.MODULES that are no producer of their own (no alias in ALIASES) -> quant role of their inventory row
+# (tool / infrastructure / spec missing). Was quant/inventory._MM_TOOL. The other modules are aliases of an mm:* producer (mm_module_id).
+MM_MODULES: dict[str, str] = {"buzoa": "TOOL", "sdom": "TOOL", "stfs": "TOOL", "quant_momentum": "NONE", "renko": "NONE", "head_shoulders": "NONE",
+                              "data_grabber": "TOOL", "tsvp": "TOOL", "mathbench": "TOOL", "chart_sync": "TOOL", "fusion_board": "TOOL"}
+# modelhub/catalog rows of an analysis service: catalog row id -> canonical id. NOT aliases (resolve() never sees them: 'zone_map' is no
+# record name). Was modelhub/catalog._FIXED_CANON (declared twice there).
+CATALOG_ROWS: dict[str, str] = {"market_zones": "analysis:market_zones", "zone_map": "analysis:zones", "monte_carlo": "analysis:montecarlo"}
+# TSFM model ids (SH rows, tsfm/settings.MODEL_IDS, TsfmService workers) = the running tsfm:* producers in ALIASES order; FinCast is history.
+# Was the literal ("chronos2", "granite_ttm", "tirex2") of sh/models.probe (tests pin it to tsfm/settings.MODEL_IDS).
+TSFM_MODELS: tuple[str, ...] = tuple(c.split(":", 1)[1] for c in ALIASES if c.startswith("tsfm:") and c not in HISTORY_IDS)
+
+
+def sh_row_id(sid: str) -> str:
+    """Canonical id of a sh/models.REGISTRY row: 'group:<id>' for a GROUPS row (th_direction / lab / si_move), else the producer it is an
+    alias of, else 'sh:<id>' (a row unknown here - the architecture test keeps that fallback unused). Was copied in quant/inventory._sh_rows
+    and modelhub/catalog.canonical_row_id."""
+    s = str(sid)
+    return f"group:{s}" if s in GROUPS else (resolve(s) or f"sh:{s}")
+
+
+def mm_module_id(mid: str) -> str:
+    """Canonical id of a mm/inventory.MODULES module: the mm:* producer it is an alias of (kalman -> mm:kalman_cross), else 'mm:<module>'
+    (a MM_MODULES entry). Was copied in quant/inventory._mm_rows and modelhub/catalog (canonical_row_id, _canonical_of, the SH join)."""
+    return resolve(mid) or f"mm:{mid}"
+
+
+def _producers() -> dict[str, str]:
+    out: dict[str, str] = {}
+    for c in ALIASES:
+        if c not in HISTORY_IDS:
+            out[c] = "ALIASES"
+    for f in FAMILY_OWNED:
+        out[f"family:{f}"] = "FAMILY_OWNED"
+    for r in RULES:
+        out[f"rule:{r}"] = "RULES"
+    for g, members in GROUPS.items():
+        for m in members:
+            out.setdefault(m, f"GROUPS[{g}]")
+    for c in EXTRA_PRODUCERS:
+        out[c] = "EXTRA_PRODUCERS"
+    for c in SERVICES:
+        out[c] = "SERVICES"
+    for c in NOT_IMPLEMENTED:
+        out[c] = "NOT_IMPLEMENTED"
+    for m in MM_MODULES:
+        out[f"mm:{m}"] = "MM_MODULES"
+    return out
+
+
+# PRODUCERS: every canonical producer id of the bot -> the table of this module that declares it. quant/inventory.build() lists exactly
+# these ids (+ one 'group:<id>' row per GROUPS key) - no view may add an id that is not here (TestNoSecondIdSource). History ids
+# (HISTORY_IDS) are aliases of old records only, no producer.
+PRODUCERS: dict[str, str] = _producers()

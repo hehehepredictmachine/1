@@ -44,7 +44,9 @@ NO_LIVE_PATH = {"PAIR_COINT": "brak ścieżki danych na żywo dla nóg pary (pai
 # decision.coordinator.evaluate_models (CLASS_PROBABILITIES, a REGRESSION with result.direction - no family publishes one - and
 # quant_hold). Every other result type had ASSIST accepted with no effect at all.
 ASSIST_EFFECT = {"CLASS_PROBABILITIES": "HOLD_DIRECTION", "VOLATILITY": "CONTEXT_VOL"}
-DELEGATED = ("TH_RF", "TH_XGB", "TH_SVM", "SEQ_GRU_EVENT")   # role / artifact owned by trainhub / MM - the family state is not read
+# role / artifact owned by trainhub / MM - the family state is not read. Etap 4: the alias knowledge of quant/ids (TH_XGB / TH_RF / TH_SVM +
+# SEQ_GRU_EVENT, was a copied literal; only membership is tested)
+DELEGATED = (*I.TRAINHUB_FAMILY_ALIASES, I.EVENT_GRU_FAMILY)
 
 
 class FamilyService:

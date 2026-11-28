@@ -6,6 +6,9 @@
   NO_SPEC / NOT_IMPLEMENTED; a smoke module never names an id outside the registry;
 * the producers added in 1.46 (EXTRA_PRODUCERS) are invisible to resolve(): Quant feature columns are named after canonical ids, a new
   resolution would rename a trained model's inputs; the TiRex-2 aliases change no existing resolution;
+* no second source of producer ids (Etap 4, TestNoSecondIdSource): the inventory lists exactly quant/ids.PRODUCERS (+ the GROUPS rows);
+  every SH row, MM module, catalog row, inventory overlay key and model-map overlay id is derived from / declared in quant/ids; no module
+  outside quant/ids keeps an alias table, and the view modules keep no literal list of producer names;
 * no import-time cycle in backend/masterquo (module-level imports + implicit parent-package imports);
 * backend/vendor/ unchanged against the 1.46.0 release commit (reference code, `--legacy` tests run on its copy).
 """
@@ -90,6 +93,126 @@ class TestCanonicalRegistry(unittest.TestCase):
         self.assertEqual({k: v for k, v in where.items() if len(v) > 1}, {})
         self.assertEqual(sorted(set(where) - {e["id"] for e in self.inv["entries"]}), [])   # no id outside the registry
         self.assertEqual(sorted(need - set(where)), [])
+
+
+VIEW_MODULES = ("backend/masterquo/sh/models.py", "backend/masterquo/modelhub/catalog.py", "backend/masterquo/mm/inventory.py",
+                "backend/masterquo/quant/inventory.py", "tools/model_map.py", "backend/masterquo/modelhub/families/service.py",
+                "backend/masterquo/modelhub/families/run.py", "backend/masterquo/studio/registry.py")
+# dicts mapping a name to another name of the SAME producer outside quant/ids, with the reason they are not a second alias table
+ALIAS_DICT_ALLOWED = {
+    ("backend/masterquo/tsfm/service.py", "NAMES"): "display names of the TSFM owner (tsfm/service) - quant/ids.ALIASES lists them as aliases",
+}
+
+
+def _names_of_one_producer_pairs(node, I) -> list[tuple[str, str]]:
+    out = []
+    for k, v in zip(node.keys, node.values):
+        if isinstance(k, ast.Constant) and isinstance(k.value, str) and isinstance(v, ast.Constant) and isinstance(v.value, str):
+            ck, cv = I.resolve(k.value), I.resolve(v.value)
+            if ck and ck == cv and k.value != v.value:
+                out.append((k.value, v.value))
+    return out
+
+
+class TestNoSecondIdSource(unittest.TestCase):
+    """1.46 arch Etap 4 (ETAP2 §3/§4 "tożsamość modelu"): quant/ids (+ PRODUCERS) is the ONLY source of producer ids; sh/models.REGISTRY,
+    modelhub/catalog, mm/inventory, quant/inventory and tools/model_map are views - they describe producers and derive their ids there."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.td = TempData()
+        from masterquo.modelhub import catalog as CT
+        from masterquo.quant import inventory as QI
+        cls.inv = QI.build(None, "XAUUSD")
+        cls.cat = CT.build(None, "XAUUSD")
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.td.close()
+
+    def test_inventory_lists_exactly_the_declared_producers(self):
+        from masterquo.quant import ids as I
+        rows = [e["id"] for e in self.inv["entries"] if e["code_state"] != "GROUP"]
+        self.assertEqual(sorted(set(rows) - set(I.PRODUCERS)), [])          # no view adds an id quant/ids does not declare
+        self.assertEqual(sorted(set(I.PRODUCERS) - set(rows)), [])          # no declared producer is missing from the inventory
+        self.assertEqual(sorted(e["id"] for e in self.inv["entries"] if e["code_state"] == "GROUP"), sorted(f"group:{g}" for g in I.GROUPS))
+        self.assertEqual(sorted(set(I.PRODUCERS) & set(I.HISTORY_IDS)), [])
+
+    def test_declared_tables_change_no_resolution(self):
+        """The Etap 4 tables are metadata: resolve() / canonical() (Quant feature column names) never see their names."""
+        from masterquo.quant import ids as I
+        for name in list(I.SERVICES) + list(I.NOT_IMPLEMENTED) + list(I.MM_MODULES) + list(I.CATALOG_ROWS):
+            self.assertNotIn(name, I._ALIAS_TO, name)
+        for name in I.MM_MODULES:
+            self.assertIsNone(I.resolve(name), name)
+
+    def test_views_derive_every_id_from_quant_ids(self):
+        from masterquo.mm import inventory as MI
+        from masterquo.modelhub import catalog as CT
+        from masterquo.quant import ids as I
+        from masterquo.quant import inventory as QI
+        from masterquo.sh import models as SM
+        known = set(I.PRODUCERS) | {f"group:{g}" for g in I.GROUPS}
+        sh_ids = [it["id"] for it in SM.REGISTRY]
+        self.assertEqual([s for s in sh_ids if I.sh_row_id(s) not in known], [])           # every SH row = alias / group of quant/ids
+        self.assertEqual({I.sh_row_id(it["id"]) for it in SM.REGISTRY if it["kind"] == "DETERMINISTIC" and not it["id"].startswith("mm_")},
+                         {f"rule:{r}" for r in I.RULES})
+        self.assertEqual([m["id"] for m in MI.MODULES if I.mm_module_id(m["id"]) not in known], [])
+        self.assertEqual(set(I.MM_MODULES), {m["id"] for m in MI.MODULES if I.resolve(m["id"]) is None})
+        self.assertEqual({r["id"]: r.get("canonical_id") for r in self.cat["items"] if r.get("canonical_id") not in known}, {})
+        self.assertEqual(set(CT.LOCATION), set(sh_ids))                                       # description overlay of the SH rows only
+        self.assertEqual(sorted(set(I.CATALOG_ROWS.values()) - known), [])
+        self.assertEqual(sorted(set(QI._OVR) - known), [])
+        self.assertEqual(list(QI._ANALYSIS), list(I.SERVICES))
+        self.assertEqual(set(QI._NOT_IMPLEMENTED), set(I.NOT_IMPLEMENTED))
+        self.assertEqual(sorted(set(I.REQUIRED_EXTENDED) - known), [])
+        self.assertEqual(sorted(set(I.REQUIRED_RESEARCH) - known), [])
+        import importlib
+        import sys
+        sys.path.insert(0, str(_env.ROOT / "tools"))
+        try:
+            MM = importlib.import_module("model_map")
+        finally:
+            sys.path.remove(str(_env.ROOT / "tools"))
+        self.assertEqual(sorted(set(MM.CANON.values()) - known), [])
+
+    def test_owner_lists_match_quant_ids(self):
+        from masterquo.modelhub.families import registry as famreg
+        from masterquo.quant import ids as I
+        from masterquo.tsfm import settings as TS
+        self.assertEqual(I.TSFM_MODELS, TS.MODEL_IDS)
+        fams = famreg()
+        self.assertEqual(set(I.FAMILY_OWNED), {f for f in fams if (I.resolve(f) or "").startswith("family:")})
+        self.assertEqual([f for f in fams if I.resolve(f) is None], [])                        # no family outside quant/ids
+
+    def test_no_second_alias_table(self):
+        """No module outside quant/ids maps a name of a producer to another name of the same producer (the I0009 class: '"mm_gpr":
+        "gpr_logret"', _MM_TO_CANON); the view modules hold no literal list of >= 3 producer names (they read quant/ids)."""
+        from masterquo.quant import ids as I
+        files = [p for p in list(PKG.rglob("*.py")) + list((_env.ROOT / "tools").glob("*.py")) if "__pycache__" not in p.parts]
+        bad = []
+        for p in files:
+            rel = p.relative_to(_env.ROOT).as_posix()
+            if rel == "backend/masterquo/quant/ids.py":
+                continue
+            tree = ast.parse(p.read_text(encoding="utf-8"))
+            names = {}
+            for node in ast.walk(tree):
+                if isinstance(node, ast.Assign | ast.AnnAssign):
+                    tgt = node.targets[0] if isinstance(node, ast.Assign) else node.target
+                    if isinstance(tgt, ast.Name):
+                        names[id(node.value)] = tgt.id
+            for node in ast.walk(tree):
+                if isinstance(node, ast.Dict):
+                    pairs = _names_of_one_producer_pairs(node, I)
+                    if len(pairs) >= 2 and (rel, names.get(id(node))) not in ALIAS_DICT_ALLOWED:
+                        bad.append((rel, node.lineno, pairs[:3]))
+                if rel in VIEW_MODULES and isinstance(node, ast.Tuple | ast.List | ast.Set):
+                    strs = [e.value for e in node.elts if isinstance(e, ast.Constant) and isinstance(e.value, str)]
+                    ids = [s for s in strs if I.resolve(s) and ":" not in s]
+                    if len(ids) >= 3 and len(ids) == len(node.elts):
+                        bad.append((rel, node.lineno, ids[:4]))
+        self.assertEqual(bad, [])
 
 
 def _module_name(p: Path) -> str:

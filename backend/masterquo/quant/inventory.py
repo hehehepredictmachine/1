@@ -3,7 +3,8 @@
 Sources (read from the code at generation time, nothing typed by hand twice - the row counts are in the generated coverage, not here):
 sh/models.REGISTRY, modelhub/families registry (with the SEQ_GRU_EVENT adapter), trainhub/learn.MODELS, mm/inventory.MODULES,
 lab/protocol.FAMILIES + EXPERIMENTS, lab/structure_nets.FAMILIES, lab/si_families.FAMILIES, lab/flow_context/task.FAMILIES,
-quant/ids.EXTRA_PRODUCERS, plus the analysis services wired in runtime.py.
+quant/ids.EXTRA_PRODUCERS, plus the analysis services wired in runtime.py (ids: quant/ids.SERVICES).
+1.46 arch Etap 4: every entry id is a quant/ids.PRODUCERS id (or a 'group:<id>' row of quant/ids.GROUPS) - this module only describes them.
 Group rows (lab, si_move, th_direction) are expanded to their real families; aliases are folded into ONE canonical entry (quant/ids.py).
 
 Three separate axes per entry (never merged into one "ready" flag):
@@ -155,8 +156,8 @@ _OVR: dict[str, dict] = {
     "agent:claude": {"role": "NOT_A_VOTE", "adapter": None, "na": "opis / weto tekstowe agenta – bez p(win); poza meta-modelem", "unit": "state", "task_type": "STATE"},
 }
 
-_MM_TOOL = {"buzoa": "TOOL", "sdom": "TOOL", "stfs": "TOOL", "quant_momentum": "NONE", "renko": "NONE", "head_shoulders": "NONE",
-            "data_grabber": "TOOL", "tsvp": "TOOL", "mathbench": "TOOL", "chart_sync": "TOOL", "fusion_board": "TOOL"}
+# 1.46 arch Etap 4: the MM module roles (_MM_TOOL) and the service ids of _analysis_rows are declared in quant/ids (MM_MODULES, SERVICES,
+# NOT_IMPLEMENTED) - this module describes the producers of quant/ids.PRODUCERS, it declares no id of its own
 
 
 def _e(cid: str, **kw) -> dict:
@@ -186,7 +187,7 @@ def _sh_rows() -> list[dict]:
                           not_applicable_reason="wiersz grupowy – rozwinięty na rzeczywiste rodziny: " + ", ".join(I.GROUPS[sid]),
                           variants=list(I.GROUPS[sid]), source_registry=["sh.models.REGISTRY"], adapter=None))
             continue
-        cid = I.resolve(sid) or f"sh:{sid}"
+        cid = I.sh_row_id(sid)                               # Etap 4: one derivation (quant/ids), the catalog uses the same
         # 1.46 w2 (I0008): one kind -> category map (PRETRAINED in sh/models), no hard-coded exception by id
         cat = {"DETERMINISTIC": "RULE_OR_MEASUREMENT", "TRAINED": "MODEL_TRAINED", "PRETRAINED": "MODEL_PRETRAINED", "EXTERNAL": "AGENT"}[it["kind"]]
         # 1.46 arch (I0544): a trained / pretrained producer needs a validation for its role (was the NOT_APPLICABLE default of _e)
@@ -212,7 +213,7 @@ def _family_rows(probe_deep: bool = True) -> list[dict]:
             continue                                         # alias of trainhub / mm producer - folded into that entry
         role = {"RL_ACTION": "NOT_A_VOTE", "PAIR_RELATION": "CONTEXT_FEATURE", "MICROSTRUCTURE": "CONTEXT_FEATURE", "FILTER_STATE": "CONTEXT_FEATURE",
                 "NLP_SENTIMENT": "CONTEXT_FEATURE"}.get(f.TASK_TYPE, "BASE_FORECAST")
-        env = ".venv_deep" if fid in ("SEQ_LSTM", "SEQ_GRU", "RL_PPO") else ".venv"
+        env = ".venv_deep" if f.RUNTIME == "DEEP" else ".venv"      # Etap 4: the family's own runtime (was a copied id list)
         out.append(_e(cid, name=f.NAME, category="MODEL_TRAINED" if f.KIND == "TRAINED" else ("MEASUREMENT" if f.KIND == "MEASUREMENT" else "MODEL_ESTIMATED"),
                       files=[f"backend/masterquo/modelhub/families/{type(f).__module__.rsplit('.', 1)[-1]}.py"], unit=f.UNIT, task_type=f.TASK_TYPE,
                       task=f.TASK, timeframes=[f.TF] if f.TF else [], horizon=(f"{list(f.HORIZONS)} świec {f.TF}" if f.HORIZONS else "brak (pomiar stanu)"),
@@ -289,8 +290,8 @@ def _mm_rows() -> list[dict]:
                         "train": m.get("training"), "receivers": list(m.get("callers") or [])})
             continue
         nospec = not m.get("spec")
-        role = _MM_TOOL.get(m["id"], "TOOL")
-        out.append(_e(f"mm:{m['id']}", name=m["name"], category="NO_SPEC" if nospec else m["category"], files=list(m.get("files") or []),
+        role = I.MM_MODULES.get(m["id"], "TOOL")             # Etap 4: declared in quant/ids (was _MM_TOOL here)
+        out.append(_e(I.mm_module_id(m["id"]), name=m["name"], category="NO_SPEC" if nospec else m["category"], files=list(m.get("files") or []),
                       input=m.get("inputs"), output=m.get("outputs"), code_state="NO_SPEC" if nospec else "IMPLEMENTED", quant_role=role,
                       owner_train=m.get("training"), receivers=list(m.get("callers") or []), source_registry=["mm.inventory.MODULES"],
                       not_applicable_reason=("brak specyfikacji w paczce – algorytm nie jest odtwarzany z nazwy" if nospec else
@@ -301,51 +302,62 @@ def _mm_rows() -> list[dict]:
     return out
 
 
+# Descriptions of the analysis services of quant/ids.SERVICES (Etap 4: the ids, their order and categories are declared there; this is the
+# overlay keyed by those ids): cid -> (name, files, quant role, reason / note).
+_ANALYSIS: dict[str, tuple] = {
+    "analysis:montecarlo": ("Monte Carlo (PMW-MC-1) – symulacja ścieżek", ["backend/masterquo/montecarlo/"], "SIMULATION",
+                            "MODEL_SIMULATED – wynik symulacji, nie prawdopodobieństwo skalibrowane na zdarzeniach"),
+    # 1.46 arch (I0596): the zone record is a STATE summary quant/features.py does not map - the zone_* features reach the candidate
+    # and the evaluation ledger (evaluation.zone_context), not the MetaModel
+    "analysis:zones": ("Mapa stref (PMW-ZONES)", ["backend/masterquo/zones/"], "CONTEXT_STATE",
+                       ("rekord STATE (ZONE_MAP_SUMMARY) w migawce Quant bez cech MetaModelu – quant/features.py nie mapuje stref; "
+                        "cechy zone_* trafiają do kandydata i ledgera oceny (evaluation.zone_context)")),
+    # 1.46 arch (I0598): panel visualisation (job on request), no adapter and no feature consumer
+    "analysis:market_zones": ("Strefy rynkowe M1/M5/M15/M30 (1.28)", ["backend/masterquo/zones/market_service.py"], "NOT_A_VOTE",
+                              ("wizualizacja panelu Strefy rynkowe – liczone na żądanie (job) / w panelu, brak cyklu niezależnego od panelu; "
+                               "bez adaptera Quant i konsumenta cech")),
+    # 1.46 arch (I0187): the modules indicators/ really computes (no EMA / RSI / MACD / BB there); I0189: no feature -> CONTEXT_STATE
+    "analysis:indicators": (("Wskaźniki PMW-IND-1 (AVWAP sesja/zdarzenie/manualny, semiwariancja, percentyl spreadu, cechy profilu sesji, "
+                             "mikrostruktura arkusza/OFI, relacja DXY)"), ["backend/masterquo/indicators/"], "CONTEXT_STATE", None),
+    # 1.46 arch (I0604): the previous-session profile is an entry condition of the SH pack variants PMW_HG08 / PMW_SC10
+    "analysis:svp": ("Session Volume Profile (PMW-SVP-1)", ["backend/masterquo/svp/", "backend/masterquo/sh/pack/features.py"], "GATE_EXISTING",
+                     ("profil poprzedniej sesji (svp.engine.compute na zamkniętych M5, tick volume = aktywność feedu, nie wolumen obrotu) "
+                      "jest warunkiem wejścia wariantów pakietu SH PMW_HG08 / PMW_SC10 (value_area_rejection: brak profilu = NO_DATA, "
+                      "bez setupu); profile użytkownika – panel; Quant nie dubluje bramki")),
+    "analysis:dxy_correlation": ("Korelacja XAUUSD–DXY (PMW-IND-1 dxy)", ["backend/masterquo/indicators/"], "CONTEXT_FEATURE", None),
+    # 1.46 arch (I0600): AUTO without an IV import computes the walls from the historical volatility of D1 (analysis/walls.choose_source)
+    "analysis:walls": ("Walls D1 (σ: import IV → IV ręczna → HV_PROXY domyślnie)",
+                       ["backend/masterquo/analysis/walls.py", "backend/masterquo/analysis/iv_import.py"], "GATE_EXISTING",
+                       ("bez importu IV źródłem σ jest zmienność historyczna D1 (HV_PROXY, close-to-close), nie rynek opcji; "
+                        "IV_SOURCED niezaimplementowane (NOT_CONFIGURED); brak źródła = UNAVAILABLE, nie zero; poziomy ścian są wejściem "
+                        "strategii S12 (ścieżka A) – Quant ich nie dubluje")),
+    "analysis:evaluation": ("AI Setup Probability Engine (PMW-EVAL)", ["backend/masterquo/evaluation/"], "SETUP_EVENT", None),
+    I.QUANT_METAMODEL: ("PMW Quant MetaModel (logistyczny + net R ridge, OOF, kalibracja)", ["backend/masterquo/quant/metamodel.py"],
+                        "META_MODEL", None),
+}
+_ANALYSIS_ADAPTER = {"analysis:indicators": A_EXT, "analysis:dxy_correlation": A_EXT, "analysis:zones": A_EXT, "analysis:montecarlo": A_EXT,
+                     "analysis:evaluation": "evaluation.service (ledger)", I.QUANT_METAMODEL: "quant.service (assessment)"}
+_ANALYSIS_RECEIVERS = {"analysis:svp": ["SH pack PMW_HG08 / PMW_SC10 (sh/pack/detectors.value_area_rejection – profil poprzedniej sesji)",
+                                        "panel SVP (profile użytkownika)"],
+                       "analysis:walls": ["strategies.s12_walls_range (ścieżka A, S12)", "panel / API ścian zmienności"],
+                       "analysis:zones": ["evaluation.service (zone_context kandydata)", "migawka Quant (rekord STATE)"]}
+# producers of quant/ids.NOT_IMPLEMENTED: cid -> (name, state reason, not-applicable reason, source registry)
+_NOT_IMPLEMENTED = {"ext:catboost": ("CatBoost", "wspomniany w dokumentacji / traceability (M06); brak implementacji i zależności w kodzie",
+                                     "nie istnieje w kodzie – nie dodano fikcyjnego adaptera", "lab/traceability.py (wzmianka)")}
+
+
 def _analysis_rows() -> list[dict]:
-    rows = [
-        ("analysis:montecarlo", "Monte Carlo (PMW-MC-1) – symulacja ścieżek", "SIMULATION", ["backend/masterquo/montecarlo/"], "SIMULATION",
-         "MODEL_SIMULATED – wynik symulacji, nie prawdopodobieństwo skalibrowane na zdarzeniach"),
-        # 1.46 arch (I0596): the zone record is a STATE summary quant/features.py does not map - the zone_* features reach the candidate
-        # and the evaluation ledger (evaluation.zone_context), not the MetaModel
-        ("analysis:zones", "Mapa stref (PMW-ZONES)", "ANALYSIS", ["backend/masterquo/zones/"], "CONTEXT_STATE",
-         ("rekord STATE (ZONE_MAP_SUMMARY) w migawce Quant bez cech MetaModelu – quant/features.py nie mapuje stref; cechy zone_* trafiają do "
-          "kandydata i ledgera oceny (evaluation.zone_context)")),
-        # 1.46 arch (I0598): panel visualisation (job on request), no adapter and no feature consumer
-        ("analysis:market_zones", "Strefy rynkowe M1/M5/M15/M30 (1.28)", "ANALYSIS", ["backend/masterquo/zones/market_service.py"], "NOT_A_VOTE",
-         "wizualizacja panelu Strefy rynkowe – liczone na żądanie (job) / w panelu, brak cyklu niezależnego od panelu; bez adaptera Quant i konsumenta cech"),
-        # 1.46 arch (I0187): the modules indicators/ really computes (no EMA / RSI / MACD / BB there); I0189: no feature -> CONTEXT_STATE
-        ("analysis:indicators", ("Wskaźniki PMW-IND-1 (AVWAP sesja/zdarzenie/manualny, semiwariancja, percentyl spreadu, cechy profilu sesji, "
-                                 "mikrostruktura arkusza/OFI, relacja DXY)"), "ANALYSIS", ["backend/masterquo/indicators/"], "CONTEXT_STATE", None),
-        # 1.46 arch (I0604): the previous-session profile is an entry condition of the SH pack variants PMW_HG08 / PMW_SC10
-        ("analysis:svp", "Session Volume Profile (PMW-SVP-1)", "ANALYSIS", ["backend/masterquo/svp/", "backend/masterquo/sh/pack/features.py"],
-         "GATE_EXISTING",
-         ("profil poprzedniej sesji (svp.engine.compute na zamkniętych M5, tick volume = aktywność feedu, nie wolumen obrotu) jest warunkiem wejścia "
-          "wariantów pakietu SH PMW_HG08 / PMW_SC10 (value_area_rejection: brak profilu = NO_DATA, bez setupu); profile użytkownika – panel; "
-          "Quant nie dubluje bramki")),
-        ("analysis:dxy_correlation", "Korelacja XAUUSD–DXY (PMW-IND-1 dxy)", "ANALYSIS", ["backend/masterquo/indicators/"], "CONTEXT_FEATURE", None),
-        # 1.46 arch (I0600): AUTO without an IV import computes the walls from the historical volatility of D1 (analysis/walls.choose_source)
-        ("analysis:walls", "Walls D1 (σ: import IV → IV ręczna → HV_PROXY domyślnie)", "ANALYSIS",
-         ["backend/masterquo/analysis/walls.py", "backend/masterquo/analysis/iv_import.py"], "GATE_EXISTING",
-         ("bez importu IV źródłem σ jest zmienność historyczna D1 (HV_PROXY, close-to-close), nie rynek opcji; IV_SOURCED niezaimplementowane "
-          "(NOT_CONFIGURED); brak źródła = UNAVAILABLE, nie zero; poziomy ścian są wejściem strategii S12 (ścieżka A) – Quant ich nie dubluje")),
-        ("analysis:evaluation", "AI Setup Probability Engine (PMW-EVAL)", "ANALYSIS", ["backend/masterquo/evaluation/"], "SETUP_EVENT", None),
-        ("quant:metamodel", "PMW Quant MetaModel (logistyczny + net R ridge, OOF, kalibracja)", "META_MODEL", ["backend/masterquo/quant/metamodel.py"],
-         "META_MODEL", None),
-    ]
-    recv = {"analysis:svp": ["SH pack PMW_HG08 / PMW_SC10 (sh/pack/detectors.value_area_rejection – profil poprzedniej sesji)",
-                             "panel SVP (profile użytkownika)"],
-            "analysis:walls": ["strategies.s12_walls_range (ścieżka A, S12)", "panel / API ścian zmienności"],
-            "analysis:zones": ["evaluation.service (zone_context kandydata)", "migawka Quant (rekord STATE)"]}
     out = []
-    for cid, name, cat, files, role, na in rows:
-        ad = {"analysis:indicators": A_EXT, "analysis:dxy_correlation": A_EXT, "analysis:zones": A_EXT, "analysis:montecarlo": A_EXT,
-              "analysis:evaluation": "evaluation.service (ledger)", "quant:metamodel": "quant.service (assessment)"}.get(cid)
+    for cid, cat in I.SERVICES.items():                      # Etap 4: ids / order / category from quant/ids, descriptions from _ANALYSIS
+        name, files, role, na = _ANALYSIS[cid]
+        ad = _ANALYSIS_ADAPTER.get(cid)
         out.append(_e(cid, name=name, category=cat, files=files, quant_role=role, adapter=ad, not_applicable_reason=na if not ad else None,
-                      notes=na if ad else None, source_registry=["runtime.py"], receivers=recv.get(cid),
+                      notes=na if ad else None, source_registry=["runtime.py"], receivers=_ANALYSIS_RECEIVERS.get(cid),
                       validation="NOT_VALIDATED" if cat in ("META_MODEL", "SIMULATION") else "NOT_APPLICABLE"))
-    out.append(_e("ext:catboost", name="CatBoost", category="NOT_IMPLEMENTED", code_state="NOT_IMPLEMENTED", quant_role="NONE", runtime_state="UNAVAILABLE",
-                  state_reason="wspomniany w dokumentacji / traceability (M06); brak implementacji i zależności w kodzie",
-                  not_applicable_reason="nie istnieje w kodzie – nie dodano fikcyjnego adaptera", source_registry=["lab/traceability.py (wzmianka)"]))
+    for cid in I.NOT_IMPLEMENTED:
+        name, why, na, src = _NOT_IMPLEMENTED[cid]
+        out.append(_e(cid, name=name, category="NOT_IMPLEMENTED", code_state="NOT_IMPLEMENTED", quant_role="NONE", runtime_state="UNAVAILABLE",
+                      state_reason=why, not_applicable_reason=na, source_registry=[src]))
     return out
 
 
