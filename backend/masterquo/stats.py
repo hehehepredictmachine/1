@@ -245,3 +245,37 @@ def account_roi(db, account_key: str | None, deals: list[dict], server_offset: f
             "sampling_note": "equity próbkowane co 60 s podczas pracy programu – głębsze obsunięcia wewnątrz minuty i poza pracą programu nie są widoczne",
             "deals_coverage": "VERIFIED" if deals_from_utc is not None else "NOT_VERIFIED", "period_clipped_to_deal_history": clipped,
             "deals_coverage_from": iso(_from_epoch(deals_from_utc)) if deals_from_utc is not None else None}
+
+
+def deals_coverage_from_utc(bridge) -> float | None:
+    """1.46: start (UTC epoch) of the period `bridge.deals` covers - each history poll re-reads mt5.deals_history_days back from the poll
+    time (deals_loaded_at, UTC). account_roi clips its equity window to it (a deposit older than the deal history but newer than the
+    first snapshot counted as profit). None = history not loaded / unknown -> account_roi reports deals_coverage NOT_VERIFIED.
+    Read it under bridge._lock together with bridge.deals (bridge_deals_snapshot does both).
+    1.46 arch (I0081): moved here from api/app.py (domain logic of the ROI window; api/app.py re-exports the old name)."""
+    from datetime import datetime
+    loaded = getattr(bridge, "deals_loaded_at", None)
+    days = getattr(getattr(bridge, "cfg", None), "deals_history_days", None)
+    if not isinstance(loaded, datetime) or loaded.tzinfo is None or isinstance(days, bool) or not isinstance(days, (int, float)) or not days > 0:
+        return None
+    return loaded.timestamp() - float(days) * 86400
+
+
+def bridge_deals_snapshot(bridge) -> tuple[list[dict], float | None]:
+    """(copy of bridge.deals, deals_coverage_from_utc) taken ATOMICALLY under ONE bridge._lock - nothing else is called under the lock
+    (no new lock nesting). A bridge class with a public deals_snapshot() (mt5/bridge.MarketBridge) is asked through it; test doubles
+    with only _lock / deals / deals_loaded_at are read the same way here."""
+    snap = getattr(type(bridge), "deals_snapshot", None)
+    if callable(snap):
+        return bridge.deals_snapshot()
+    with bridge._lock:
+        return list(bridge.deals), deals_coverage_from_utc(bridge)
+
+
+def account_roi_for_bridge(db, bridge, days: int | None = None, snapshot: tuple[list[dict], float | None] | None = None) -> dict:
+    """1.46 arch (I0081): the account ROI of the connected MT5 account - ONE function for GET /api/v1/stats and the Telegram report
+    (both repeated 'deals under b._lock -> coverage -> account_roi'). The deals copy and the coverage come from one atomic snapshot
+    (bridge_deals_snapshot, or the caller's own `snapshot` taken the same way when it needs the deals too); the ROI is counted outside
+    the bridge lock. days=None = the default 30-day window (as before; never timedelta(days=None))."""
+    deals, cover = snapshot if snapshot is not None else bridge_deals_snapshot(bridge)
+    return account_roi(db, bridge.account_key, deals, bridge.clock.offset, days=30 if days is None else days, deals_from_utc=cover)

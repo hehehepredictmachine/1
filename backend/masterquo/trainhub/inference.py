@@ -2,7 +2,7 @@
 
 * For every instrument and every ACTIVE package: after a new CLOSED base-TF candle, the bars are read through the bridge, the features
   are built by the SAME code as in training (features.last_row), the package is loaded only after its compatibility check and the
-  output is published in the unified prediction contract (modelhub.contract).
+  output is published in the unified prediction contract (contracts/prediction.py, alias modelhub.contract).
 * Any problem gives a non-READY state with the reason and NO value: INCOMPATIBLE (schema / library / checksum), ERROR (data missing,
   stale, warm-up incomplete, exception), DISABLED (no active version). The fallback is "no vote" - never a default probability.
 * Predictions are information for the panel and the evidence board; they do not open positions and do not change any setting.
@@ -14,7 +14,7 @@ import time
 
 import numpy as np
 
-from ..modelhub import contract as C
+from ..contracts import prediction as C
 from . import features as F
 from . import registry as R
 from .dataset import positive as _pos
@@ -86,13 +86,23 @@ class TrainhubInference:
                 self.cache[ck] = exc
         return self.cache[ck]
 
+    @staticmethod
+    def _calibration(conf: dict | None) -> dict:
+        """arch146 I0646: TH_BASELINE (class frequencies) has T = 1.0 by construction (learn.py: no temperature fit) - it was described as
+        'CALIBRATED_DEV'. Presentation of the contract only: no decision and no Quant feature reads calibration.status of these predictions."""
+        if not conf:
+            return {"method": None, "status": "NOT_APPLICABLE"}
+        if conf.get("model_id") == "TH_BASELINE":
+            return {"method": "brak – częstości klas (T=1)", "status": "NOT_APPLICABLE"}
+        return {"method": "temperature (dev OOF)", "status": "CALIBRATED_DEV"}
+
     def _pred(self, inst, key, version, conf, state, reason=None, **kw) -> dict:
         p = C.make(instrument=inst, symbol=self.symbol(inst), timeframe=(conf or {}).get("base_tf") or key.split("_")[-2],
                    model_name=(conf or {}).get("model_id") or key, model_version=version, task_type="CLASS_PROBABILITIES",
                    task=f"DIRECTION_H{(conf or {}).get('horizon', '?')}_{(conf or {}).get('base_tf', '?')}",
                    horizon_bars=int((conf or {}).get("horizon") or 1), unit="probability", state=state, unavailable_reason=reason,
                    feature_schema=F.FEATURE_SCHEMA,
-                   calibration={"method": "temperature (dev OOF)", "status": "CALIBRATED_DEV"} if conf else {"method": None, "status": "NOT_APPLICABLE"},
+                   calibration=self._calibration(conf),
                    extra={"model_key": key}, **kw)
         with self._lock:
             self.latest[(inst, key)] = p

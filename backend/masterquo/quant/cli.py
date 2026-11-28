@@ -28,11 +28,8 @@ _OPENER = None
 
 
 def _server(path: str, timeout: float = 5.0):
-    try:
-        from ..config import ConfigStore
-        port = ConfigStore().get().server.port
-    except Exception:  # noqa: BLE001
-        port = 8765
+    from ..config import server_port
+    port = server_port()          # 1.46 arch (I0094/I0125): read-only (never migrates / writes the bot's config.json), paths.DEFAULT_PORT fallback
     global _OPENER
     base = f"http://127.0.0.1:{port}"
     try:
@@ -60,6 +57,7 @@ def main(argv=None) -> int:
     ap.add_argument("--confirm", action="store_true")
     ap.add_argument("--n", type=int, default=200)
     ap.add_argument("--api-n", type=int, default=50)
+    ap.add_argument("--job-out", default=None, help="train: wynik do pliku JSON (zadanie panelu w osobnym procesie)")
     a = ap.parse_args(argv)
     from . import metamodel as M
     from . import service as SV
@@ -103,7 +101,22 @@ def main(argv=None) -> int:
             "live": {k: (live or {}).get(k) for k in ("generation", "complete", "models", "snapshot", "timings")} if live else None})
         return 0
     if a.cmd == "train":
-        res = SV.train_from_ledger(led, inst, a.task)
+        logs: list[str] = []
+
+        def _log(msg) -> None:                                  # as before (print) + the job's log for the panel (job['log'])
+            logs.append(str(msg)[:500])
+            print(msg, flush=True)
+        try:
+            res = SV.train_from_ledger(led, inst, a.task, log=_log) if a.job_out else SV.train_from_ledger(led, inst, a.task)
+        except Exception as exc:  # reported to the panel job (arch146 I0069), then re-raised as before
+            if a.job_out:
+                Path(a.job_out).write_text(json.dumps({"error": f"{type(exc).__name__}: {exc}"[:300], "log": logs[-200:]}, ensure_ascii=False),
+                                           encoding="utf-8")
+            raise
+        if a.job_out:                                           # arch146 I0069: the panel's training job runs this command as a child
+            tmp = Path(a.job_out).with_suffix(".tmp")
+            tmp.write_text(json.dumps({"results": res, "log": logs[-200:]}, ensure_ascii=False, default=str), encoding="utf-8")
+            tmp.replace(Path(a.job_out))
         _p(res)
         return 2 if all(r["status"] == "INSUFFICIENT_EVIDENCE" for r in res) else 0
     if a.cmd == "list":

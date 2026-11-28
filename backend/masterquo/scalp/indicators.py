@@ -1,7 +1,8 @@
 """Causal indicators for the scalp profile (value at bar i uses bars <= i only). Pure Python - the bot venv has no pandas.
 
 ATR14   Wilder: seed = mean of the first 14 true ranges, then (prev*13 + TR)/14.
-ER(n)   |C_t - C_(t-n)| / sum(|C_i - C_(i-1)|); zero denominator -> 0.0 with flat=True (caller checks minimal movement).
+ER(n)   |C_t - C_(t-n)| / sum(|C_i - C_(i-1)|); zero denominator (flat closes) -> 0.0, no flag: the caller checks the denominator
+        itself (scalp.strategy.detect_range -> flat; the scalp A features keep the 0.0 - feature contract).
 BB      basis = SMA(20) of close, dev = POPULATION standard deviation (divide by N - the MT5 iBands formula), upper/lower =
         basis +/- 2*dev, %B = (C-lower)/(upper-lower), BandWidth = (upper-lower)/basis, its percentile over the previous 100
         bars (strictly earlier values), slope = (basis_t - basis_(t-3)) / (3 * ATR_t)  [ATR per bar].

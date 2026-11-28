@@ -50,7 +50,8 @@ class TestModelsCheckCli(unittest.TestCase):
         self.assertEqual(sorted(x["id"] for x in rows), want)
         st = {x["id"]: x["status"] for x in rows}
         self.assertEqual(st["ext:catboost"], "NOT_IMPLEMENTED")
-        self.assertEqual(st["mm:sdom"], "NO_SPEC")
+        for ns in ("mm:sdom", "mm:quant_momentum", "mm:renko", "mm:head_shoulders", "mm:data_grabber", "mm:chart_sync", "extind:PAL02M"):
+            self.assertEqual(st[ns], "NO_SPEC", ns)                           # 1.46 arch I0548 / I0549 / I0550: every NO_SPEC row
         self.assertNotIn("DZIAŁA", st.values())                              # no smoke requested -> nothing claimed to work
 
     def test_smoke_area_end_to_end_on_a_temporary_folder(self):

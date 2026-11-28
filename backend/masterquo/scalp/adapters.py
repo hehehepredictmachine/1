@@ -99,7 +99,8 @@ def extind_snapshot(name: str, symbol: str, ext, instrument: str | None, now: da
     status = "AVAILABLE" if st["runtime_status"] == "READY_RUNTIME" and snap else (
         "UNDOCUMENTED_EXTERNAL" if st["identity_status"] != "IDENTIFIED" else "STALE" if st["source_status"] == "STALE" else "UNAVAILABLE")
     return {"adapter": name, "title": meta["title"], "version": snap and snap.get("product_version"), "symbol": symbol, "values": vals,
-            "known_at": snap and snap["available_at"], "received_at": now.isoformat(), "delay_seconds": snap and round(snap["age_s"], 1),
+            "known_at": snap and snap["available_at"], "confirmed_at": snap and snap.get("confirmed_at"),   # 1.46 arch (I0729): last identical read
+            "received_at": now.isoformat(), "delay_seconds": snap and round(snap["age_s"], 1),
             "status": status, "reason": "; ".join(st["needs"]) or "odczyt zatwierdzonego mappingu", "needs": st["needs"],
             "identity_status": st["identity_status"], "source_status": st["source_status"], "mapping_status": st["mapping_status"],
             "snapshot_id": snap and snap["snapshot_id"]}

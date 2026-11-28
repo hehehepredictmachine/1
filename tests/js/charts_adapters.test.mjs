@@ -1,6 +1,6 @@
 // CHARTS 1:1 – K1: adaptery API → model widoku (D1 §3) na kształtach odpowiedzi z K0 (dane syntetyczne, bez danych rachunku).
 import assert from "node:assert/strict";
-import { candlesVM, basketSignalVM, legacySignalVM, zonesVM, zonesMsgVM, probVM, kronosVM, iprofVM, chartStatus, basketMetaVM, legacyMetaVM, shMetaVM, statesVM, shSignalVM, cardProbsVM, svpVisibleVM } from "../../frontend/src/features/forex/screens/charts/chartsAdapters.ts";
+import { candlesVM, basketSignalVM, legacySignalVM, zonesVM, zonesMsgVM, probVM, kronosVM, iprofVM, chartStatus, basketMetaVM, legacyMetaVM, shMetaVM, statesVM, shSignalVM, cardProbsVM, planProbsVM, shTp2ProbVM, svpVisibleVM } from "../../frontend/src/features/forex/screens/charts/chartsAdapters.ts";
 
 // /api/v1/candles
 const c = candlesVM({ bars: [
@@ -121,10 +121,22 @@ assert.equal(shSignalVM({ ...shr, plan: { state: "OPEN", tp_done: ["TP1"] } }).r
 assert.equal(shSignalVM({ ...shr, plan: { state: "CLOSED", tp_done: ["TP1", "TP2"], close_reason: "SL", closed_at: 1795010000 } }).res, "SL_PO_TP2");
 assert.equal(shSignalVM({ ...shr, plan: { state: "CLOSED", tp_done: ["TP1", "TP2", "TP3"], close_reason: "TP3" } }).res, "TP3");
 assert.equal(shSignalVM({ ...shr, status: "EXPIRED" }).res, "WYGASŁY");
-// K3: szanse w karcie – tylko skalibrowane prawdopodobieństwo
+// K3: szanse w karcie – 1.46 (I0328): per WYBRANY plan, nie z listy /models/predictions instrumentu (nie ma tam zadań planu)
 const cp = cardProbsVM({ items: [{ task: "NET_R_POSITIVE_S01_S12", unit: "probability", calibration: { status: "CALIBRATED_DEV" }, result: { probability: .58 }, state: "READY", model_name: "champion" }] });
-assert.equal(cp.win.v, .58); assert.deepEqual([cp.tp2.v, cp.tp2.state], [null, "NO_DATA"]);
-assert.equal(cardProbsVM(null).win.state, "NO_DATA");
+assert.deepEqual([cp.win.v, cp.win.state, cp.tp2.v, cp.tp2.state], [null, "NOT_SELECTED", null, "NOT_SELECTED"]);   // lista instrumentu ignorowana
+assert.equal(cardProbsVM(null).win.state, "NOT_SELECTED");
+assert.equal(legacySignalVM({ ...lg, setup_id: "SET-9" }).ref, "SET-9");
+assert.equal(shSignalVM(shr).ref, "SH-1");
+const shDet = { signal_id: "SH-1", payload: { probability: { value: .58, event: "TP2 przed SL w 30 min", status: "SKALIBROWANE", model_version: "tp-v3" } } };
+const pSh = planProbsVM(shSignalVM(shr), shDet);
+assert.deepEqual([pSh.tp2.v, pSh.tp2.state, pSh.tp2.cal, pSh.tp2.src], [.58, "READY", "CALIBRATED_SH", "tp-v3"]);
+assert.deepEqual([pSh.win.v, pSh.win.state], [null, "NOT_APPLICABLE"]);
+assert.deepEqual([shTp2ProbVM({ payload: { probability: { value: null, status: "BRAK_MODELU_ZDARZENIA" } } }).state, shTp2ProbVM(null).state,
+  shTp2ProbVM({ payload: {} }).state, shTp2ProbVM({ payload: { probability: { value: 1.7, status: "SKALIBROWANE" } } }).v], ["NOT_TRAINED", "NO_DATA", "NO_DATA", null]);
+const pLg = planProbsVM(legacySignalVM(lg), null);
+assert.deepEqual([pLg.win.state, pLg.win.v, pLg.tp2.state], ["NOT_PUBLISHED", null, "NOT_APPLICABLE"]);
+assert.deepEqual([planProbsVM(basketSignalVM(bk)).win.state, planProbsVM(basketSignalVM(bk)).tp2.state], ["NOT_APPLICABLE", "NOT_APPLICABLE"]);
+assert.equal(planProbsVM(null).tp2.state, "NOT_SELECTED");
 // K3: S01–S12 – czas świecy sygnału z detail.source_time; basket – reżim i routing AUTO z zapisu
 assert.equal(legacySignalVM({ ...lg, detail: { ...lg.detail, source_time: "2026-11-13T16:00:00Z" } }).t, Date.parse("2026-11-13T16:00:00Z"));
 const bro = basketSignalVM({ ...bk, setup: { ...bk.setup, regime: { regime: "TREND" }, routed_auto: false } });

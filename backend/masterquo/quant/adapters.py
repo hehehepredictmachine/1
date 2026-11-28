@@ -6,8 +6,11 @@ existed - the family adapter SEQ_GRU_EVENT returned None and the MM service only
 a panel request). A missing source is a state with a reason, never a value; every adapter failure becomes an ERROR record, never silence.
 
 Setup-scoped models (sh_tp_model, legacy_ml, scalp_B, ml_scalp, nss, indicator_context) have no standalone prediction: their output
-exists per strategy candidate and reaches the evaluation ledger. They are listed by `setup_scoped()` with the live probe state - no
-invented standalone record.
+exists per strategy candidate (its plan / setup record). sh_tp_model, legacy_ml and scalp_B reach the evaluation ledger as the
+assessment probability; indicator_context (P(TP1 first) in its frozen policy) is kept in the scalp_shadow plan and, when READY_INFERENCE,
+as payload.observations.indicator_context of the evaluation ledger row - an observation for calibration / monitoring, never the
+assessment probability (w2 I0166). ml_scalp and nss keep their own sample / inference stores. They are listed by `setup_scoped()` with
+the live probe state - no invented standalone record.
 """
 from __future__ import annotations
 
@@ -99,7 +102,8 @@ def rules(rt, inst: str) -> list[dict]:
     res = {k: v for k, v in res.items() if v}
     out.append(_p(canonical_id="rule:structure_v2", instrument=inst, timeframe="M5", model_name="rule:structure_v2", task_type="STATE", task="STRUCTURE_V2",
                   horizon_bars=None, unit="state", state="READY" if res else "BLOCKED_DATA", result=res or None, data_time=dt,
-                  unavailable_reason=None if res else "struktura w rozgrzewaniu / błąd", source="sh.context", extra={"analytic_role": "CONTEXT_FEATURE"}))
+                  unavailable_reason=None if res else "struktura w rozgrzewaniu / błąd", source="sh.context",
+                  extra={"analytic_role": "CONTEXT_STATE"}))         # 1.46 arch (I0570): no feature is built from this STATE record
     news = getattr(rt, "news", None)
     if news is not None:
         try:
@@ -208,7 +212,8 @@ def analysis(rt, inst: str) -> list[dict]:
             out.append(_p(canonical_id="analysis:indicators", instrument=inst, timeframe="M1", model_name="analysis:indicators", task_type="STATE",
                           task="INDICATORS_PMW_IND_1", horizon_bars=None, unit="mixed",
                           state="READY" if ind_ok else ("STALE" if snap_st == "STALE" else "BLOCKED_DATA"), result=body if ind_ok else None,
-                          data_time=as_of, unavailable_reason=why, source="indicators", extra={"analytic_role": "CONTEXT_STATE"}))
+                          data_time=as_of, unavailable_reason=why, source="indicators",
+                          extra={"analytic_role": "CONTEXT_STATE"}))   # 1.46 arch (I0189): no feature is built from this STATE record
             out.append(_dxy_record(inst, cp.get("dxy"), as_of))
         except LookupError as exc:
             for cid, tf in (("analysis:indicators", "M1"), ("analysis:dxy_correlation", "H1")):
@@ -237,7 +242,8 @@ def analysis(rt, inst: str) -> list[dict]:
                           horizon_bars=None, unit="state", state="READY" if ok else ("STALE" if zm and summ and ds == "STALE" else "BLOCKED_DATA"),
                           result=summ if ok else None, data_quality="DEGRADED" if ok and ds == "DEGRADED" else "OK",
                           data_time=(zm or {}).get("as_of") or (zm or {}).get("map_as_of"), source="zones",
-                          unavailable_reason=None if ok else why[:200], extra={"analytic_role": "CONTEXT_FEATURE"}))
+                          unavailable_reason=None if ok else why[:200],
+                          extra={"analytic_role": "CONTEXT_STATE"}))   # 1.46 arch (I0596): quant/features.py does not map zones
         except Exception as exc:  # noqa: BLE001
             out.append(_err("analysis:zones", inst, "M5", "STATE", "ZONE_MAP_SUMMARY", "state", exc))
     mc = getattr(rt, "montecarlo", None)
@@ -262,6 +268,7 @@ def analysis(rt, inst: str) -> list[dict]:
 
 # ---------------------------------------------------------------------------------------------------------------- MM (read the MM loop cache)
 KALMAN_NO_DATA = ("INITIALIZING", "INSUFFICIENT_HISTORY", "INVALID_INPUT")     # mm/kalman.py STATES without a filter estimate
+MM_UNITS = {"mm:align_mean": "mixed"}        # 1.46 arch (I0378): <TF>_dist_points / _dist_pct / _dist_atr (quant/inventory.py: unit 'mixed')
 
 
 def mm(rt, inst: str) -> list[dict]:
@@ -274,7 +281,8 @@ def mm(rt, inst: str) -> list[dict]:
     if not v or v.get("status") != "OK":
         why = (v or {}).get("reason") or "pętla MM nie policzyła jeszcze zamkniętej świecy M5 dla instrumentu"
         return [_p(canonical_id=cid, instrument=inst, timeframe="M5", model_name=cid, task_type="REGRESSION" if cid.endswith("gpr_logret") else "STATE",
-                   task=cid.split(":")[1].upper(), horizon_bars=3 if cid.endswith("gpr_logret") else None, unit="log_return" if cid.endswith("gpr_logret") else "state",
+                   task=cid.split(":")[1].upper(), horizon_bars=3 if cid.endswith("gpr_logret") else None,
+                   unit="log_return" if cid.endswith("gpr_logret") else MM_UNITS.get(cid, "state"),
                    state="BLOCKED_DATA", unavailable_reason=why[:200]) for cid in ids]
     dt = iso_ts(float(v["last_closed_m5"]))
     av = iso_ts(float(v["last_closed_m5"]) + 300)
@@ -285,9 +293,13 @@ def mm(rt, inst: str) -> list[dict]:
         ok = bool(res)
         if tt == "FILTER_STATE" and ok and not isinstance(res.get("state"), str):
             ok = False
-        out.append(_p(canonical_id=cid, instrument=inst, timeframe="M5", model_name=cid, task_type=tt, task=task, horizon_bars=None, unit="state",
+        # 1.46 arch (I0378 / I0379): the unit / role of the inventory row - a STATE record gives no MetaModel column (quant/features.py builds
+        # st:<cid>:aligned from FILTER_STATE only), so it is CONTEXT_STATE; align_mean holds points / % / ATR distances -> 'mixed'
+        role = "CONTEXT_FEATURE" if tt == "FILTER_STATE" else "CONTEXT_STATE"
+        out.append(_p(canonical_id=cid, instrument=inst, timeframe="M5", model_name=cid, task_type=tt, task=task, horizon_bars=None,
+                      unit=MM_UNITS.get(cid, "state"),
                       state="READY" if ok else "BLOCKED_DATA", result=res if ok else None, data_time=dt, available_at=av, data_kind=kind, source="mm.service",
-                      unavailable_reason=None if ok else why_missing, extra={"analytic_role": "CONTEXT_FEATURE"}))
+                      unavailable_reason=None if ok else why_missing, extra={"analytic_role": role}))
     try:
         k = v.get("kalman") or {}
         # 1.46 arch (I0795): a Kalman filter without data (INITIALIZING / INSUFFICIENT_HISTORY / INVALID_INPUT - warm-up after every restart,
@@ -344,9 +356,10 @@ INCOMPLETE_KEY = "incomplete_generation"
 
 
 def event_feature_schema() -> str:
-    """The feature schema mm/jobs.py writes into an event_engine_dir3 artifact (PMW-MM-EVENT-1:<mm.events.FEATURES>)."""
+    """The feature schema mm/jobs.py writes into an event_engine_dir3 artifact (PMW-MM-EVENT-1:<mm.events.FEATURES>) - the single
+    constant mm/events.FEATURE_SCHEMA (I0023)."""
     from ..mm import events as EV
-    return "PMW-MM-EVENT-1:" + ",".join(EV.FEATURES)
+    return EV.FEATURE_SCHEMA
 
 
 class EventGRU:
@@ -385,8 +398,9 @@ class EventGRU:
         try:
             with self._lock:
                 if (inst, aid) not in self._loaded:
-                    # 1.46 arch (I0542): the artifact's feature list is checked at load (mm/jobs.py writes this schema) - another list was a
-                    # generic ERROR in predict, or even READY when only the number of columns matched; now INCOMPATIBLE below
+                    # 1.46 (I0023 / I0542): the schema the training wrote (mm/jobs.py: mm/events.FEATURE_SCHEMA) is checked at load - a
+                    # reordered / other FEATURES list loaded silently (a generic ERROR in predict, or even READY when only the number of
+                    # columns matched); now INCOMPATIBLE below
                     st, man = MA.load(inst, "event_engine_dir3", aid, feature_schema=event_feature_schema())
                     m = EE.EventModel.from_state(st)
                     sc = EV.Scaler()
@@ -482,7 +496,7 @@ def scalp_a(rt, inst: str) -> list[dict]:
     ans = sc.forecasts()
     if ans.get("status") != "SHADOW":
         return [_p(canonical_id=cid, instrument=inst, timeframe="M1", model_name=cid, task_type="CLASS_PROBABILITIES", task="SCALP_DIRECTION_H1M_M1",
-                   horizon_bars=1, unit="probability", state="BLOCKED_DATA" if ans.get("status") in ("WARMUP", "UNAVAILABLE") else "ERROR",
+                   horizon_bars=1, unit="probability", state="BLOCKED_DATA" if ans.get("status") in ("WARMUP", "UNAVAILABLE", "STALE_DATA") else "ERROR",
                    unavailable_reason=str(ans.get("reason") or ans.get("status"))[:200])]
     out = []
     run = _scalp_run(reg, ans.get("run_id"))
@@ -497,6 +511,9 @@ def scalp_a(rt, inst: str) -> list[dict]:
         res = {k: float(v) / tot for k, v in res.items()}
         out.append(_p(canonical_id=cid, instrument=inst, timeframe="M1", model_name=cid, model_version=ans.get("run_id"), task_type="CLASS_PROBABILITIES",
                       task=f"SCALP_DIRECTION_H{mins}_M1", horizon_bars=mins, unit="probability", state="READY", result=res, data_time=ans.get("feature_time_utc"),
+                      # 1.46 (I0754): the forecast exists only after the bar CLOSED (data_time = its open, BAR_OPEN semantics); an older worker
+                      # without bar_close_utc leaves available_at empty as before
+                      available_at=ans.get("bar_close_utc"),
                       source="forecast worker (.venv_candles)", calibration=_scalp_calibration(run, hz, mins),
                       extra={"analytic_role": "BASE_FORECAST", "normalisation": "zaokrąglenie 4 miejsc – jawna renormalizacja w tolerancji 2e-4"}))
     return out
@@ -535,7 +552,8 @@ def lab(rt, inst: str) -> list[dict]:
         asset = inst
     st = (getattr(lb, "state", {}) or {}).get(asset) or (getattr(lb, "state", {}) or {}).get(inst)
     if not st:
-        return [_p(canonical_id="lab:models", instrument=inst, timeframe="M5", model_name="lab:models", task_type="SCORE", task="TRIPLE_BARRIER_LONG_SCORE",
+        # 1.46 arch (I0011): the placeholder id is the inventory group row group:lab ('lab:models' was in no registry); never READY
+        return [_p(canonical_id="group:lab", instrument=inst, timeframe="M5", model_name="group:lab", task_type="SCORE", task="TRIPLE_BARRIER_LONG_SCORE",
                    horizon_bars=None, unit="ratio", state="BLOCKED_DATA", unavailable_reason="pętla lab nie policzyła jeszcze instrumentu")]
     out = []
     for m in st.get("models") or []:
@@ -564,7 +582,7 @@ def lab(rt, inst: str) -> list[dict]:
                           unavailable_reason=f"{m.get('status')}: {m.get('reason') or ''}"[:200]))
     if not out:
         md = st.get("model") or {}
-        out.append(_p(canonical_id="lab:models", instrument=inst, timeframe="M5", model_name="lab:models", task_type="SCORE", task="TRIPLE_BARRIER_LONG_SCORE",
+        out.append(_p(canonical_id="group:lab", instrument=inst, timeframe="M5", model_name="group:lab", task_type="SCORE", task="TRIPLE_BARRIER_LONG_SCORE",
                       horizon_bars=None, unit="ratio", state="NOT_TRAINED" if md.get("status") == "no_model" else "BLOCKED_DATA",
                       unavailable_reason=str(md.get("reason") or md.get("status") or "brak modeli lab")[:200]))
     return out

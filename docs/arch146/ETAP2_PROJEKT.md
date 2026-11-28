@@ -89,6 +89,30 @@ backend/masterquo/
                                 ścieżki, metody, nazwy handlerów i kody błędów bez zmian (test: zbiór METHOD+PATH przed == po)
 ```
 
+### 3a. Mapa warstw i strażnik importów leniwych (I0084)
+
+Mapa jest danymi w `tools/cycles.py` (`LAYERS`, każdy pakiet i moduł najwyższego poziomu `masterquo` ma warstwę; nowy pakiet bez warstwy
+= błąd testu):
+
+| Warstwa | Komponenty |
+|---|---|
+| L0 liście | `masterquo` (pakiet), paths, timeutil, version, events, registry_io, sysres, secrets_store, resources, assets, media, prefs, config, presets, contracts (rekordy kontraktów, tylko stdlib), settings_store (pliki ustawień), localapi (klient lokalnego API dla CLI), runtimes (rejestr środowisk modeli), procs (rejestr procesów treningu serwera, I0100) |
+| L1 dane | db, mt5, marketdata, data, markets, news, notify, licensing, stats |
+| L2 analizy | indicators, analysis, analytics, svp, zones, orderflow, plans |
+| L3 rdzeń handlowy | strategies, risk, engine, execution, decision, sh, baskets |
+| L4 SHADOW / badania / modele | lab, ml, tsfm, kronos, quant, modelhub, trainhub, mm, extind, scalp, forecast, evaluation, montecarlo, research, apollo, trader_life_game, ledgers (widok PMW-LEDGER-VIEW-1), features (słownik cech PMW-FEAT-DICT-1) |
+| L5 kompozycja | runtime, api, `__main__`, train_all, bootstrap, diagnostics, upgrade, desktop, agent, exports, studio, training, wf32_services (usługi modułów v3.2 budowane przez Runtime) |
+
+Krawędź w obrębie jednej warstwy jest dozwolona; import z warstwy niższej do wyższej to krawędź „w górę”. `tools/cycles.py` zbiera przez
+`ast` WSZYSTKIE importy wewnętrzne (modułowe, w funkcjach/metodach i dynamiczne `__import__`/`import_module` z literałem). Dzisiejsze
+krawędzie w górę (56 par moduł → moduł po scaleniu fali 2b, m.in. sh → lab/kronos/tsfm/modelhub/trainhub/mm/montecarlo, decision →
+quant/tsfm/evaluation, engine → extind/scalp; do liści bez importów wewnętrznych: config/sh.models → quant.ids, config → strategies.ids,
+ml → training.promotion – kandydaci do przeniesienia do L0 w Etapie 4) są zapisane jako baseline w `tests/data/layer_baseline.json`. Test
+(`tests/test_arch146_w2_tools_cli.py::TestLayerGuard`) nie przechodzi przy NOWEJ parze w górę; para usunięta jest tylko informacją.
+Klucz to para modułów, numery linii są informacyjne (edycja pliku nie psuje strażnika). Po przeglądzie zmiany baseline odświeża
+`python tools/cycles.py --write-baseline` (także po scaleniu każdej grupy, która dodaje komponent albo parę w górę – test je wskaże). Przeniesienie importów i porty wstrzykiwane przez `runtime` (wzorzec `scalp.extind`,
+`sh.predictions_provider`) to Etap 4. Strażnik nie zmienia kodu wykonywanego ani decyzji.
+
 ## 4. Jedno źródło prawdy – pojęcie po pojęciu
 
 | Pojęcie | Dziś (diagnoza) | Docelowo (źródło prawdy) | Pozostałe miejsca | Zmienia decyzje? |

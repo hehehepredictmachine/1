@@ -300,12 +300,15 @@ def _regime_v2(ctx) -> dict:
     def extra(rec):
         from ...quant import features as F
         st = (rec.get("result") or {}).get("state")
-        fx = F.context_features({"market_regime": {"state": st}})
-        oh = {k: v for k, v in fx.items() if k.startswith("ctx:regime=")}
+        # 1.46 arch (I0561): the current MetaModel features (FEAT-4) encode the SH state in the RegimeMachine v2 vocabulary; the frozen
+        # FEAT-1 / FEAT-3 one-hot (ctx:regime=TREND/RANGE/TRANSITION/HIGH_VOL) stays only for artifacts trained before
+        fx = F.regime_features4({"engine": "SH_SCALPING", "market_regime": {"state": st, "source": "sh.context (RegimeMachine v2)"}})
         note = f"; stan w rekordzie {st}"
-        if oh and not any(oh.values()):
-            note += (f"; UWAGA (cecha MetaModel, nie FAIL - zmiana wejść modelu): stan {st} nie pasuje do REGIMES quant/features.py:22 "
-                     f"→ ctx:regime=* same zera (features.py:74-77)")
+        if fx:
+            note += f"; cecha MetaModel ({F.CURRENT}): ctx:regime_sh={st} = {fx.get(f'ctx:regime_sh={st}')}"
+        else:
+            note += (f"; UWAGA (cecha MetaModel, nie FAIL): stan {st} poza słownikiem SH {F.REGIME_SH} (quant/features.py) "
+                     "→ brak kolumn reżimu (maska)")
         return ([] if st == _sh(ctx)["snap"]["regime"].get("state") else [f"stan rekordu {st} ≠ migawka SH"]), note
     steps["contract"] = _rule_contract(ctx, "rule:regime_v2", extra)
     return steps

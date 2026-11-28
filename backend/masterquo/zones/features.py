@@ -1,6 +1,7 @@
 """Zone features for one setup (PMW-ZONE-FEAT-1). Computed from a zone map (UZICE) for a given direction / entry / stop / cost.
 Distances are in ATR (M5) or in R (R = |entry - stop|) and signed by the trade direction where stated. A feature whose data does not
-exist is NaN - never a substituted value. Used by the evaluation ledger (every setup) and the legacy ML FeatureEngine (MQ-FEAT-1.1.0+).
+exist is NaN - never a substituted value. Used by the evaluation ledger (every setup) and the legacy ML FeatureEngine (zone block since
+MQ-FEAT-1.1.0; the current schema is ml.features.FEATURE_SCHEMA_VERSION).
 
 legacy=True reproduces the encoding of zone semantics SEM-1 exactly (inputs of ML models trained on MQ-FEAT <= 1.2.0): an unknown age /
 retest count of the opposing zone was 0 ("fresh, untested") and a missing session context was -1 ("outside every session").

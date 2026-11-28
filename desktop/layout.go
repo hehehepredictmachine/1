@@ -30,8 +30,20 @@ type Layout struct {
 	Portable   bool
 }
 
-func (l Layout) LogsDir() string    { return filepath.Join(l.DataDir, "logs") }
-func (l Layout) RuntimeDir() string { return filepath.Join(l.DataDir, "runtime") }
+// LogsDir / RuntimeDir of THIS shell. 1.46 arch (I0846): the Studio shell (PepeTrainingStudio.exe) uses its own folders under
+// <home>\data_studio - it runs next to the bot now and must never read / consume the bot's restart.request, shutdown.token or logs.
+func (l Layout) LogsDir() string {
+	if isStudio() {
+		return filepath.Join(l.StudioDir(), "logs")
+	}
+	return filepath.Join(l.DataDir, "logs")
+}
+func (l Layout) RuntimeDir() string {
+	if isStudio() {
+		return filepath.Join(l.StudioDir(), "runtime")
+	}
+	return filepath.Join(l.DataDir, "runtime")
+}
 func (l Layout) Requirements() string {
 	return filepath.Join(l.AppDir, "requirements", "requirements-win.txt")
 }

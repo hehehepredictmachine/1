@@ -1,19 +1,22 @@
-"""Inference engines of Chronos-2 and Granite TTM (run ONLY inside the model's own environment / process: .venv_chronos2, .venv_granite).
-1.40: FinCast is retired (replaced by Granite TTM) - its engine and vendored code were removed; old FinCast forecasts stay in the history.
+"""Inference engines of Chronos-2, Granite TTM and TiRex-2 (run ONLY inside the model's own environment / process: .venv_chronos2,
+.venv_granite, .venv_tirex2). 1.40: FinCast is retired (replaced by Granite TTM) - its engine and vendored code were removed; old FinCast
+forecasts stay in the history.
 
-Both call the ORIGINAL upstream API and nothing else:
+All three call the ORIGINAL upstream API and nothing else:
   Chronos-2    chronos.Chronos2Pipeline.from_pretrained(<local dir>) + predict_quantiles(inputs, prediction_length, quantile_levels)
   Granite TTM  tsfm_public.models.tinytimemixer.TinyTimeMixerForPrediction.from_pretrained(<local dir>) + forward(past_values)
+  TiRex-2      tirex2.load_model(<local dir>) + forecast([TimeseriesType(target)], prediction_length) (1.41)
 What this file adds: loading from local, checksum-verified files (offline), the identity check of the loaded checkpoint (parameter
 count == the pinned measurement), input validation (finite, length, horizon), the explicit target / input profile, the device choice
 (CUDA only when available AND working, else CPU, the reason reported) and a self test with a PARITY check against a direct call of the
 official API on the same data (independent code path - the expected values are never produced by this wrapper).
 
 Output semantics (never re-labelled):
-  quantiles    Chronos-2: the model's own quantile forecasts of the close at every step (21 trained levels); Granite TTM: none
-  point        Chronos-2: the 0.5 quantile (the pipeline's "mean" output IS the median) -> point_kind "median";
+  quantiles    Chronos-2: the model's own quantile forecasts of the close at every step (21 trained levels); TiRex-2: its 9 levels
+               0.1..0.9 (never interpolated); Granite TTM: none
+  point        Chronos-2 / TiRex-2: the 0.5 quantile (Chronos-2: the pipeline's "mean" output IS the median) -> point_kind "median";
                Granite TTM: the MSE head -> point_kind "point" (no median, no quantiles).
-Close only: neither model produces OHLC candles here - no high / low is ever derived from the close forecast.
+Close only: no model produces OHLC candles here - no high / low is ever derived from the close forecast.
 """
 from __future__ import annotations
 
@@ -59,6 +62,23 @@ def cuda_info() -> dict:
         return {"available": bool(ok), "device_name": torch.cuda.get_device_name(0) if ok else None, "torch_cuda": getattr(torch.version, "cuda", None)}
     except Exception as exc:  # noqa: BLE001
         return {"available": False, "error": f"{type(exc).__name__}: {exc}"[:200]}
+
+
+def cuda_check(dev: str | None) -> dict:
+    """1.46 (I0200): is the CUDA context of THIS process still usable? A sticky CUDA error (illegal memory access, device-side assert,
+    launch failure) makes every later CUDA call of the process fail until it ends. A tiny op on the device + synchronize; a model that
+    does not run on CUDA is always healthy here."""
+    d = str(dev or "")
+    if not d.startswith("cuda"):
+        return {"device": d or None, "healthy": True, "error": None}
+    try:
+        import torch
+        t = torch.ones(4, device=d)
+        float((t * 2).sum().item())
+        torch.cuda.synchronize()
+        return {"device": d, "healthy": True, "error": None}
+    except Exception as exc:  # noqa: BLE001
+        return {"device": d, "healthy": False, "error": f"{type(exc).__name__}: {exc}"[:300]}
 
 
 def rss_mb() -> float | None:
@@ -276,6 +296,26 @@ def verify_finetune(finetune_dir: str | None, run_id: str) -> tuple[Path, dict]:
     return d, {k: man.get(k) for k in ("run_id", "created_at", "data", "metrics", "base_fingerprint", "train")}
 
 
+def finetune_scope(ft: dict | None, *, instrument: str | None = None, timeframe: str | None = None, horizon: int | None = None) -> dict:
+    """1.46 (I0834 / I0844): is a request inside the scope a fine-tuned Granite TTM checkpoint was trained for (manifest: data.instrument,
+    data.timeframe, train.horizon)? The checkpoint is ONE instrument / timeframe / horizon; it was used for every pair. Checked only for
+    the given arguments (the engine does not know the instrument); an unknown trained value = out of scope. Information only - the
+    forecast is still computed; the bot then never lets it CONFIRM a REQUIRED role (masterquo/tsfm/predictions.py)."""
+    ft = ft or {}
+    data, train = ft.get("data") or {}, ft.get("train") or {}
+    trained = {"instrument": data.get("instrument"), "timeframe": data.get("timeframe"), "horizon": train.get("horizon")}
+    why = []
+    if instrument is not None and trained["instrument"] != instrument:
+        why.append(f"instrument {instrument} ≠ {trained['instrument'] or 'nieznany'} z treningu")
+    if timeframe is not None and trained["timeframe"] != timeframe:
+        why.append(f"interwał {timeframe} ≠ {trained['timeframe'] or 'nieznany'} z treningu")
+    if horizon is not None:
+        th = trained["horizon"]
+        if not isinstance(th, int) or isinstance(th, bool) or int(horizon) > th:
+            why.append(f"horyzont {int(horizon)} > {th if th is not None else 'nieznany'} świec z treningu")
+    return {"in_scope": not why, "reason": "; ".join(why) or None, "run_id": ft.get("run_id"), "trained": trained}
+
+
 def _ttm_class():
     """The official TinyTimeMixerForPrediction of granite-tsfm WITHOUT executing tsfm_public/__init__.py (which imports the whole toolkit:
     pandas, scikit-learn, datasets, pyarrow - measured +120 MB RSS that inference never uses). The package objects are registered with
@@ -371,8 +411,11 @@ class GraniteTTMEngine(BaseEngine):
         y = self._forward((x - mu) / sd)[:H] * sd + mu
         if not np.isfinite(y).all():
             raise EngineError("NON_FINITE", "model zwrócił NaN/Inf")
+        scope = None if (self.info.get("checkpoint") or "BASE") == "BASE" else \
+            finetune_scope(self.info.get("finetune"), timeframe=req.get("freq_tf"), horizon=H)          # 1.46 (I0844): information
         return {"point": [float(v) for v in y], "point_kind": "point", "median": None, "quantiles": None,
                 "ms": round((time.perf_counter() - t0) * 1000, 2), "device": self.device, "context_bars": ctx, "profile": "CLOSE_V1",
+                "finetune_scope": scope,
                 "input_hash": input_hash(req), "normalization": {"method": "zscore_context_window", "mean": mu, "std": sd},
                 "note": "prognoza punktowa close (model trenowany MSE) – bez kwantyli i bez świec OHLC; normalizacja tylko z okna kontekstu"}
 

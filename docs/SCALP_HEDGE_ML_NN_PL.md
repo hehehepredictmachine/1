@@ -21,7 +21,10 @@ Profil badawczy: `config/scalp_profile_v1.json`, `MQ-SCALP-RANGE-SWEEP-1.0.0-RES
 | 5 | `20_START_SCALP_SHADOW.bat` | start monitora; sekcja: Wykresy bota → „Scalp M5 Range → M1 Sweep → Retest + hedge” |
 | — | `21_ROLLBACK_MODELU_SCALP.bat [BRAK]` | poprzedni zgodny model albo brak modelu |
 
-**`<prowizja>`** to prowizja za 1 lot na stronę, w walucie konta. **Domyślnie w paczce: 0.50** – launchery 17 i 19 można uruchomić dwuklikiem.
+**`<prowizja>`** to prowizja za 1 lot na stronę, w walucie konta. **Domyślnie w paczce: 0.50** – launchery 17 i 19 można uruchomić dwuklikiem
+(17: najpierw prowizja z historii transakcji eksportu).
+- `17_TRENING_SCALP_ML.bat` bez argumentu bierze prowizję z historii transakcji eksportu (metadane), a gdy jej brak – 0.50 tylko dla XAUUSD.
+  Inny instrument bez prowizji w metadanych kończy się błędem `COMMISSION_UNKNOWN` – podaj argument (1.46 arch I0110).
 - Inna wartość: argument launchera (np. `17_TRENING_SCALP_ML.bat 3.5`) oraz w `data\config.json`: `"scalp": {"commission_per_lot_side": 3.5}`.
 - Sprawdź ją w warunkach swojego rachunku – profil „Zero” nie oznacza zerowych kosztów.
 
@@ -118,6 +121,11 @@ Brak historii = WARMUP (blokada). Skuteczność tego filtra sprawdza ablation EX
 - spread;
 - wielkość pozycji;
 - limity dzienny 1,5% i tygodniowy 4% (equity całego konta, punkt odniesienia zapisany na dysku – restart nie zeruje licznika);
+  odniesieniem dnia/tygodnia jest pierwsze equity zaobserwowane po 00:00 UTC (dzień) / w tygodniu ISO, a bramka bierze wyższe z niego
+  i equity pierwszego kandydata. **Start bota w trakcie dnia** (pierwsza obserwacja później niż 10 min po 00:00 UTC) oznacza
+  `NOT_VERIFIED` do końca dnia UTC: żaden kandydat nie dostaje READY_SHADOW (brak sygnału scalp i rozliczenia wyniku SHADOW). Bot, który
+  działa o 00:00–00:10 UTC, zapisuje odniesienie następnego dnia normalnie. Nieczytelny `risk_reference.json` = `UNAVAILABLE` do 00:00 UTC.
+  Odtworzenie odniesienia z historii transakcji MT5 nie jest zaimplementowane (1.46 arch I0810);
 - kalendarz makro (brak świeżego kalendarza = blokada nowych wejść);
 - jeden cykl / cooldown 5 min;
 - model (profil nie wymaga ML);

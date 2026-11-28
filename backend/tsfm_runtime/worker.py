@@ -1,9 +1,9 @@
-"""Inference process of Chronos-2 / Granite TTM (started by masterquo/tsfm/service.py with the model's own interpreter).
+"""Inference process of Chronos-2 / Granite TTM / TiRex-2 (started by masterquo/tsfm/service.py with the model's own interpreter).
 
   python -m tsfm_runtime.worker --model chronos2|granite_ttm|tirex2
 Protocol: one JSON object per line on stdin -> one JSON object per line on stdout carrying the request "id".
   {"cmd": "hello"}  {"cmd": "load", "weights_root", "device", "threads", "verify_files"}  {"cmd": "predict", ...}  {"cmd": "selftest"}
-  {"cmd": "ping"} (heartbeat)  {"cmd": "quit"}
+  {"cmd": "ping"} (heartbeat)  {"cmd": "cuda_check"} (1.46: CUDA context of the loaded model still usable?)  {"cmd": "quit"}
 Errors: {"ok": false, "code", "error"} - never a made-up forecast. Library output goes to stderr (log file), never into the protocol.
 Requests are processed strictly one at a time (no interleaved random states); the process never touches MT5 or the network.
 """
@@ -45,6 +45,8 @@ def main(argv=None) -> int:
                 resp = {"ok": True, "runtime": RUNTIME_VERSION, "model": a.model, "versions": E.versions(), "cuda": E.cuda_info(), "pid": os.getpid()}
             elif cmd == "ping":
                 resp = {"ok": True, "loaded": eng.loaded, "rss_mb": E.rss_mb()}
+            elif cmd == "cuda_check":                                       # 1.46 (I0200): is the CUDA context still usable?
+                resp = {"ok": True, **E.cuda_check((eng.info or {}).get("device"))}
             elif cmd == "load":
                 kw = {"checkpoint": req.get("checkpoint"), "finetune_dir": req.get("finetune_dir")} if a.model == "granite_ttm" else {}
                 resp = {"ok": True, "info": eng.load(req["weights_root"], device=req.get("device", "AUTO"), threads=req.get("threads"),

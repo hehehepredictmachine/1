@@ -95,7 +95,8 @@ class Breakout(B.Family):
     UNIT = "mixed"
     TASK = "BREAKOUT_STATE"
     TF = "M5"
-    RECEIVERS = ("SH_CONTEXT:breakout_state", "STRATEGY:S05/S12 BREAKOUT_RETEST context", "PANEL:model_status")
+    RECEIVERS = ("SH_CONTEXT:breakout_state", "PANEL:model_status")
+    PLANNED_RECEIVERS = ("STRATEGY:S05/S12 BREAKOUT_RETEST context",)
     DATA = {"kind": "BARS", "tf": "M5", "min_bars": 1500}
     NEEDS_POINT = True                                               # 1.46: the validation cost = median bar spread x point
 

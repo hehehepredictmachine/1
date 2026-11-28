@@ -21,6 +21,21 @@ CREATE INDEX IF NOT EXISTS ix_pred_model ON predictions(model_id, source_ts);
 CREATE INDEX IF NOT EXISTS ix_pred_open ON predictions(matures_at) WHERE outcome IS NULL;
 """
 
+# run_mode of a row (column since PMW-MM-LEDGER-1; the file format is unchanged). 1.46 (I0034): the GPR walk-forward of training (mm/jobs.job_gpr,
+# also on SYNTHETIC_TEST data) wrote into the same ledger as the live service with the default SHADOW - only the model_id told them apart.
+SHADOW = "SHADOW"                                   # live SHADOW forecasts (mm/service: model_id 'gpr_logret:LIVE'), evaluation rows
+WALK_FORWARD = "WALK_FORWARD"                       # out-of-sample test block of a training run on REAL_USER_DATA (model_id 'gpr_logret:<snapshot>')
+WALK_FORWARD_SYNTHETIC = "WALK_FORWARD_SYNTHETIC"   # the same on SYNTHETIC_TEST data (a code test, never market evidence)
+_GPR_WF_PREFIX, _GPR_LIVE = "gpr_logret:", "gpr_logret:LIVE"
+
+
+def legacy_run_mode(model_id: str, run_mode: str | None) -> str:
+    """View of rows written before 1.46: a GPR walk-forward row (model_id 'gpr_logret:<snapshot_id>') stored with the default SHADOW is
+    WALK_FORWARD (its data kind is in the artifact manifest, not in the row). Every other row keeps its stored run_mode."""
+    if (run_mode in (None, SHADOW)) and model_id.startswith(_GPR_WF_PREFIX) and model_id != _GPR_LIVE:
+        return WALK_FORWARD
+    return run_mode or SHADOW
+
 
 class Ledger:
     def __init__(self, path: Path):
@@ -45,16 +60,26 @@ class Ledger:
                                   horizon, kind, json.dumps(payload, default=float), quality, run_mode))
             return cur.rowcount == 1
 
-    def pending(self, model_id: str | None = None, until: float | None = None) -> list[dict]:
-        q = "SELECT * FROM predictions WHERE outcome IS NULL" + (" AND model_id=?" if model_id else "") + (" AND matures_at<=?" if until is not None else "")
-        args = tuple(x for x in (model_id, until) if x is not None)
+    def count_pending(self, model_id: str | None = None) -> int:
+        """1.46 (I0039): number of rows without an outcome, counted in SQLite (status views used len(pending()) - SELECT * of every open row)."""
+        q = "SELECT COUNT(*) FROM predictions WHERE outcome IS NULL" + (" AND model_id=?" if model_id else "")
+        with self._lock:
+            return int(self.c.execute(q, (model_id,) if model_id else ()).fetchone()[0])
+
+    def pending(self, model_id: str | None = None, until: float | None = None, min_source_ts: float | None = None) -> list[dict]:
+        q = ("SELECT * FROM predictions WHERE outcome IS NULL" + (" AND model_id=?" if model_id else "") + (" AND matures_at<=?" if until is not None else "")
+             + (" AND source_ts>=?" if min_source_ts is not None else ""))
+        args = tuple(x for x in (model_id, until, min_source_ts) if x is not None)
         with self._lock:
             return [dict(r) for r in self.c.execute(q + " ORDER BY matures_at", args).fetchall()]
 
-    def mature(self, observed_until: float, resolver, model_id: str | None = None) -> int:
-        """resolver(row) -> outcome dict or None (target data not available yet). Only rows with matures_at <= observed_until."""
+    def mature(self, observed_until: float, resolver, model_id: str | None = None, min_source_ts: float | None = None) -> int:
+        """resolver(row) -> outcome dict or None (target data not available yet). Only rows with matures_at <= observed_until.
+        1.46 arch (I0358): min_source_ts = the first bar the resolver can see (live window of the bridge). Older unscored rows (e.g. a
+        restart after a gap longer than the window) can never be resolved there - they stay in the ledger unscored (nothing is deleted
+        or marked) but are no longer re-scanned on every recompute."""
         n = 0
-        for r in self.pending(model_id, observed_until):
+        for r in self.pending(model_id, observed_until, min_source_ts):
             try:
                 out = resolver(r)
             except Exception as exc:  # noqa: BLE001 - one bad row never blocks the queue
@@ -101,7 +126,23 @@ class Ledger:
         return out
 
     def summary(self) -> list[dict]:
+        """Rows per (model_id, run_mode) - 1.46 (I0034): live SHADOW forecasts and training walk-forward rows are told apart by run_mode
+        (legacy_run_mode() for rows written before), not only by the model_id."""
         with self._lock:
-            return [dict(r) for r in self.c.execute(
-                "SELECT model_id, COUNT(*) AS n, SUM(outcome IS NOT NULL) AS scored, MIN(source_ts) AS first_ts, MAX(source_ts) AS last_ts "
-                "FROM predictions GROUP BY model_id ORDER BY model_id").fetchall()]
+            rows = [dict(r) for r in self.c.execute(
+                "SELECT model_id, run_mode, COUNT(*) AS n, SUM(outcome IS NOT NULL) AS scored, MIN(source_ts) AS first_ts, MAX(source_ts) AS last_ts "
+                "FROM predictions GROUP BY model_id, run_mode ORDER BY model_id").fetchall()]
+        out: dict = {}
+        for r in rows:
+            r["run_mode"] = legacy_run_mode(r["model_id"], r["run_mode"])
+            k = (r["model_id"], r["run_mode"])
+            if k not in out:
+                out[k] = r
+                continue
+            m = out[k]                                   # a legacy SHADOW group merged into its derived mode
+            m["n"] += r["n"]
+            m["scored"] = (m["scored"] or 0) + (r["scored"] or 0)
+            for key, pick in (("first_ts", min), ("last_ts", max)):
+                vals = [x for x in (m[key], r[key]) if x is not None]
+                m[key] = pick(vals) if vals else None
+        return [out[k] for k in sorted(out)]

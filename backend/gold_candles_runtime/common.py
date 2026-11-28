@@ -177,6 +177,13 @@ def admissible(entry: dict) -> tuple[bool, str | None]:
 # Auto-activation (plan_train / scalp_train / training runner) takes only TRAINED_SHADOW / PARTIAL_VALIDATION; manual activate / rollback
 # also admit SHADOW_UNVALIDATED (D20 (b)) - `list` marks such runs so that a rollback to them is not mistaken for a validated model.
 MANUAL_ONLY_NOTE = "[niezwalidowany – tylko ręcznie]"
+AUTO_ACTIVATION_VERDICTS = ("TRAINED_SHADOW", "PARTIAL_VALIDATION")
+
+
+def auto_admissible(status: str | None) -> tuple[bool, str | None]:
+    """1.46 (I0066): the ONE quality rule of automatic activation after training (forecast: overall_status, scalp: task-A overall) -
+    plan_train and scalp_train each kept their own copy of the list. Stricter than admissible() (manual activate / rollback, D20)."""
+    return (True, None) if status in AUTO_ACTIVATION_VERDICTS else (False, f"QUALITY_{status}")
 
 
 def list_note(status: str | None, ok: bool) -> str:

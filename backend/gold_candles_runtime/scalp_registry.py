@@ -17,6 +17,7 @@ from .scalp_infer import (
     admissible,
     read_registry,
     registry_path,
+    sklearn_mismatch,
 )
 
 
@@ -55,8 +56,10 @@ def main(argv=None) -> int:
                   f"Użyj 'rollback' albo 'deactivate'.")
         for rid, e in sorted(reg["runs"].items()):
             ok, why = check(e)
+            mm = sklearn_mismatch(e)                # 1.46 (I0619): pickles of another scikit-learn may not load / give a warning
             print(f"  {rid}  {e.get('data_kind')}  A={e.get('task_a_status')} {e.get('horizon_status')}  B={e.get('task_b_status')}  "
-                  f"C={e.get('task_c_status')}  {'może być aktywny' if ok else 'NIE: ' + str(why)}{list_note(e.get('task_a_status'), ok)}")
+                  f"C={e.get('task_c_status')}  {'może być aktywny' if ok else 'NIE: ' + str(why)}{list_note(e.get('task_a_status'), ok)}"
+                  + (f"  [UWAGA] {mm}" if mm else ""))
         return 0
     if args.cmd == "validate":
         rc = 0
@@ -64,6 +67,9 @@ def main(argv=None) -> int:
             ok, why = activatable(e, contract(e))
             adm, adm_why = admissible(e)            # D20: like 'list' / activate - the verdict of task A, not only the worker's gate
             line = f"{rid}: {'OK' if ok else why}, aktywacja {'możliwa' if ok and adm else 'NIE: ' + str(why if not ok else adm_why)}"
+            mm = sklearn_mismatch(e)
+            if mm:
+                line += f", [UWAGA] {mm}"
             try:
                 m = ScalpModel(e)
                 p = m.predict(np.zeros((1, len(SF.FEATURES))))

@@ -112,6 +112,19 @@ int MR2Find(const MR2Section &secs[], const string tag)
    return -1;
   }
 
+//--- 1.46 arch (I0483): layout sections DILS (i4) / CNTS (i4) / QUAN (f4) written by Python (model.bin, self-test fixture, train file);
+//--- false when one is missing or has a wrong dtype (old file) - the caller then falls back to Configure()
+bool MR2ReadLayout(const uchar &buf[], const MR2Section &secs[], int &dil[], int &cnt[], float &q[])
+  {
+   int sd = MR2Find(secs, "DILS"), sn = MR2Find(secs, "CNTS"), sq = MR2Find(secs, "QUAN");
+   if(sd < 0 || sn < 0 || sq < 0) return false;
+   if(secs[sd].dtype != 1 || secs[sn].dtype != 1 || secs[sq].dtype != 2 || secs[sd].count != secs[sn].count) return false;
+   ArrayResize(dil, (int)secs[sd].count); for(uint i = 0; i < secs[sd].count; i++) dil[i] = MR2RdI4(buf, secs[sd].offset + 4 * i);
+   ArrayResize(cnt, (int)secs[sn].count); for(uint i = 0; i < secs[sn].count; i++) cnt[i] = MR2RdI4(buf, secs[sn].offset + 4 * i);
+   ArrayResize(q, (int)secs[sq].count); for(uint i = 0; i < secs[sq].count; i++) q[i] = MR2RdF4(buf, secs[sq].offset + 4 * i);
+   return true;
+  }
+
 //--- load the full exported model into TEMPORARY objects; the caller swaps them in only on success
 bool MR2LoadModel(const string name, const bool common, CMiniRocketV2 &mr, CRidgeHeadV2 &head, string &err, string &shaHex)
   {

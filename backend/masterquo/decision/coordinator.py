@@ -4,11 +4,16 @@ Order of evaluation (each step may only make the verdict stricter - nothing afte
 1. StrategyCandidate.base_verdict from the strategy (ACTIVE: execution_permission ALLOWED -> ENTER; SH: status READY -> ENTER).
 2. Gates already computed by the path (mode / risk / portfolio / data quality) -> their reason codes, verdict BLOCKED.
 3. Model roles:
-   * OBSERVE  - recorded with influence NONE (SHADOW families, Kronos, indicators, DXY, SVP context);
+   * OBSERVE  - recorded with influence NONE (SHADOW families, Kronos, indicators, DXY); the SVP profile has no producer of a coordinator
+                record - it acts only as a condition of the SH pack variants (HG08 / SC10);
    * ASSIST   - a READY direction forecast with P(opposite side) >= families.assist_hold_threshold holds the entry
                 (ACTIVE: ENTER -> BLOCKED "MODEL_ASSIST_HOLD"; SH: READY -> WAIT, the existing SH receiver) - never upgrades;
    * REQUIRED - decision.required_models: the model must be READY, fresh (age <= required_max_age_s) and must not contradict the side,
-                otherwise MODEL_REQUIRED_UNAVAILABLE / _STALE / _CONTRARY blocks the entry. Default: no REQUIRED model.
+                otherwise MODEL_REQUIRED_UNAVAILABLE / _STALE / _CONTRARY blocks the entry; a STATE record in an active event window
+                (rule:news blackout) blocks with MODEL_REQUIRED_BLACKOUT (I0558); a REQUIRED Quant MetaModel entry with its own hold (or the
+                QFENCE fail-closed entry) blocks with MODEL_QUANT_HOLD (w2 I0771 - before it passed what the same entry holds in ASSIST).
+                Default: no REQUIRED model. status()['required_models_check'] lists REQUIRED ids no producer delivered (information
+                only - matching unchanged).
    * QUANT (1.35, PMW Quant Core) - only in mode ASSIST after validation AND explicit user activation: the Quant MetaModel entry
                 (family "quant:metamodel", EVENT_PROBABILITY) may HOLD an entry (MODEL_QUANT_HOLD) when its validated E[net R] <= 0 or
                 P(event) is below the plan break-even; it never upgrades, never sizes, never sends. In OFF / SHADOW no entry is added and
@@ -30,6 +35,7 @@ Execution then goes through IntentLedger (dedup + shared reservation) - see ledg
 from __future__ import annotations
 
 import json
+import math
 import time
 import uuid
 from datetime import datetime, timezone
@@ -135,12 +141,13 @@ def evaluate_models(preds: list[dict], side: str, *, required: set[str], assist_
                 influence, why = "BLOCK", "aktywne okno wydarzenia (blackout)"
                 reasons.append(f"MODEL_REQUIRED_BLACKOUT:{mid}")
             elif p.get("quant_hold"):
-                # 1.46 arch (QFENCE, review): a READY record carrying a Quant hold (an assessment that would hold, or the QFENCE fail-closed
-                # entry of a MetaModel trained before the producer fixes - READY, result None) never PASSes a REQUIRED role. Without it the
-                # fence entry turned today's MODEL_REQUIRED_UNAVAILABLE (NOT_TRAINED / no ACTIVE assessment / SH outside the contract)
-                # into PASS. Tightening only: a REQUIRED quant:metamodel with a hold was PASS before, now BLOCK
+                # w2 (I0771) + 1.46 arch (QFENCE, review): a READY record carrying a Quant hold - an assessment that would hold (E[net R] <= 0
+                # / P below break-even; REQUIRED passed it while ASSIST held the same entry) or the QFENCE fail-closed entry of a MetaModel
+                # trained before the producer fixes (READY, result None) - never PASSes a REQUIRED role. Without it the fence entry turned
+                # today's MODEL_REQUIRED_UNAVAILABLE (NOT_TRAINED / no ACTIVE assessment / SH outside the contract) into PASS. Tightening
+                # only, after every earlier REQUIRED block; the code is the ASSIST one (MODEL_QUANT_HOLD - the SH receiver holds on it too)
                 influence, why = "BLOCK", str(p["quant_hold"])[:200]
-                reasons.append(f"MODEL_REQUIRED_QUANT_HOLD:{mid}")
+                reasons.append(f"MODEL_QUANT_HOLD:{mid}")
             else:
                 influence = "PASS"
         out.append(K.make("ModelForecast", model_id=mid, role=role, state=str(p.get("state")), task_type=str(p.get("task_type")),
@@ -365,8 +372,13 @@ class DecisionCoordinator:
                         fence = None
                     preds = preds + [fence or {"family": "quant:metamodel", "state": "BLOCKED_DATA", "use": "ASSIST", "task_type": "EVENT_PROBABILITY",
                                                "result": None, "unavailable_reason": f"kandydat SH poza kontraktem oceny: {type(exc).__name__}"}]
-            return self.decide(self.sh_candidate(su, risk), gates=gates, mode=mode, account_key=account_key, preds=preds)
+            return self.decide(self.sh_candidate(su, risk), gates=gates, mode=mode, account_key=account_key, preds=[_finite_record(p) for p in preds])
         except K.ContractViolation:
+            # w2 (I0772): with REQUIRED models configured a candidate that cannot be recorded is no entry - the SH receiver turns the
+            # exception into model_block MODEL_COORDINATOR_ERROR_ContractViolation (before: None -> no block, fail-open). Without
+            # REQUIRED models: None as before (audit trail only).
+            if getattr(self._cfg(), "required_models", None):
+                raise
             return None
 
     def sync(self) -> dict:
@@ -375,9 +387,53 @@ class DecisionCoordinator:
         except Exception as exc:  # noqa: BLE001
             return {"error": f"{type(exc).__name__}: {exc}"[:160]}
 
+    def required_models_check(self) -> list[dict]:
+        """w2 (I0440, information only - matching and blocking unchanged): every id of decision.required_models with the paths whose
+        latest decision record had no forecast of it (MISSING -> MODEL_REQUIRED_UNAVAILABLE blocks every new entry there). TrainHub TH_*
+        records reach the coordinator only through the Quant ASSIST snapshot - outside it such an id can never be satisfied."""
+        req = sorted(set(getattr(self._cfg(), "required_models", None) or []))
+        out = []
+        quant = self._quant_assist()
+        for mid in req:
+            miss = sorted(p for p, rec in self.last.items()
+                          if any(m.get("model_id") == mid and m.get("role") == "REQUIRED" and m.get("state") == "MISSING" for m in rec.get("models") or []))
+            w = {"model_id": mid, "missing_in": miss, "warning": None}
+            if not quant and str(mid).split(":")[-1].startswith("TH_"):
+                w["warning"] = ("TrainHub TH_* nie ma producenta rekordu dla koordynatora poza Quant ASSIST – jako REQUIRED blokuje każde nowe "
+                                "wejście (MODEL_REQUIRED_UNAVAILABLE)")
+            elif miss:
+                w["warning"] = "brak prognozy tego modelu w ostatniej decyzji (" + ", ".join(miss) + ") – REQUIRED blokuje nowe wejścia"
+            out.append(w)
+        return out
+
+    def config_warnings(self) -> list[str]:
+        """w2 (I0773, information only): a reservation TTL shorter than one order send (order + 2 x terminal call timeout). An order in
+        flight no longer loses its reservation (ledger._expire), so this only describes the crash-release window."""
+        out = []
+        try:
+            cfg = self.cfg_store.get()
+            ttl = float(getattr(getattr(cfg, "decision", None), "reservation_ttl_s", 180.0))
+            send = float(cfg.execution.order_timeout_seconds) + 2 * float(cfg.mt5.call_timeout_seconds)
+        except Exception:  # noqa: BLE001 - a partial config (tests, stubs) has nothing to compare
+            return out
+        if ttl <= send:
+            out.append(f"decision.reservation_ttl_s={ttl:g} s ≤ execution.order_timeout_seconds + 2 × mt5.call_timeout_seconds = {send:g} s – "
+                       "rezerwacja bez wysłanego zlecenia (awaria) zwalnia się wcześniej niż trwa jedno wysłanie")
+        return out
+
+    def _required_unknown(self) -> list[str]:
+        """1.46 arch (I0000): REQUIRED ids no producer can satisfy (status only - role_of / evaluate_models never read this)."""
+        try:
+            from ..config import unknown_required_models
+            return unknown_required_models(self.cfg_store.get())
+        except Exception:  # noqa: BLE001 - presentation only
+            return []
+
     def status(self) -> dict:
         return {"version": K.VERSION, "enabled": self.enabled(), "last": {k: {x: v.get(x) for x in ("record_id", "final_verdict", "reason_codes", "created_at")}
                                                                            for k, v in self.last.items()},
+                "required_models_check": self.required_models_check(), "config_warnings": self.config_warnings(),
+                "required_models_unknown": self._required_unknown(),
                 "reservations_live": self.book.live(), "intents": self.intents.recent(20),
                 "records": self.db.query("SELECT record_id, created_at, path, source_id, strategy_id, direction, base_verdict, final_verdict, reason_codes "
                                          "FROM decision_records ORDER BY created_at DESC LIMIT 30")}
@@ -389,3 +445,35 @@ def _f(v):
         return x if x == x and abs(x) != float("inf") else None
     except (TypeError, ValueError):
         return None
+
+
+def _finite(v):
+    """(value, had_non_finite): NaN / +-Inf -> None, recursively; never another number."""
+    if isinstance(v, float) and not math.isfinite(v):
+        return None, True
+    if isinstance(v, dict):
+        bad = False
+        out = {}
+        for k, x in v.items():
+            out[k], b = _finite(x)
+            bad = bad or b
+        return out, bad
+    if isinstance(v, (list, tuple)):
+        items = [_finite(x) for x in v]
+        return [x for x, _ in items], any(b for _, b in items)
+    return v, False
+
+
+def _finite_record(p: dict) -> dict:
+    """w2 (I0772): an SH model record with a non-finite number in its result is not a forecast - its numbers become None and a READY
+    record becomes INVALID_RESULT (REQUIRED -> MODEL_REQUIRED_UNAVAILABLE, ASSIST -> no effect). Before, the whole DecisionRecord broke its
+    contract and record_sh returned None (no REQUIRED / Quant hold at all). A non-text reason is kept as text."""
+    res, bad = _finite(p.get("result"))
+    q = dict(p, result=res)
+    if bad and q.get("state") == "READY":
+        q["state"] = "INVALID_RESULT"
+        q["unavailable_reason"] = "wynik modelu z NaN / nieskończonością – rekord bez wpływu"
+    r = q.get("unavailable_reason")
+    if r is not None and not isinstance(r, str):
+        q["unavailable_reason"] = str(r)[:200]
+    return q

@@ -24,6 +24,10 @@ import numpy as np
 
 VERSION = "PMW-MM-EVENTS-1"
 FEATURES = ["dt_log", "dmid", "abs_dmid", "sgn", "spread", "dspread", "act_log", "spread_ok"]
+# 1.46 (I0023): the feature schema of an event_engine_dir3 artifact - written by mm/jobs.job_event_engine (the same string since 1.42) and
+# CHECKED on load by quant/adapters.EventGRU (MA.load feature_schema=...): another order / set of FEATURES is INCOMPATIBLE, never a silent
+# different input. VERSION is the version of the event processing; modelhub's EVENT_UNITS_V1 is the data kind of the family adapter.
+FEATURE_SCHEMA = "PMW-MM-EVENT-1:" + ",".join(FEATURES)
 GROUPS = {"TIMING": ["dt_log"], "PRICE": ["dmid", "abs_dmid", "sgn"], "SPREAD": ["spread", "dspread", "spread_ok"], "ACTIVITY": ["act_log"]}
 
 

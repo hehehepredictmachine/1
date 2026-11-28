@@ -28,6 +28,28 @@ def _node(name: str, status: str, met: list[str] | None = None, unmet: list[str]
     return {"node": name, "status": status, "met": met or [], "unmet": unmet or [], "reason_codes": codes or []}
 
 
+def macro_market(macro: dict, risk_cfg) -> tuple[list[str], list[str]]:
+    """MARKET node, macro part (unmet, reason codes) - one rule for the ACTIVE path (build) and SH (macro_block_codes, w2 I0557)."""
+    unmet, codes = [], []
+    if risk_cfg.macro_block_high_impact:
+        if macro.get("status") not in ("OK", "PARTIAL"):
+            if risk_cfg.macro_calendar_required:
+                unmet.append("MACRO_CALENDAR_AVAILABLE")
+            codes.append("MACRO_CALENDAR_" + str(macro.get("status")))
+        elif macro.get("risk_level") == "HIGH":
+            unmet.append("NO_HIGH_IMPACT_EVENT_WINDOW")
+            codes.append("MACRO_EVENT_WINDOW")
+    return unmet, codes
+
+
+def macro_block_codes(macro: dict, risk_cfg) -> list[str]:
+    """Only the BLOCKING macro codes (an unmet macro condition of the MARKET node): MACRO_EVENT_WINDOW inside a high-impact window,
+    MACRO_CALENDAR_<status> only with macro_calendar_required; [] with macro_block_high_impact False. The informative calendar codes of the
+    ACTIVE node (required False) never block."""
+    unmet, codes = macro_market(macro, risk_cfg)
+    return list(codes) if unmet else []
+
+
 def structural_direction(m02: dict | None) -> str:
     d = (m02 or {}).get("structural_direction")
     return {"BULLISH": "LONG", "BEARISH": "SHORT"}.get(d, "NEUTRAL")
@@ -37,8 +59,9 @@ def build(*, snapshot_id: str, as_of: str, symbol: str, account_key: str | None,
           legacy: dict, setup: dict | None, levels: dict | None, risk: dict | None, agent_gate: dict, mode_gate: dict,
           macro: dict, strategy_cfg, risk_cfg, dxy_status: str, synthetic: bool, active: dict | None = None,
           ml_gate: dict | None = None, model_gate: dict | None = None) -> dict:
-    """`active` (profile ACTIVE): {"regime", "bias", "trade_allowed", "reason_codes"} - the STRATEGY node then
-    validates the setup selected by StrategyAutoSelector instead of the legacy M02/M07 structure rule."""
+    """`active` (profile ACTIVE): {"regime", "bias", "trade_allowed", "reason_codes", "selection_suspended"?} - the STRATEGY node then
+    validates the setup selected by StrategyAutoSelector instead of the legacy M02/M07 structure rule; `selection_suspended` (code, 1.46
+    arch I0749 - the selection is in a LONG/SHORT conflict) only adds a PERMISSION block."""
     nodes = []
     m02 = legacy.get("m02")
     # 1 DATA
@@ -53,14 +76,9 @@ def build(*, snapshot_id: str, as_of: str, symbol: str, account_key: str | None,
     if dq["market_state"] != "OPEN":
         mk_unmet.append("MARKET_OPEN")
         mk_codes.append("MARKET_" + dq["market_state"])
-    if risk_cfg.macro_block_high_impact:
-        if macro.get("status") not in ("OK", "PARTIAL"):
-            if risk_cfg.macro_calendar_required:
-                mk_unmet.append("MACRO_CALENDAR_AVAILABLE")
-            mk_codes.append("MACRO_CALENDAR_" + str(macro.get("status")))
-        elif macro.get("risk_level") == "HIGH":
-            mk_unmet.append("NO_HIGH_IMPACT_EVENT_WINDOW")
-            mk_codes.append("MACRO_EVENT_WINDOW")
+    m_unmet, m_codes = macro_market(macro, risk_cfg)
+    mk_unmet += m_unmet
+    mk_codes += m_codes
     nodes.append(_node("MARKET", "FAIL" if mk_unmet else "PASS", met=[] if mk_unmet else ["MARKET_OPEN", "MACRO_OK"], unmet=mk_unmet, codes=mk_codes))
     # 3 STRATEGY
     sdir = structural_direction(m02)
@@ -146,6 +164,11 @@ def build(*, snapshot_id: str, as_of: str, symbol: str, account_key: str | None,
         perm_ok = False
         perm_unmet.append("STRATEGY_ALLOWED_TO_TRADE")
         perm_codes.append(f"STRATEGY_TRADE_DISABLED_{setup['strategy_id']}")
+    if active is not None and setup is not None and active.get("selection_suspended"):
+        # 1.46 arch (I0749): the selected setup is in a LONG/SHORT conflict of its horizon (StrategyAutoSelector.suspended) - only blocks
+        perm_ok = False
+        perm_unmet.append("SELECTION_NOT_IN_CONFLICT")
+        perm_codes.append(str(active["selection_suspended"]))
     nodes.append(_node("PERMISSION", "PASS" if perm_ok else "FAIL",
                        met=["MODE_" + mode_gate["mode"]] if perm_ok else [], unmet=perm_unmet, codes=perm_codes))
 

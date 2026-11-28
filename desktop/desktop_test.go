@@ -380,6 +380,25 @@ func TestEngineSupervisorIntegration(t *testing.T) {
 		t.Fatalf("not running after a requested restart: %v", snapshot()[n:])
 	}
 
+	// 1.46 arch (I0715): a clean shutdown WITHOUT restart.request (panel „Zatrzymaj Apollo23” / 04_STOP) is a stop - no automatic restart
+	e.mu.Lock()
+	pid3 := e.cmd.Process.Pid
+	e.mu.Unlock()
+	shutdown(t, l, port)
+	if !waitState(e, EngineStopped, 60*time.Second) || !e.CleanStopped() {
+		t.Fatalf("clean shutdown not reported as the user's STOP: %v", snapshot())
+	}
+	time.Sleep(3 * time.Second) // longer than the first crash backoff (2 s)
+	if e.Owned() || e.healthy() {
+		t.Fatalf("engine restarted after a clean user stop (pid %d): %v", pid3, snapshot())
+	}
+	if err := e.Start(ctx); err != nil { // the user starts it again (start screen / tray)
+		t.Fatalf("start after stop: %v", err)
+	}
+	if e.CleanStopped() || !e.healthy() {
+		t.Fatalf("not running after the user's start: %v", snapshot())
+	}
+
 	// stop: graceful shutdown through the token, process gone, port free
 	e.Stop(30 * time.Second)
 	if e.Owned() || e.healthy() {

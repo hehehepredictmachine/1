@@ -74,8 +74,8 @@ class NativeTests(unittest.TestCase):
 
 class KnowledgeTests(unittest.TestCase):
     def test_t59_agent_knowledge(self):
+        from masterquo.agent import structure_knowledge as sk
         from masterquo.agent.service import load_prompt
-        from masterquo.analysis import structure_knowledge as sk
         text, ver = load_prompt()
         self.assertIn("F05", text)
         self.assertTrue("PMW-FLOW-KNOWLEDGE-1.0.0" in ver)

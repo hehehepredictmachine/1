@@ -83,8 +83,7 @@ class TestFeat1FrozenBitForBit(unittest.TestCase):
     def test_feat3_differs_only_by_the_fixed_meaning(self):
         from masterquo.quant import features as F
         f3 = F.build3(frozen_cand(), frozen_preds())
-        self.assertEqual(F.CURRENT, F.VERSION3)
-        self.assertEqual(F.build_for(F.CURRENT, frozen_cand(), frozen_preds()), f3)
+        self.assertEqual(F.build_for(F.VERSION3, frozen_cand(), frozen_preds()), f3)     # wave 2 (I0561): CURRENT = FEAT-4
         diff = {k for k in set(f3) | set(FROZEN_FEAT1) if f3.get(k) != FROZEN_FEAT1.get(k)}
         self.assertEqual(diff, {"st:mm:kalman_cross:aligned", "ctx:dxy_corr_72", "ctx:dxy_resid_z_72", "ctx:dxy_beta_72"})
         self.assertEqual(f3["st:mm:kalman_cross:aligned"], 0.0)
@@ -158,19 +157,31 @@ def as_legacy_artifact(res: dict) -> dict:
     return res
 
 
+def as_feat3_artifact(res: dict) -> dict:
+    """1.46 arch wave 2 (I0561): metamodel.train writes features.CURRENT = FEAT-4 now; a MetaModel as train wrote it before that change
+    carries PMW-QUANT-FEAT-3:<hash> - the tests of the FEAT-3 semantics (D4 / D8 / D9) use such an artifact explicitly."""
+    from masterquo.quant import features as F
+    res = json.loads(json.dumps(res))
+    res["model"]["feature_schema"] = F.schema_for(F.VERSION3, res["model"]["feature_names"])
+    return res
+
+
 class TestFeatureVersioning(unittest.TestCase):
     def setUp(self):
         self.td = TempData()
         self.addCleanup(self.td.close)
 
-    def test_new_models_are_feat3_and_old_feat1_artifacts_still_load(self):
+    def test_new_models_are_current_and_old_feat1_artifacts_still_load(self):
         from masterquo.quant import features as F
         from masterquo.quant import metamodel as M
         res = M.train(synth_rows(), task={"task_hash": "t", "event_id": "E"})
-        self.assertTrue(res["model"]["feature_schema"].startswith(F.VERSION3 + ":"), res["model"]["feature_schema"])
-        self.assertEqual(res["report"]["feature_version"], F.VERSION3)
+        # wave 2 (I0561): new models carry features.CURRENT = FEAT-4; FEAT-3 artifacts (trained before) still load
+        self.assertTrue(res["model"]["feature_schema"].startswith(F.CURRENT + ":"), res["model"]["feature_schema"])
+        self.assertEqual(res["report"]["feature_version"], F.CURRENT)
         v3 = M.save("XAUUSD", res, spec={"task_hash": "t"})
         self.assertEqual(M.load("XAUUSD", "t", v3)[0]["feature_schema"], res["model"]["feature_schema"])
+        v33 = M.save("XAUUSD", as_feat3_artifact(res), spec={"task_hash": "t"})
+        self.assertTrue(M.load("XAUUSD", "t", v33)[0]["feature_schema"].startswith(F.VERSION3 + ":"))
         v1 = M.save("XAUUSD", as_legacy_artifact(res), spec={"task_hash": "t"})
         model1, _ = M.load("XAUUSD", "t", v1)                              # no invalidation: Quant ASSIST is fail-open
         self.assertTrue(model1["feature_schema"].startswith(F.VERSION + ":"))
@@ -376,8 +387,7 @@ class AssessFixture:
     def activate(self, task_hash, legacy: bool):
         from masterquo.quant import metamodel as M
         res = M.train(synth_rows(), task={"task_hash": task_hash, "event_id": "TP1_BEFORE_STOP"})
-        if legacy:
-            res = as_legacy_artifact(res)
+        res = as_legacy_artifact(res) if legacy else as_feat3_artifact(res)      # wave 2: train writes FEAT-4 - FEAT-3 explicitly here
         M.activate("XAUUSD", task_hash, M.save("XAUUSD", res, spec={"task_hash": task_hash}))
 
     def cand_dict(self, regime):
@@ -439,7 +449,7 @@ class TestAssessFeatureVersions(AssessFixture, unittest.TestCase):
         with q.ledger._lock:
             row = q.ledger.c.execute("SELECT feature_version, features_json FROM rows").fetchone()
         self.assertEqual(row[0], F.CURRENT)
-        self.assertEqual(json.loads(row[1]), F.build3(cd, frozen_preds()[:7]))
+        self.assertEqual(json.loads(row[1]), F.build_for(F.CURRENT, cd, frozen_preds()[:7]))     # wave 2: the ledger row = FEAT-4
 
 
 class TestD4RegimeOnlyTightens(AssessFixture, unittest.TestCase):
@@ -584,7 +594,7 @@ class TestActivationFeatureSemantics(unittest.TestCase):
     def test_feature_semantics_of_feat1_and_feat3(self):
         from masterquo.quant import features as F
         from masterquo.quant import metamodel as M
-        res = M.train(synth_rows(), task={"task_hash": "t", "event_id": "E"})
+        res = as_feat3_artifact(M.train(synth_rows(), task={"task_hash": "t", "event_id": "E"}))
         v3 = M.save("XAUUSD", res, spec={"task_hash": "t"})
         v1 = M.save("XAUUSD", as_legacy_artifact(res), spec={"task_hash": "t"})
         s3, s1 = M.feature_semantics("XAUUSD", "t", v3), M.feature_semantics("XAUUSD", "t", v1)
@@ -599,7 +609,7 @@ class TestActivationFeatureSemantics(unittest.TestCase):
         from masterquo.quant import features as F
         from masterquo.quant import metamodel as M
         from test_audit_146_b_mq_api import call, make_app, make_rt
-        res = M.train(synth_rows(), task={"task_hash": "t", "event_id": "E"})
+        res = as_feat3_artifact(M.train(synth_rows(), task={"task_hash": "t", "event_id": "E"}))
         v3 = M.save("XAUUSD", res, spec={"task_hash": "t"})
         rt = make_rt()
         rt.quant.instrument.return_value = "XAUUSD"

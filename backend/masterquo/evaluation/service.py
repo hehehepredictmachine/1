@@ -22,6 +22,7 @@ from __future__ import annotations
 import json
 import logging
 import math
+import sqlite3
 import time
 from pathlib import Path
 
@@ -40,6 +41,25 @@ log = logging.getLogger("masterquo.evaluation")
 def _ts(x) -> float:
     from datetime import datetime
     return datetime.fromisoformat(str(x).replace("Z", "+00:00")).timestamp()
+
+
+def label_policy(model_id: str | None) -> str:
+    """w2 (I0031): which outcome definition a row of THIS ledger carries (view field, never stored): the binary plan approximation of
+    evaluation/outcome.label (no BE, spread at the decision) of the evaluation engine version that assessed the row."""
+    return "EVAL_BINARY_PLAN_APPROX/" + (str(model_id or "").split("/")[0] or E.VERSION)
+
+
+# 1.46 (I0039): report() read and JSON-decoded the WHOLE payload of every SETUP_ASSESSMENT row (the candidate with all its decision-time
+# features) on every call. SQLite extracts only what the report aggregates (model id, assessment, both regime definitions, the
+# candidate's instrument - w2 I0032 splits by instrument and engine version) as JSON
+# text; Python decodes them exactly as before (number literals are copied, not re-rendered). A payload with NaN / Infinity (json.dumps
+# writes them, standard JSON has no such literal) is decoded whole in Python, as is everything when JSON1 is missing.
+_NONSTD = "(instr(payload, 'NaN') > 0 OR instr(payload, 'Infinity') > 0)"
+_REPORT_SQL: str | None = (f"SELECT model_id, CASE WHEN {_NONSTD} THEN payload END AS raw, "
+                           f"CASE WHEN NOT {_NONSTD} THEN json_extract(payload, '$.assessment') END AS a, "
+                           f"CASE WHEN NOT {_NONSTD} THEN json_extract(payload, '$.candidate.market_regime.both') END AS both, "
+                           f"CASE WHEN NOT {_NONSTD} THEN json_extract(payload, '$.candidate.instrument') END AS inst, "
+                           "outcome FROM predictions WHERE kind='SETUP_ASSESSMENT'")
 
 
 def _default_dir() -> Path:
@@ -91,7 +111,13 @@ class EvaluationService:
             prob = {"value": float(mb["p"]), "calibrated": bool(mb.get("calibrated")), "event": "TP1 przed SL w horyzoncie",
                     "source": mb.get("model_id") or "scalp_model_B", "version": mb.get("version"), "event_matches": True,
                     "n_calibration": mb.get("n_calibration")}
-        self._log(c, prob, extra_cost)
+        ic = plan.get("indicator_context") or {}
+        obs = None
+        if ic.get("status") == "READY_INFERENCE":
+            # w2 (I0166): the indicator-context reaction model (P(TP1 first) in its frozen policy) as an OBSERVATION of this row - for
+            # live calibration / monitoring; never the assessment probability (E.assess and the SHADOW decision are unchanged)
+            obs = {"indicator_context": {k: ic.get(k) for k in ("task_id", "p_tp1_first", "threshold", "groups", "role")} | {"mode": "SHADOW"}}
+        self._log(c, prob, extra_cost, observations=obs)
 
     def _guard(self, fn, *a) -> None:
         try:
@@ -145,8 +171,12 @@ class EvaluationService:
             return None
         try:
             mid = self.ml.registry.champion_id
+            # w2 (I0041): the row of the CURRENT champion model whatever role it was written under - UNIQUE(setup, version, model) kept
+            # only its CHALLENGER_SHADOW row when the challenger that had already scored this version was promoted (INSERT OR IGNORE
+            # dropped the CHAMPION row) and role='CHAMPION' found nothing. Read only; the ML monitor / gates are untouched.
             row = self.ml.db.one("SELECT calibrated_probability AS p, readiness, contract_json FROM ml_predictions WHERE setup_id=? AND "
-                                 "setup_version=? AND model_id=? AND role='CHAMPION'", (r["setup_id"], r["version"], mid)) if mid else None
+                                 "setup_version=? AND model_id=? ORDER BY (role='CHAMPION') DESC, id DESC LIMIT 1",
+                                 (r["setup_id"], r["version"], mid)) if mid else None
         except Exception:  # noqa: BLE001
             return None
         if not row or row["p"] is None:
@@ -197,7 +227,7 @@ class EvaluationService:
             out[k] = r.get("state")
         return out
 
-    def _log(self, c: K.SetupCandidate, prob: dict | None, extra_cost: float | None) -> dict:
+    def _log(self, c: K.SetupCandidate, prob: dict | None, extra_cost: float | None, observations: dict | None = None) -> dict:
         c.market_regime = dict(c.market_regime, both=self._regimes())     # O4: both definitions at the decision moment
         zctx = None
         if self.zone_provider is not None:
@@ -212,10 +242,13 @@ class EvaluationService:
         items = X.positions(self.db, c.symbol)
         a = E.assess(c, prob=prob, extra_cost=extra_cost, exposure=X.for_candidate(items, c.symbol, c.direction), zones=zctx)
         ad = a.to_dict()
+        payload = {"candidate": c.to_dict(), "assessment": ad}
+        if observations:
+            payload["observations"] = observations          # w2 (I0166): additive; absent when there is nothing observed (rows as before)
         ok = self.ledger.log(pred_id=c.key(), model_id=f"{E.VERSION}/{c.engine}", artifact_id=(prob or {}).get("source"),
                              feature_schema=K.VERSION, symbol=c.symbol, timeframe=c.timeframe, source_ts=c.decision_ts,
                              available_at=c.decision_ts, matures_at=c.decision_ts + c.horizon_s, horizon=f"{int(c.horizon_s)}s",
-                             kind="SETUP_ASSESSMENT", payload={"candidate": c.to_dict(), "assessment": ad},
+                             kind="SETUP_ASSESSMENT", payload=payload,
                              quality=(c.data_quality or {}).get("status") or "UNKNOWN")
         self.counters["logged" if ok else "duplicates"] += 1
         if ok:
@@ -259,8 +292,9 @@ class EvaluationService:
 
     # ------------------------------------------------------------------ outputs
     def status(self) -> dict:
+        # 1.46 (I0039): COUNT(*) in SQLite - was len(pending()), i.e. SELECT * of every open row of the whole history on each status call
         return {"version": VERSION, "mode": "SHADOW", "contract": K.VERSION, "engine": E.VERSION, "counters": dict(self.counters),
-                "pending": len(self.ledger.pending()), "last_error": self.last_error, "ledger": str(self.ledger.path),
+                "pending": self.ledger.count_pending(), "last_error": self.last_error, "ledger": str(self.ledger.path),
                 "note": "ocena każdego setupu obu ścieżek; nie blokuje ani nie wysyła zleceń"}
 
     def assessments(self, engine: str | None = None, limit: int = 50) -> list[dict]:
@@ -272,7 +306,8 @@ class EvaluationService:
         for r in rows:
             pl = json.loads(r["payload"])
             c, a = pl["candidate"], pl["assessment"]
-            out.append({"setup_id": c["setup_id"], "engine": c["engine"], "strategy_id": c["strategy_id"], "direction": c["direction"],
+            out.append({"label_policy": label_policy(r["model_id"]), "instrument": c.get("instrument"),
+                        "setup_id": c["setup_id"], "engine": c["engine"], "strategy_id": c["strategy_id"], "direction": c["direction"],
                         "decision_ts": c["decision_ts"], "entry": c["entry_price"], "sl": c["stop_loss"], "targets": c["targets"],
                         "horizon_s": c["horizon_s"], "decision": a["decision"], "reasons": a["rejection_reasons"], "event": a["event"],
                         "probability": a["probability"], "probability_status": a["probability_status"],
@@ -283,35 +318,89 @@ class EvaluationService:
                         "zone_context": a.get("zone_context"), "outcome": json.loads(r["outcome"]) if r["outcome"] else None})
         return out
 
-    def report(self) -> dict:
-        """Matured rows per engine x SHADOW decision: event rate, mean plan R (net), Brier where a probability existed."""
+    def _report_rows(self) -> list[tuple[str, dict, dict]]:
+        """(model_id, payload view {assessment, candidate: {instrument, market_regime: {both}}}, outcome) of every SETUP_ASSESSMENT row,
+        in the ledger order (as before) - only the parts report() aggregates are decoded (I0039)."""
+        rows = None
         with self.ledger._lock:
-            rows = [dict(r) for r in self.ledger.c.execute(
-                "SELECT model_id, payload, outcome FROM predictions WHERE kind='SETUP_ASSESSMENT'").fetchall()]
-        groups: dict = {}
-        ready: dict = {}
+            if _REPORT_SQL:
+                try:
+                    rows = [tuple(r) for r in self.ledger.c.execute(_REPORT_SQL).fetchall()]
+                except sqlite3.OperationalError:              # SQLite without JSON1 / a payload its parser rejects: full decode below
+                    rows = None
+            if rows is None:
+                rows = [(r["model_id"], r["payload"], None, None, None, r["outcome"]) for r in self.ledger.c.execute(
+                    "SELECT model_id, payload, outcome FROM predictions WHERE kind='SETUP_ASSESSMENT'").fetchall()]
+        out = []
+        for mid, raw, a, both, inst, outcome in rows:
+            if raw is not None:
+                pl = json.loads(raw)
+                a, both, inst = pl["assessment"], (pl["candidate"].get("market_regime") or {}).get("both") or {}, pl["candidate"].get("instrument")
+            else:
+                a, both = json.loads(a), (json.loads(both) if both is not None else None) or {}
+            view = {"assessment": a, "candidate": {"instrument": inst, "market_regime": {"both": both}}}
+            out.append((mid, view, json.loads(outcome) if outcome else {}))
+        return out
+
+    def report(self) -> dict:
+        """Matured rows per engine x SHADOW decision: event rate, mean plan R (net), Brier where a probability existed.
+        w2 (I0032): one ledger file holds every instrument and every evaluation-engine version - groups / outcome_distribution /
+        assist_readiness count only the CURRENT engine (E.VERSION); assist_readiness is the ACTIVE instrument's (each entry names it),
+        assist_readiness_by_instrument splits every instrument, rows of older engine versions are listed under `legacy` (counts only).
+        Before, readiness (O2: >= 200 matured per engine) summed XAUUSD, BTC and old engine versions together.
+        I0039: rows come from _report_rows (only the aggregated parts of the payload are decoded)."""
         regimes: dict = {}
-        dist: dict = {}
-        for r in rows:
-            pl = json.loads(r["payload"])
-            out = json.loads(r["outcome"]) if r["outcome"] else {}
-            a = pl["assessment"]
+        cur, legacy = [], {}
+        for mid, pl, out in self._report_rows():
             both = (pl["candidate"].get("market_regime") or {}).get("both") or {}
             rg = regimes.setdefault((both.get("ACTIVE"), both.get("SH")), {"n": 0, "matured": 0, "r": []})
             rg["n"] += 1
+            if out.get("status") == "MATURED":
+                rg["matured"] += 1
+                if out.get("plan_r_net") is not None:                     # 1.46: unknown net R (unknown cost) is not averaged as a number
+                    rg["r"].append(out["plan_r_net"])
+            if str(mid).startswith(f"{E.VERSION}/"):
+                cur.append((pl, out))
+            else:
+                lg = legacy.setdefault(str(mid), {"n": 0, "matured": 0})
+                lg["n"] += 1
+                lg["matured"] += 1 if out.get("status") == "MATURED" else 0
+        res, _, outcomes, matured = self._summary(cur)
+        insts = sorted({str(pl["candidate"].get("instrument") or "?") for pl, _ in cur})
+        by_inst = {i: self._summary([(pl, out) for pl, out in cur if str(pl["candidate"].get("instrument") or "?") == i])[1] for i in insts}
+        active = self._inst() or "?"
+        reg = [{"active_regime": k[0], "sh_regime": k[1], "n": v["n"], "matured": v["matured"],
+                "mean_plan_r_net": round(sum(v["r"]) / len(v["r"]), 4) if v["r"] else None}
+               for k, v in sorted(regimes.items(), key=lambda kv: -kv[1]["n"])]
+        return {"groups": res, "matured": matured, "mode": "SHADOW", "assist_readiness": by_inst.get(active, {}),
+                "assist_readiness_by_instrument": by_inst, "instrument": active, "engine_version": E.VERSION,
+                "legacy": legacy, "legacy_note": "wiersze starszych wersji silnika oceny – poza grupami i gotowością ASSIST (tylko liczniki)",
+                "outcome_distribution": outcomes,
+                "outcome_note": "TP_FIRST = pierwszy cel przed SL; SL_FIRST = SL przed jakimkolwiek celem; NEITHER = żaden poziom w horyzoncie "
+                                "(empiryczne częstości z przedziałem Wilsona 90 %, nie prognoza modelu)",
+                "regimes": reg, "regimes_note": "reżim obu definicji w chwili oceny (O4); wybór kanonicznego reżimu po zebraniu danych",
+                "note": "wynik planu bez BE i bez realnego wypełnienia (BINARY_PLAN_APPROX); mała próba nie pozwala wnioskować o skuteczności"}
+
+    @staticmethod
+    def _summary(items: list) -> tuple[list, dict, dict, int]:
+        """(groups, assist readiness, outcome distribution, matured) of (payload, outcome) pairs - one engine version."""
+        groups: dict = {}
+        ready: dict = {}
+        dist: dict = {}
+        for pl, out in items:
             if out.get("status") != "MATURED":
                 continue
-            rg["matured"] += 1
-            if out.get("plan_r_net") is not None:                         # 1.46: unknown net R (unknown cost) is not averaged as a number
-                rg["r"].append(out["plan_r_net"])
+            a = pl["assessment"]
+            inst = pl["candidate"].get("instrument") or None
             ds = dist.setdefault(a["engine"], {"n": 0, "TP_FIRST": 0, "SL_FIRST": 0, "NEITHER": 0, "hold": []})
             ds["n"] += 1
             th = out.get("targets_hit") or []
             ds["SL_FIRST" if out.get("first_event") == "SL" else "TP_FIRST" if any(th) else "NEITHER"] += 1
             if out.get("hold_s") is not None:
                 ds["hold"].append(out["hold_s"])
-            rd = ready.setdefault(a["engine"], {"matured": 0, "with_probability": 0, "y": [], "p": []})
+            rd = ready.setdefault(a["engine"], {"matured": 0, "with_probability": 0, "y": [], "p": [], "inst": set()})
             rd["matured"] += 1
+            rd["inst"].add(inst)
             if a.get("probability") is not None and out.get("event_hit") is not None:
                 rd["with_probability"] += 1
                 rd["p"].append(a["probability"])
@@ -343,7 +432,9 @@ class EvaluationService:
             cal_ok = brier is not None and brier0 is not None and brier < brier0
             ll = -sum(y * math.log(min(max(p, 1e-6), 1 - 1e-6)) + (1 - y) * math.log(1 - min(max(p, 1e-6), 1 - 1e-6))
                       for p, y in zip(rd["p"], rd["y"])) / n if n else None
-            readiness[eng] = {"matured": rd["matured"], "with_probability": n, "target": ASSIST_MIN_MATURED,
+            ins = sorted(x for x in rd["inst"] if x)
+            readiness[eng] = {"instrument": ins[0] if len(ins) == 1 else (ins or None), "engine_version": E.VERSION,
+                              "matured": rd["matured"], "with_probability": n, "target": ASSIST_MIN_MATURED,
                               "log_loss": None if ll is None else round(ll, 4),
                               "progress": round(min(1.0, n / ASSIST_MIN_MATURED), 4), "brier": None if brier is None else round(brier, 4),
                               "brier_base_rate": None if brier0 is None else round(brier0, 4),
@@ -356,15 +447,7 @@ class EvaluationService:
             outcomes[eng] = {"n": n, "median_hold_s": hold[len(hold) // 2] if hold else None,
                              **{k: {"rate": round(ds[k] / n, 4), "interval90": [round(x, 4) for x in E.wilson(ds[k] / n, n)]}
                                 for k in ("TP_FIRST", "SL_FIRST", "NEITHER")}}
-        reg = [{"active_regime": k[0], "sh_regime": k[1], "n": v["n"], "matured": v["matured"],
-                "mean_plan_r_net": round(sum(v["r"]) / len(v["r"]), 4) if v["r"] else None}
-               for k, v in sorted(regimes.items(), key=lambda kv: -kv[1]["n"])]
-        return {"groups": res, "matured": sum(g["n"] for g in groups.values()), "mode": "SHADOW", "assist_readiness": readiness,
-                "outcome_distribution": outcomes,
-                "outcome_note": "TP_FIRST = pierwszy cel przed SL; SL_FIRST = SL przed jakimkolwiek celem; NEITHER = żaden poziom w horyzoncie "
-                                "(empiryczne częstości z przedziałem Wilsona 90 %, nie prognoza modelu)",
-                "regimes": reg, "regimes_note": "reżim obu definicji w chwili oceny (O4); wybór kanonicznego reżimu po zebraniu danych",
-                "note": "wynik planu bez BE i bez realnego wypełnienia (BINARY_PLAN_APPROX); mała próba nie pozwala wnioskować o skuteczności"}
+        return res, readiness, outcomes, sum(g["n"] for g in groups.values())
 
     def exposure(self) -> dict:
         return X.portfolio(self.db)

@@ -20,14 +20,15 @@ SH condition (kronos/predictions.py); in the coordinator Kronos is recorded as O
 """
 from __future__ import annotations
 
-from ..modelhub import contract as C
+from ..contracts import prediction as C
 from .service import NAMES
 
 USE_PL = {"OBSERVE": "tylko obserwacja (SHADOW) – bez wpływu na decyzje i zlecenia",
           "ASSIST": "ASSIST (po walidacji) – świeża prognoza przeciwna do strony setupu może tylko wstrzymać wejście",
           "REQUIRED": "warunek wymagany (po walidacji) – brak / nieaktualna / bocznie / przeciwna prognoza wstrzymuje wejście"}
 SERVICE_STATE = {"NOT_INSTALLED": "DISABLED", "NO_WEIGHTS": "DISABLED", "DISABLED": "DISABLED", "INSTALLING": "DISABLED", "IDLE": "ERROR",
-                 "STARTING": "ERROR", "LOADING": "ERROR", "READY": "READY", "ERROR": "ERROR"}
+                 "STARTING": "ERROR", "LOADING": "ERROR", "READY": "READY", "ERROR": "ERROR",
+                 "CONFIG": "ERROR"}       # 1.46 (I0205): wrong settings - the same unavailable state as the model error it replaced
 INCOMPATIBLE_CODES = ("INCOMPATIBLE", "CHECKSUM", "MISSING_DEPENDENCY")
 KNOWS_ONLY = "Chronos-2 i Granite TTM widzą wyłącznie ceny close zamkniętych świec (Chronos-2 w profilu OHLCV także open/high/low/wolumen) – " \
              "nie znają poziomów płynności, newsów, spreadu, kosztów ani pozycji"
@@ -65,7 +66,26 @@ def _result(fc: dict) -> dict:
     return out
 
 
-def contract_predictions(svc, inst: str) -> list[dict]:
+def _restriction(fc: dict | None) -> dict | None:
+    """1.46: TsfmService.use_restriction of the forecast - it may only HOLD an entry (ASSIST / REQUIRED contrary), never CONFIRM a REQUIRED
+    role (I0200 CPU fallback after a broken GPU context, I0834 / I0844 checkpoint out of its training scope)."""
+    return (fc or {}).get("use_restriction") or None
+
+
+# restrictions under which the contract row (Quant FEAT-2 inputs, model hub, presentation) stays UNAVAILABLE - exactly as during the
+# failure the restricted forecast replaced (I0200: the broken GPU process gave no forecast); the SH receiver (context) still uses it
+# for holds only
+UNAVAILABLE_IN_CONTRACT: tuple[str, ...] = ("GPU_FALLBACK_CPU",)
+# restrictions under which the ACTIVE coordinator rows stay UNAVAILABLE for EVERY role - review (S0, I0200): the coordinator gives the
+# REQUIRED role also through config.json decision.required_models (role_of), which these rows cannot see reliably; a READY fallback row
+# with the TSFM role OBSERVE / ASSIST PASSED that REQUIRED (today the broken GPU process answers ERROR at every bar -> blocked). The
+# ACTIVE path is therefore exactly as during today's GPU failure (no ASSIST hold, every REQUIRED unavailable).
+UNAVAILABLE_ON_ACTIVE: tuple[str, ...] = ("GPU_FALLBACK_CPU",)
+
+
+def contract_predictions(svc, inst: str, *, decisions: bool = False) -> list[dict]:
+    """Contract rows of every model / TF. `decisions=True` (coordinator_rows): a restricted forecast is READY with `use_restriction` (the
+    roles then use it for holds only); otherwise a restriction listed in UNAVAILABLE_IN_CONTRACT gives state STALE with its reason."""
     if svc is None:
         return []
     s = svc.settings.get()
@@ -78,6 +98,9 @@ def contract_predictions(svc, inst: str) -> list[dict]:
             if not c.enabled:
                 state, why = "DISABLED", f"{NAMES[mid]} wyłączony w ustawieniach"
             fc = svc.latest.get(k)
+            rx = _restriction(fc) if state == "READY" else None
+            if rx and rx.get("code") in UNAVAILABLE_IN_CONTRACT and not decisions:
+                state, why = "STALE", rx.get("reason")
             from tsfm_runtime import lock as L
             pin = L.model(mid)
             common = dict(instrument=inst, symbol=(fc or {}).get("symbol") or svc.target_view(k).get("symbol"), timeframe=tf, model_name=NAMES[mid],
@@ -91,6 +114,8 @@ def contract_predictions(svc, inst: str) -> list[dict]:
                 out.append(C.make(**common, state=state, unavailable_reason=why or state))
                 continue
             base_extra = common.pop("extra")
+            if rx:
+                base_extra["use_restriction"] = rx
             out.append(C.make(**common, state="READY", data_time=fc["last_bar_close_utc"], compute_ms=fc["compute_ms"], run_id=fc["id"],
                               data_quality={"OK": "OK", "DEGRADED": "DEGRADED"}.get(fc["quality"]["status"], fc["quality"]["status"]),
                               data_kind="SYNTHETIC" if fc["data_kind"] == "SYNTHETIC" else "REAL", available_at=fc["data_available_at"],
@@ -121,17 +146,33 @@ def approval_ok(svc, mid: str, inst: str, path: str) -> tuple[bool, str | None]:
         return True, None                                   # 1.41: explicit user instruction (TiRex-2), not a validation claim
     if not u.validation_report:
         return False, "brak raportu dopuszczenia"
-    bad = []
+    bad, matched = [], 0
     try:
         cur = V.binding(svc, mid, inst, u.timeframe)
         for rid in str(u.validation_report).split(","):
             r = V.report_by_id(rid) if rid else None
             if r is None or r.get("instrument") != inst:
                 continue
+            matched += 1
             bad += V.binding_diff((r.get("bindings") or {}).get(mid), cur)
     except Exception as exc:  # noqa: BLE001 - an approval that cannot be checked is not valid
         return False, f"nie można sprawdzić dopuszczenia: {type(exc).__name__}"
+    if u.use == "REQUIRED" and not matched:
+        # 1.46 (I0835): the approval reports were checked only when one belonged to `inst` - an instrument added after the approval (or a
+        # removed report) had none and passed (fail-open). REQUIRED now needs a report of THIS instrument (fail-closed: the entry waits).
+        # ASSIST keeps the previous rule: a stale ASSIST is demoted to OBSERVE, which would REMOVE its possible holds (more entries).
+        return False, f"brak raportu dopuszczenia dla {inst} ({u.timeframe}) – REQUIRED wymaga walidacji walk-forward tego instrumentu"
     return (not bad), ("; ".join(bad)[:220] if bad else None)
+
+
+def _config_required(svc) -> set[str]:
+    """config.json decision.required_models (the coordinator's second source of the REQUIRED role - decision/coordinator.role_of).
+    Unreadable -> empty set: the rows are then exactly as before this check (it can only make a restricted row unavailable)."""
+    try:
+        d = getattr(svc.cfg_store.get(), "decision", None)
+        return {str(x) for x in (getattr(d, "required_models", None) or [])}
+    except Exception:  # noqa: BLE001
+        return set()
 
 
 def coordinator_rows(svc, inst: str) -> list[dict]:
@@ -140,14 +181,21 @@ def coordinator_rows(svc, inst: str) -> list[dict]:
     if svc is None:
         return []
     s = svc.settings.get()
-    preds = {(p["model_id"], p["timeframe"]): p for p in contract_predictions(svc, inst)}
+    req_cfg = _config_required(svc)
+    preds = {(p["model_id"], p["timeframe"]): p for p in contract_predictions(svc, inst, decisions=True)}
     out = []
     for mid, c in s.models.items():
-        if not c.enabled or inst not in c.instruments:
-            continue
         u = c.use["ACTIVE"]
-        p = preds.get((f"tsfm:{mid}", u.timeframe))
+        off = (f"{NAMES[mid]} wyłączony w ustawieniach" if not c.enabled else
+               f"{NAMES[mid]} nie liczy {inst}" if inst not in c.instruments else
+               f"{NAMES[mid]} nie liczy {u.timeframe} (interwał roli ACTIVE)" if u.timeframe not in c.timeframes else None)
+        p = None if off else preds.get((f"tsfm:{mid}", u.timeframe))
         if p is None:
+            if u.use == "REQUIRED":
+                # 1.46 (I0836): the ACTIVE path skipped a REQUIRED model that is disabled / does not compute the instrument or the TF of
+                # its role (no row = no gate), while the SH receiver holds the entry in the same case - now a REQUIRED row without a
+                # result -> MODEL_REQUIRED_UNAVAILABLE (fail-closed, as SH) until the role is switched to OBSERVE
+                out.append(_required_unavailable(s, mid, inst, u.timeframe, off or "brak wiersza prognozy dla interwału roli ACTIVE"))
             continue
         use, note = u.use, None
         if use in ("ASSIST", "REQUIRED"):
@@ -156,9 +204,29 @@ def coordinator_rows(svc, inst: str) -> list[dict]:
                 use, note = "SHADOW", f"ASSIST nieaktywny – dopuszczenie nieaktualne ({why})"
             elif not ok:
                 p = {**p, "state": "STALE", "result": None, "unavailable_reason": f"dopuszczenie REQUIRED nieaktualne ({why})"}
+        rx = p.get("use_restriction") if p.get("state") == "READY" else None
+        if rx and rx.get("code") in UNAVAILABLE_ON_ACTIVE:
+            # 1.46 (I0200, review S0): the CPU fallback forecast is unavailable on the ACTIVE path for EVERY role - exactly as the broken
+            # GPU process (ERROR at every bar): no ASSIST hold, every REQUIRED (TSFM setting or decision.required_models) blocks
+            p = {**p, "state": "STALE", "result": None, "unavailable_reason": f"ścieżka ACTIVE: {rx.get('reason')}"[:300]}
+        elif rx and (use == "REQUIRED" or f"tsfm:{mid}" in req_cfg):
+            # 1.46 (I0834 / I0844): a restricted forecast never CONFIRMS a REQUIRED role (fail-closed) - review: also the REQUIRED role of
+            # config.json decision.required_models (role_of: REQUIRED wins over ASSIST, so no ASSIST hold is removed); ASSIST / OBSERVE
+            # without a REQUIRED role keep the forecast (its holds stay as they are)
+            p = {**p, "state": "STALE", "result": None, "unavailable_reason": f"REQUIRED niepotwierdzony: {rx.get('reason')}"[:300]}
         out.append({**p, "family": f"tsfm:{mid}", "use": use if use != "OBSERVE" else "SHADOW", "max_age_s": TF_AGE(u.timeframe, s),
                     "unavailable_reason": p.get("unavailable_reason") or note})
     return out
+
+
+def _required_unavailable(s, mid: str, inst: str, tf: str, why: str) -> dict:
+    from tsfm_runtime import lock as L
+    H = int(s.horizon_bars[tf])
+    row = C.make(instrument=inst, symbol=None, timeframe=tf, model_name=NAMES[mid], model_version=L.model(mid)["revision"],
+                 feature_schema=f"TSFM_{s.models[mid].profile}", task_type="REGRESSION", task=f"TSFM_CLOSE_H{H}_{tf}", horizon_bars=H,
+                 unit="price", calibration={"method": None, "status": "UNCALIBRATED"}, state="DISABLED", unavailable_reason=why,
+                 extra={"model_key": f"{mid}_{tf}", "model_id": f"tsfm:{mid}", "fingerprint": L.fingerprint(mid)})
+    return {**row, "family": f"tsfm:{mid}", "use": "REQUIRED", "max_age_s": TF_AGE(tf, s)}
 
 
 def TF_AGE(tf: str, s) -> float:
@@ -205,6 +273,10 @@ def context(svc, mid: str, inst: str, strategy: str, *, side: str | None = None)
             else:
                 state, why = "STALE_APPROVAL", f"dopuszczenie REQUIRED nieaktualne ({aw}) – powtórz walidację albo przełącz na OBSERVE"
     fc = svc.latest.get(k) if state == "READY" else None
+    rx = _restriction(fc)
+    if use == "REQUIRED" and rx:
+        # 1.46 (I0200 / I0834 / I0844): the restricted forecast may hold (ASSIST) but never CONFIRMS a REQUIRED condition -> READY -> WAIT
+        state, why, fc = rx.get("code") or "RESTRICTED", rx.get("reason"), None
     d = fc["direction"] if fc else None
     rel = "BRAK"
     if d and side in ("BUY", "SELL"):

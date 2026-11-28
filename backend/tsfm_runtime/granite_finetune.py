@@ -30,6 +30,17 @@ from . import lock
 from . import manifest as M
 
 STOP = {"flag": False}
+MIN_TEST_WINDOWS = 100              # 1.46 (I0845): below this the MAE difference of the unseen test part is not a basis for activation
+
+
+def verdict(best_epoch: int, mf: dict, mb: dict, n_test: int, min_test: int = MIN_TEST_WINDOWS) -> str:
+    """TEST verdict of a fine-tuning run (the activation gate of granite_train.activate needs IMPROVED_VS_BASE).
+    1.46 (I0845): IMPROVED_VS_BASE was given on any number of non-overlapping test windows (10-26 for typical data) - a MAE difference
+    of a few windows is noise. Now: no improving epoch or MAE not below the base -> NOT_BETTER_THAN_BASE (unchanged); better on fewer
+    than `min_test` windows -> INSUFFICIENT_TEST (not activatable)."""
+    if not (best_epoch and mf["mae_h"] < mb["mae_h"]):
+        return "NOT_BETTER_THAN_BASE"
+    return "IMPROVED_VS_BASE" if int(n_test) >= int(min_test) else "INSUFFICIENT_TEST"
 
 
 def say(status_file, step, total, msg, state="RUNNING"):
@@ -188,14 +199,16 @@ def main(argv=None) -> int:
                     "direction_hit": (hits / n) if n else None}
         mf, mb = metrics(pf), metrics(pb)
         naive = {"mae_h": float(np.mean(np.abs(last - y))), "rmse_h": float(np.sqrt(np.mean((last - y) ** 2)))}
-        verdict = ("IMPROVED_VS_BASE" if best_epoch and mf["mae_h"] < mb["mae_h"] else "NOT_BETTER_THAN_BASE")
-        note = ("lepszy od modelu bazowego" if verdict == "IMPROVED_VS_BASE" else "nie lepszy od modelu bazowego – nie aktywuj") + \
+        vd = verdict(best_epoch, mf, mb, len(te))
+        note = {"IMPROVED_VS_BASE": "lepszy od modelu bazowego",
+                "INSUFFICIENT_TEST": f"MAE niższe od bazowego, ale mała próba testowa ({len(te)} okien < {MIN_TEST_WINDOWS}) – różnica może "
+                                     "być szumem, nie do aktywacji",
+                }.get(vd, "nie lepszy od modelu bazowego – nie aktywuj") + \
                ("; lepszy od prognozy „ostatnia cena”" if mf["mae_h"] < naive["mae_h"] else "; NIE lepszy od prognozy „ostatnia cena” (błądzenie losowe)")
         if not best_epoch:
             note += "; żadna epoka nie poprawiła MSE walidacji – zapisany model = bazowy"
-        if len(te) < 100:
-            # 1.46 (display only; the activation rule is unchanged): with 10-26 test windows the MAE difference can be noise
-            note += f"; mała próba testowa ({len(te)} okien < 100) – różnica MAE może być szumem"
+        if len(te) < MIN_TEST_WINDOWS and vd != "INSUFFICIENT_TEST":
+            note += f"; mała próba testowa ({len(te)} okien < {MIN_TEST_WINDOWS}) – różnica MAE może być szumem"
         if STOP["flag"]:
             raise KeyboardInterrupt
         say(a.status_file, 5, total, "zapis checkpointu (bez aktywacji)")
@@ -212,7 +225,7 @@ def main(argv=None) -> int:
                          "windows": {"train": len(tr), "val": len(va), "test": len(te)}, "embargo_bars": ctx + H, "history": history},
                "metrics": {"test_finetuned": mf, "test_base": mb, "test_naive_last_price": naive, "val_mse_base": base_val, "val_mse_best": best,
                            "val_mse_saved": best, "selected_epoch": best_epoch, "test_windows": len(te),     # 1.46: the saved model
-                           "verdict": verdict, "note": note,
+                           "verdict": vd, "min_test_windows": MIN_TEST_WINDOWS, "note": note,
                            "rule": "część testowa (15 % końca) nie była używana w treningu ani do wyboru epoki; horyzonty bez nakładania"}}
         (out / "granite_finetune.json").write_text(json.dumps(man, indent=2, ensure_ascii=False), encoding="utf-8")
         res = {"ok": True, "run_id": run_id, "dir": str(out), "metrics": man["metrics"], "train": man["train"]}

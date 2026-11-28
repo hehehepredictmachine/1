@@ -1,0 +1,530 @@
+"""1.46 arch, fala 2 - grupa strategies_analysis (strategie S01-S12, selektor, tracker, analiza S/R i walls).
+
+Każda klasa odpowiada pozycji triażu (klucz w docstringu); test nie przechodził na kodzie sprzed poprawki.
+"""
+from __future__ import annotations
+
+import importlib
+import os
+import unittest
+
+import _env
+
+
+class TestPackagesRegular(unittest.TestCase):
+    """I0090: strategies/ i lab/ były niejawnymi pakietami przestrzeni nazw (brak __init__.py, __file__ None) - jako jedyne z podpakietów
+    backend/masterquo; narzędzia wykrywania pakietów i pakowanie mogły je pomijać."""
+
+    def test_strategies_and_lab_are_regular_packages(self):
+        for name in ("masterquo.strategies", "masterquo.lab"):
+            mod = importlib.import_module(name)
+            self.assertIsNotNone(getattr(mod, "__file__", None), name)
+            self.assertTrue(str(mod.__file__).endswith("__init__.py"), name)
+
+    def test_every_backend_directory_with_modules_has_init(self):
+        pkg = _env.ROOT / "backend" / "masterquo"
+        missing = sorted(str(d.relative_to(pkg)) for d in [pkg, *[p for p in pkg.rglob("*") if p.is_dir()]]
+                         if "__pycache__" not in d.parts and any(d.glob("*.py")) and not (d / "__init__.py").exists())
+        self.assertEqual(missing, [])
+
+
+class TestStrategyParamsIsolation(unittest.TestCase):
+    """I0098: STRATEGIES to singletony współdzielone przez skan live, backfill ML i API; params_for robił płytką kopię (lista 'tfs'
+    wspólna z atrybutem klasy), a describe() oddawał żywy słownik params - mutacja u konsumenta zmieniała parametry skanu live."""
+
+    def test_describe_returns_copies(self):
+        from masterquo.strategies import registry
+        before = list(registry.STRATEGIES["S01"].params["tfs"])
+        d = next(x for x in registry.describe() if x["strategy_id"] == "S01")
+        d["params"]["tfs"].append("X")
+        d["params"]["new_key"] = 1
+        d["regime_fit"]["TREND_UP"] = -1.0
+        self.assertEqual(registry.STRATEGIES["S01"].params["tfs"], before)
+        self.assertNotIn("new_key", registry.STRATEGIES["S01"].params)
+        self.assertNotEqual(registry.STRATEGIES["S01"].regime_fit.get("TREND_UP"), -1.0)
+
+    def test_params_for_is_a_deep_copy(self):
+        from masterquo.strategies import registry
+        before = list(registry.STRATEGIES["S01"].params["tfs"])
+        p = registry.params_for("S01", None)
+        p["tfs"].append("X")
+        self.assertEqual(registry.STRATEGIES["S01"].params["tfs"], before)
+        override = {"tfs": ["M15"]}
+        q = registry.params_for("S01", override)
+        q["tfs"].append("H1")
+        self.assertEqual(override["tfs"], ["M15"])                    # the user's config value is not mutated either
+        self.assertEqual(registry.params_for("S01", {"tfs": ["M5"]})["tfs"], ["M5"])   # overrides still apply
+
+    def test_strategies_keep_no_instance_state_outside_thread_local(self):
+        from masterquo.strategies import registry
+        for sid, s in registry.STRATEGIES.items():
+            self.assertLessEqual(set(vars(s)), {"_tls"}, sid)
+
+
+def iso_(dt) -> str:
+    from masterquo.timeutil import iso
+    return iso(dt)
+
+
+class _TrackerCase(unittest.TestCase):
+    """Tracker on a temporary DB with the S01-S10 synthetic scenarios of test_strategies."""
+
+    def setUp(self):
+        import test_strategies as TS
+        self.TS = TS
+        self.t = TS.TestTracker("test_dedupe_invalidation_expiry_restore")
+        self.t.setUp()
+        self.tr, self.cfg = self.t.tr, self.t.cfg
+
+    def tearDown(self):
+        self.t.tearDown()
+
+    def upd(self, cands, view, now, sid, new_data=True):
+        return self.tr.update(cands, view=view, symbol="XAUUSD-", account_key="acc", data_ok=True, new_data=new_data, now=now, cfg=self.cfg,
+                              scanned={sid})
+
+
+class TestTrackerEnteredNotResurrected(_TrackerCase):
+    """I0751 (łata 649be2f cofnięta w 00f269b): skan (wątek silnika) zapisywał wiersze przeczytane na swoim początku; ENTERED ustawione w tym
+    czasie przez wykonanie (POST /api/v1/execute, wątek API) wracało na ACTIVE - setup mógł zostać wybrany i wykonany drugi raz."""
+
+    def test_stale_copy_cannot_overwrite_entered_or_final(self):
+        sid = "S01"
+        bars = self.TS.scenario(sid)
+        v, cands = self.t._scan(bars, sid)
+        now = self.t._now(bars)
+        self.upd(cands, v, now, sid)
+        row = self.tr.active("XAUUSD-", "acc")[0]                                  # the scan's copy (status ACTIVE)
+        self.tr.mark_entered(row["setup_id"], "AUTO_DEMO_FILLED", "2026-11-20T10:00:00Z")   # execution thread
+        row["updated_at"] = "2026-11-20T10:00:01Z"
+        self.tr._save(row)                                                          # the scan finishes and writes its stale copy
+        self.assertEqual(self.tr.get(row["setup_id"])["status"], "ENTERED")
+        self.assertEqual(self.tr.active("XAUUSD-", "acc"), [])
+        for st in ("INVALIDATED", "EXPIRED", "MISSED_ENTRY"):
+            with self.subTest(final=st):
+                self.tr.db.execute("UPDATE strategy_setups SET status=? WHERE setup_id=?", (st, row["setup_id"]))
+                self.tr._save(dict(row, status="ACTIVE"))
+                self.assertEqual(self.tr.get(row["setup_id"])["status"], st)
+
+    def test_cancelled_soft_stop_is_still_reactivated(self):
+        sid = "S01"
+        bars = self.TS.scenario(sid)
+        v, cands = self.t._scan(bars, sid)
+        now = self.t._now(bars)
+        self.upd(cands, v, now, sid)
+        sids = {r["setup_id"] for r in self.tr.active("XAUUSD-", "acc")}
+        self.tr.cancel_all("XAUUSD-", "acc", "RESTART_REVALIDATION", iso_(now))
+        ev = self.upd(cands, v, now, sid)
+        self.assertTrue(any(k.startswith("NEW_") for k, _ in ev))
+        self.assertEqual({r["setup_id"] for r in self.tr.active("XAUUSD-", "acc")}, sids)
+
+
+class TestTrackerReactivationTtl(_TrackerCase):
+    """I0750: reaktywacja setupu CANCELLED (CONDITIONS_NO_LONGER_MET / RESTART_REVALIDATION) liczyła nowe okno z expires_bars od teraz - bez
+    gałęzi CONFIRMED i bez starego expires_at: restart lub powrót warunków dawał pełny nowy TTL, także po upływie starego okna."""
+
+    def _created(self, stage=None):
+        from masterquo.timeutil import parse_iso
+        sid = "S01"
+        bars = self.TS.scenario(sid)
+        v, cands = self.t._scan(bars, sid)
+        c = dict(cands[0], stage=stage) if stage else cands[0]
+        now = self.t._now(bars)
+        self.upd([c], v, now, sid)
+        row = self.tr.get(c["setup_id"])
+        self.tr.cancel_all("XAUUSD-", "acc", "RESTART_REVALIDATION", iso_(now))
+        return sid, v, c, now, parse_iso(row["expires_at"])
+
+    def test_no_reactivation_after_the_old_window(self):
+        from datetime import timedelta
+        for stage, final in (("CONFIRMED", "MISSED_ENTRY"), ("EARLY", "EXPIRED")):
+            with self.subTest(stage=stage):
+                self.tr.db.execute("DELETE FROM strategy_setups")
+                sid, v, c, _now, old_exp = self._created(stage)
+                ev = self.upd([c], v, old_exp + timedelta(seconds=1), sid)
+                self.assertFalse([k for k, _ in ev if k.startswith("NEW_")])
+                self.assertEqual(self.tr.active("XAUUSD-", "acc"), [])
+                r = self.tr.get(c["setup_id"])
+                self.assertEqual((r["status"], r["terminal_reason"]), (final, "TTL_ELAPSED_BEFORE_REACTIVATION"))
+                # recenzja I0750: przejście w stan końcowy trafia do zdarzeń skanu (lejek, log, listenery) jak przy twardych kontrolach
+                self.assertEqual([(k, x["setup_id"], x["status"]) for k, x in ev], [(final, c["setup_id"], final)])
+
+    def test_reactivated_window_is_never_longer(self):
+        from datetime import timedelta
+
+        from masterquo.strategies.base import TF_SECONDS
+        from masterquo.timeutil import parse_iso
+        for stage, again in (("CONFIRMED", "CONFIRMED"), ("EARLY", "EARLY"), ("EARLY", "CONFIRMED")):
+            with self.subTest(stage=stage, again=again):
+                self.tr.db.execute("DELETE FROM strategy_setups")
+                sid, v, c, now, old_exp = self._created(stage)
+                t2 = now + timedelta(minutes=10)
+                ev = self.upd([dict(c, stage=again)], v, t2, sid)
+                self.assertIn("NEW_" + again, [k for k, _ in ev])
+                r = self.tr.get(c["setup_id"])
+                self.assertEqual(r["status"], "ACTIVE")
+                exp = parse_iso(r["expires_at"])
+                self.assertLessEqual(exp, old_exp)
+                if again == "CONFIRMED":
+                    self.assertLessEqual(exp, t2 + timedelta(seconds=TF_SECONDS[c["timeframe"]] * self.cfg.confirmed_window_bars))
+
+
+class TestTrackerInvalidationBeforeRevision(_TrackerCase):
+    """I0752: rekord z nowym poziomem inwalidacji był zapisywany PRZED twardą kontrolą, która czytała wiersze już po aktualizacji - zamknięcie
+    poza opublikowanym (starym) poziomem nie unieważniało setupu, jeśli ten sam skan przesunął poziom dalej."""
+
+    def _setup(self):
+        sid = "S01"
+        bars = self.TS.scenario(sid)
+        v, cands = self.t._scan(bars, sid)
+        c = cands[0]
+        now = self.t._now(bars)
+        self.upd([c], v, now, sid)
+        return sid, bars, c, now
+
+    def _bar_closing_at(self, bars, close):
+        from datetime import timedelta
+
+        from masterquo.timeutil import parse_iso
+        last = bars[-1]
+        nb = self.TS.F.bars_from_closes([last["c"], close], tf_min=15, wick=0.2, start=parse_iso(last["open_utc"]))[1]
+        nb["open_utc"] = last["close_confirmed_utc"]
+        nb["close_confirmed_utc"] = nb["available_at"] = iso_(parse_iso(last["close_confirmed_utc"]) + timedelta(minutes=15))
+        return bars + [nb]
+
+    def test_close_beyond_the_published_level_invalidates_despite_a_moved_level(self):
+        from datetime import timedelta
+        sid, bars, c, now = self._setup()
+        lvl = c["invalidation_level"]
+        bars2 = self._bar_closing_at(bars, lvl - 0.5)                 # closed beyond the level in force
+        c2 = dict(c, invalidation_level=lvl - 1.0, stop_loss=lvl - 1.0)  # the next scan moves the level below that close
+        ev = self.upd([c2], self.TS.view_for(bars2), now + timedelta(minutes=20), sid)
+        r = self.tr.get(c["setup_id"])
+        self.assertEqual((r["status"], r["terminal_reason"]), ("INVALIDATED", f"CLOSE_BEYOND_{round(lvl, 3)}"))
+        self.assertIn(("INVALIDATED", c["setup_id"]), [(k, x["setup_id"]) for k, x in ev])
+        self.assertNotIn("PLAN_REVISED", [k for k, _ in ev])
+        self.assertEqual(r["record"]["invalidation_level"], lvl)                  # the published plan is kept as it was
+
+    def test_touch_rule_against_the_published_level(self):
+        from datetime import timedelta
+
+        from masterquo.strategies import adapter
+        sid = "S01"
+        bars = self.TS.scenario(sid)
+        v, cands = self.t._scan(bars, sid)
+        c = dict(cands[0], invalidation_rule="TOUCH")
+        now = self.t._now(bars)
+        self.upd([c], v, now, sid)
+        lvl = c["invalidation_level"]
+        tfs = {tf: bars for tf in ("M1", "M5", "M15", "H1")}
+        v2 = adapter.build_view(symbol="XAUUSD-", bars_by_tf=tfs, bid=lvl - 0.3, ask=lvl - 0.2, point=0.01, as_of=bars[-1]["close_confirmed_utc"],
+                                synthetic=True)
+        self.upd([dict(c, invalidation_level=lvl - 1.0)], v2, now + timedelta(seconds=30), sid)
+        r = self.tr.get(c["setup_id"])
+        self.assertEqual((r["status"], r["terminal_reason"]), ("INVALIDATED", f"TOUCH_{round(lvl, 3)}"))
+
+    def test_unchanged_level_keeps_todays_path(self):
+        from datetime import timedelta
+        sid, bars, c, now = self._setup()
+        lvl = c["invalidation_level"]
+        bars2 = self._bar_closing_at(bars, lvl + 0.5)                 # no violation: the new plan is applied as before
+        c2 = dict(c, invalidation_level=lvl - 1.0, stop_loss=lvl - 1.0)
+        ev = self.upd([c2], self.TS.view_for(bars2), now + timedelta(minutes=20), sid)
+        self.assertNotIn("INVALIDATED", [k for k, _ in ev])
+        r = self.tr.get(c["setup_id"])
+        self.assertEqual((r["status"], r["record"]["invalidation_level"]), ("ACTIVE", lvl - 1.0))
+
+
+class _SelectorCase(unittest.TestCase):
+    def setUp(self):
+        import test_strategies as TS
+        self.s = TS.TestSelector("test_small_difference_never_switches")
+        self.s.setUp()
+        self.row, self.pick, self.sel, self.db = self.s.row, self.s.pick, self.s.sel, self.s.db
+
+    def tearDown(self):
+        self.s.tearDown()
+
+    def log(self):
+        return [(r["previous_strategy"], r["selected_strategy"], r["reason"])
+                for r in self.db.query("SELECT previous_strategy, selected_strategy, reason FROM strategy_selection_log ORDER BY id")]
+
+
+class TestSelectorConflictSuspendsSelection(_SelectorCase):
+    """I0749: konflikt LONG/SHORT w horyzoncie zerował tylko `best`; istniejący wybór zostawał i bot mógł wykonać setup w stanie CONFLICT.
+    Wariant wyłącznie zaostrzający (recenzja: S0 poprzedniej wersji - zmiana `selected` przesuwała i pomijała prośby do agenta AI):
+    `selected` jest DOKŁADNIE dzisiejszy (kotwica, SELECTION_CHANGED, triggery agenta, CONTEXT_HOURLY bez zmian), a zawieszenie to
+    nakładka `suspended` -> engine/active.decision_inputs -> węzeł PERMISSION FAIL (brak zlecenia)."""
+
+    def test_conflict_suspends_without_changing_the_selection(self):
+        a = self.row("S01", "CONFIRMED", 60, 100, "LONG")
+        self.assertEqual(self.pick([a], 0)[0], "S01")
+        t0 = self.sel.selected["at"]
+        s, st = self.pick([a, self.row("S07", "CONFIRMED", 62, 90, "SHORT")], 10)          # opposite setup, rank difference < margin
+        self.assertEqual(s, "S01")                                                          # the selection is today's one
+        self.assertEqual(self.sel.selected["setup_id"], "MQA-S01-LONG")
+        self.assertEqual(st["suspended"]["code"], "SELECTION_SUSPENDED_CONFLICT_LONG_SHORT_INTRADAY")
+        self.assertEqual((st["suspended"]["setup_id"], st["suspended"]["since"]), ("MQA-S01-LONG", self.sel.state["last_evaluated_at"]))
+        self.assertNotIn("SELECTION_SUSPENDED_CONFLICT", st["reason_codes"])                # reason_codes / agent input unchanged
+        self.assertEqual(self.log(), [(None, "S01", "FIRST_SELECTION")])                    # no selection change -> no log row
+        since = st["suspended"]["since"]
+        s, st = self.pick([a, self.row("S07", "CONFIRMED", 63, 90, "SHORT")], 15)
+        self.assertEqual(st["suspended"]["since"], since)                                   # the same suspension keeps its start
+        s, st = self.pick([a], 20)                                                          # conflict gone -> executable again
+        self.assertEqual(s, "S01")
+        self.assertEqual(self.sel.selected["at"], t0)
+        self.assertIsNone(st["suspended"])
+        self.assertIsNone(self.sel.suspended)
+
+    def test_conflict_in_the_horizon_of_a_held_selection_that_is_not_the_best(self):
+        a = self.row("S01", "CONFIRMED", 60, 100, "LONG")
+        self.assertEqual(self.pick([a], 0)[0], "S01")
+        x = self.row("S03", "CONFIRMED", 66, 100, "LONG", horizon="SWING")                  # leads by < min_switch_margin, other horizon
+        y = self.row("S07", "CONFIRMED", 58, 100, "SHORT")                                  # opposite, same horizon as S01, close rank
+        s, st = self.pick([a, x, y], 10)
+        self.assertEqual(s, "S01")
+        self.assertTrue(st["suspended"]["detail"].startswith("SELECTION_SUSPENDED_CONFLICT_LONG_SHORT_INTRADAY_DIFF_"), st["suspended"])
+
+    def test_suspended_selection_that_disappears_is_dropped_as_today(self):
+        a = self.row("S01", "CONFIRMED", 60, 100, "LONG")
+        b = self.row("S02", "CONFIRMED", 61, 100, "LONG", setup="MQA-B")
+        self.assertEqual(self.pick([a], 0)[0], "S01")
+        self.assertIsNotNone(self.pick([a, self.row("S07", "CONFIRMED", 62, 90, "SHORT")], 10)[1]["suspended"])
+        s, st = self.pick([b], 20)                                                          # S01 gone -> best at once (today's rule)
+        self.assertEqual(s, "S02")
+        self.assertIsNone(st["suspended"])
+        self.assertEqual(self.log()[-1][2], "PREVIOUS_SETUP_NO_LONGER_VALID")
+
+    def test_reset_and_stale_data_clear_the_suspension(self):
+        from datetime import timedelta
+        a = self.row("S01", "CONFIRMED", 60, 100, "LONG")
+        self.pick([a], 0)
+        self.assertIsNotNone(self.pick([a, self.row("S07", "CONFIRMED", 62, 90, "SHORT")], 10)[1]["suspended"])
+        self.sel.reset("USER_SELECTED_OTHER_STRATEGY")
+        self.assertIsNone(self.sel.suspended)
+        self.pick([a], 20)
+        self.assertIsNotNone(self.pick([a, self.row("S07", "CONFIRMED", 62, 90, "SHORT")], 30)[1]["suspended"])
+        st = self.sel.select([a], cfg=self.s.cfg, regime={"state": "STALE"}, data_ok=False, new_data=True,
+                             now=self.s.t0 + timedelta(seconds=40), snapshot_id="S", account_key="a", per_strategy={})
+        self.assertIsNone(st["suspended"])
+
+    def test_no_conflict_no_change(self):
+        rows = [self.row("S01", "EARLY", 60, 100), self.row("S07", "EARLY", 40, 90, "SHORT")]   # opposite but far below
+        self.assertEqual(self.pick(rows, 0)[0], "S01")
+        s, st = self.pick(rows, 10)
+        self.assertEqual(s, "S01")
+        self.assertIsNone(st["suspended"])
+        self.assertEqual([x[2] for x in self.log()], ["FIRST_SELECTION"])
+
+
+class TestSuspensionKeepsTheAiGateInputs(unittest.TestCase):
+    """I0749 (recenzja, S0 poprzedniej wersji): sekwencja ai_gate_sim - t+0 wybrany S01 LONG EARLY; t+60 S07 SHORT w granicy
+    conflict_margin; t+120 S01 przechodzi w CONFIRMED w trakcie konfliktu; t+300 konflikt znika. Prośby do agenta AI (prawdziwe
+    EngineService._active_agent_triggers) i stan bramki AI (prawdziwy ClaudeAgent.gate_for, polityka VETO; agent odpowiada WAIT) mają być
+    w każdym kroku jak w bazie (c8277f4 / gałąź docelowa), a w czasie konfliktu decyzja (prawdziwe ActiveEngine.decision_inputs +
+    decision.build) ma blokadę PERMISSION. Przed poprawką recenzji: o t+120 agent nie był pytany, o t+300 bramka NOT_REQUIRED (PASS)."""
+
+    # base (c8277f4 and claude/architektura-modele-146 d3bc0f1, scratchpad ai_gate_sim.py): AI gate per step and the agent requests
+    BASE_GATE = (("PENDING", ("AI_EVALUATES_CONFIRMED_SETUPS_ONLY",)), ("PENDING", ("AI_EVALUATES_CONFIRMED_SETUPS_ONLY",)),
+                 ("PENDING", ("AI_ASSESSMENT_MISSING", "AI_VETO_WAIT_60S")), ("DISAGREE", ("AI_PROPOSES_WAIT",)), ("DISAGREE", ("AI_PROPOSES_WAIT",)))
+    BASE_REQUESTS = (("SETUP_NEW", "MQA-S01-LONG", "EARLY"), ("SETUP_NEW", "MQA-S01-LONG", "EARLY"),
+                     ("SETUP_CONFIRMED", "MQA-S01-LONG", "CONFIRMED"))
+
+    def setUp(self):
+        from _env import TempData
+        self.td = TempData()
+        os.environ.setdefault("ANTHROPIC_API_KEY", "sk-ant-test-not-a-real-key")
+
+    def tearDown(self):
+        self.td.close()
+
+    def test_agent_requests_and_ai_gate_are_todays_and_the_conflict_blocks(self):
+        import asyncio
+        import json
+        from datetime import timedelta
+        from types import SimpleNamespace as NS
+
+        import test_agent as TA
+        from masterquo.agent.service import ClaudeAgent
+        from masterquo.config import AppConfig, ConfigStore
+        from masterquo.db.database import Database
+        from masterquo.engine import decision
+        from masterquo.engine.active import ActiveEngine
+        from masterquo.engine.service import EngineService
+        from masterquo.events import AppLog, EventBus
+        from masterquo.secrets_store import SecretStore
+        from masterquo.timeutil import iso, parse_iso
+
+        db = Database()
+        store = ConfigStore()
+        store.update({"agent": {"model": "claude-opus-5-5"}})
+        agent = ClaudeAgent(store, SecretStore(), db, EventBus(), AppLog(db, EventBus()), lambda sid: TA.CTX)
+        self.assertEqual(agent.policy(), "VETO")
+        eng = ActiveEngine(db, store, None, None, None)
+        sel = eng.selector
+        cfg = store.get().active
+        t0 = parse_iso("2026-10-08T10:00:00Z")
+        changed: dict = {}
+        byid: dict = {}
+
+        def row(sid, stage, score, fit, direction, t):
+            k = f"MQA-{sid}-{direction}"
+            if changed.get(k, (None,))[0] != stage:
+                changed[k] = (stage, iso(t))
+            return {"setup_id": k, "status": "ACTIVE", "stale": 0, "stage": stage, "stage_changed_at": changed[k][1], "first_seen_at": iso(t0),
+                    "version": 1, "record": {"strategy_id": sid, "strategy_name": sid, "strategy_version": "1", "direction": direction,
+                                             "timeframe": "M15", "horizon": "INTRADAY", "setup_score": score, "strategy_fit_score": fit,
+                                             "countertrend": False, "event_id": f"EV-{sid}-{direction}", "score": {"points": {}}}}
+
+        requests = []
+
+        class FakeAgent:                         # records the requests; a SETUP_CONFIRMED request is answered WAIT (as _handle stores it)
+            def request(self, trig, *, snapshot_id, setup_id, setup_state, question=None):
+                requests.append((trig, setup_id, setup_state))
+                if trig == "SETUP_CONFIRMED":
+                    client = TA.ScriptedClient([TA.msg([TA.text(json.dumps(TA.answer(setup_id=setup_id, analysis_direction="LONG",
+                                                                                      proposed_action="WAIT")))], "end_turn")])
+                    agent._client_get = lambda: client
+                    ctx = dict(TA.CTX, setup=dict(TA.CTX["setup"], setup_id=setup_id, direction="LONG",
+                                                  state_changed_at=byid[setup_id]["stage_changed_at"]))
+                    req = {"trigger": trig, "snapshot_id": "SNP-1", "setup_id": setup_id, "setup_state": "CONFIRMED", "question": None, "key": "k"}
+                    agent.by_setup[setup_id] = asyncio.run(agent.run_once(req, ctx))
+
+        fake_engine = NS(agent=FakeAgent(), active=NS(selector=sel))
+        eng.selected_row = lambda: byid.get((sel.selected or {}).get("setup_id"))     # tracker lookup of selector.selected (unchanged code)
+        dq = {"analysis_allowed": True, "entries_allowed": True, "reason_codes": [], "market_state": "OPEN", "data_quality": "GOOD"}
+        scans = [(0, [("S01", "EARLY", 60, 100, "LONG")], [("NEW_EARLY", "MQA-S01-LONG")]),
+                 (60, [("S01", "EARLY", 60, 100, "LONG"), ("S07", "CONFIRMED", 62, 90, "SHORT")], [("NEW_CONFIRMED", "MQA-S07-SHORT")]),
+                 (120, [("S01", "CONFIRMED", 60, 100, "LONG"), ("S07", "CONFIRMED", 66, 90, "SHORT")], [("STAGE_CONFIRMED", "MQA-S01-LONG")]),
+                 (300, [("S01", "CONFIRMED", 60, 100, "LONG")], [("CANCELLED", "MQA-S07-SHORT")]),
+                 (360, [("S01", "CONFIRMED", 60, 100, "LONG")], [])]
+        gates, perms = [], []
+        for (sec, spec, tev) in scans:
+            now = t0 + timedelta(seconds=sec)
+            rows = [row(*x, t=now) for x in spec]
+            byid.update({r["setup_id"]: r for r in rows})
+            prev = (sel.selected or {}).get("setup_id")
+            sel.select(rows, cfg=cfg, regime={"state": "TREND_UP"}, data_ok=True, new_data=True, now=now, snapshot_id="SNP-1",
+                       account_key="srv:1", per_strategy={})
+            cur = (sel.selected or {}).get("setup_id")
+            self.assertEqual(cur, "MQA-S01-LONG", sec)                                   # today's selection at every step
+            events = [(k, byid.get(x, {"setup_id": x, "stage": None})) for k, x in tev]
+            if cur != prev:
+                events.append(("SELECTION_CHANGED", byid[cur]))
+            setup, levels, active = eng.decision_inputs()                                 # light_cycle: the decision before the triggers
+            g = agent.gate_for(setup, session_epoch=1, account_key="srv:1", now_iso=iso(now))
+            gates.append((g["status"], tuple(g["reason_codes"])))
+            d = decision.build(snapshot_id="SNP-1", as_of=iso(now), symbol="XAUUSD-", account_key="srv:1", session_epoch=1, dq=dq, legacy={},
+                               setup=setup, levels=levels, risk={"risk_gate": "PASS", "reason_codes": []}, agent_gate={"status": "NOT_REQUIRED",
+                               "reason_codes": []}, mode_gate={"mode": "AUTO_DEMO", "allowed": True, "reason_codes": []},
+                               macro={"status": "UNAVAILABLE"}, strategy_cfg=AppConfig().strategy, risk_cfg=AppConfig().risk,
+                               dxy_status="NOT_CONFIGURED", synthetic=True, active=active)
+            perm = next(n for n in d["decision_tree"] if n["node"] == "PERMISSION")
+            perms.append((perm["status"], active.get("selection_suspended")))
+            EngineService._active_agent_triggers(fake_engine, events, "SNP-1")
+        self.assertEqual(tuple(gates), self.BASE_GATE)
+        self.assertEqual(tuple(requests), self.BASE_REQUESTS)
+        code = "SELECTION_SUSPENDED_CONFLICT_LONG_SHORT_INTRADAY"
+        self.assertEqual(perms, [("PASS", None), ("FAIL", code), ("FAIL", code), ("PASS", None), ("PASS", None)])
+
+    def test_permission_block_only_adds(self):
+        from masterquo.config import AppConfig
+        from masterquo.engine import decision
+        cfg = AppConfig()
+        dq = {"analysis_allowed": True, "entries_allowed": True, "reason_codes": [], "market_state": "OPEN", "data_quality": "GOOD"}
+        setup = {"setup_id": "MQA-1", "state": "CONFIRMED", "signal_stage": "CONFIRMED", "direction": "LONG", "strategy_id": "S01",
+                 "profile": "ACTIVE", "setup_tf": "M15", "state_changed_at": "2026-10-08T11:59:00Z"}
+
+        def build(**extra):
+            return decision.build(snapshot_id="S", as_of="2026-10-08T12:00:00Z", symbol="XAUUSD-", account_key="a", session_epoch=1, dq=dq,
+                                  legacy={}, setup=setup, levels={}, risk={"risk_gate": "PASS", "reason_codes": []},
+                                  agent_gate={"status": "NOT_REQUIRED", "reason_codes": []}, mode_gate={"mode": "PAPER", "allowed": True,
+                                                                                                        "reason_codes": []},
+                                  macro={"status": "UNAVAILABLE"}, strategy_cfg=cfg.strategy, risk_cfg=cfg.risk, dxy_status="NOT_CONFIGURED",
+                                  synthetic=True, active={"regime": {"state": "TREND_UP", "conflicts": []}, "bias": "LONG", "trade_allowed": True,
+                                                          "reason_codes": [], **extra})
+        base, none = build(), build(selection_suspended=None)
+        self.assertEqual((base["decision_id"], base["execution_permission"]), (none["decision_id"], "ALLOWED"))   # no suspension: today's
+        d = build(selection_suspended="SELECTION_SUSPENDED_CONFLICT_LONG_SHORT_INTRADAY")
+        self.assertEqual((d["decision"], d["execution_permission"]), ("BUY", "BLOCKED"))                          # observation kept, no order
+        self.assertIn("SELECTION_SUSPENDED_CONFLICT_LONG_SHORT_INTRADAY", d["reason_codes"])
+
+
+class TestWallsStoreRestart(unittest.TestCase):
+    """I0868 (łata 783a153): odcisk zawierał krotkę; po rundzie przez JSON (pierwsze freeze po restarcie) był listą -> nigdy równy -> każdy
+    restart tworzył wersję N+1 z nowym snapshot_id dla tych samych danych (a S12 nową tożsamość setupu dla tego samego zdarzenia)."""
+
+    def test_same_input_after_restart_keeps_snapshot_id(self):
+        from _env import TempData
+        from masterquo.analysis.walls import WallsStore
+        from masterquo.db.database import Database
+        td = TempData()
+        try:
+            db = Database()
+            snap = {"status": "OK", "symbol": "XAUUSD-", "anchor_time": "2026-11-20T00:00:00Z", "source_type": "HV_PROXY", "sigma_annual": 0.18,
+                    "obs_id": None, "band_sigma": 0.15, "available_at": "2026-11-20T00:05:00Z",
+                    "walls": [{"k": 1.0, "side": "UPPER", "level": 2410.0}, {"k": 2.0, "side": "UPPER", "level": 2430.0},
+                              {"k": 1.0, "side": "LOWER", "level": 2390.0}]}
+            a = WallsStore(db).freeze(dict(snap, walls=[dict(w) for w in snap["walls"]]))
+            b = WallsStore(db).freeze(dict(snap, walls=[dict(w) for w in snap["walls"]]))     # new store = application restart
+            self.assertEqual((b["snapshot_id"], b["snapshot_version"]), (a["snapshot_id"], 1))
+            self.assertEqual(db.one("SELECT COUNT(*) n FROM walls_snapshots")["n"], 1)
+            st = WallsStore(db)
+            c = st.freeze(dict(snap, sigma_annual=0.25, walls=[dict(w) for w in snap["walls"]]))   # a real change -> next version
+            self.assertEqual(c["snapshot_version"], 2)
+            self.assertEqual(st.freeze(dict(snap, sigma_annual=0.25, walls=[dict(w) for w in snap["walls"]]))["snapshot_id"], c["snapshot_id"])
+        finally:
+            td.close()
+
+
+class TestSRClusterBounded(unittest.TestCase):
+    """I0757: klasteryzacja pivotów S/R była łańcuchowa (single-linkage: p - ostatni <= tol) - łańcuch równo rozłożonych pivotów sklejał się
+    w strefę wielokrotnie szerszą od tolerancji. multi_tf (wykres, narzędzie agenta) używa teraz klastra ograniczonego (p - pierwszy <= tol,
+    MQ-SR-1.1.0); zones_for_tf domyślnie zostaje przy regule MQ-SR-1.0.0 - z niej liczona jest mapa stref (zones/engine), a z niej cechy
+    wytrenowanych modeli (ML legacy zone_*, Quant analysis:zones): stare artefakty dostają dokładnie dzisiejsze wejścia."""
+
+    @staticmethod
+    def _view():
+        from datetime import UTC, datetime, timedelta
+
+        from masterquo.strategies.base import MarketView, TFView
+        t0 = datetime(2026, 10, 1, tzinfo=UTC)
+        closes = []
+        for cyc in range(12):                                   # zig-zag whose lows / highs rise by 0.4 per swing (< tolerance ~0.67)
+            lo = 2000.0 + 0.4 * cyc
+            closes += [lo + 2.5 * k for k in range(4)] + [lo + 10 - 2.5 * k for k in range(4)]
+        bars, prev = [], closes[0]
+        for i, c in enumerate(closes):
+            bars.append({"open_utc": iso_(t0 + timedelta(hours=i)), "o": prev, "h": max(prev, c) + 0.1, "l": min(prev, c) - 0.1, "c": c, "closed": True})
+            prev = c
+        return MarketView(symbol="X", as_of="", tfs={"H1": TFView("H1", bars)}, bid=None, ask=None, point=0.01)
+
+    def test_multi_tf_zones_are_not_wider_than_the_tolerance(self):
+        from masterquo.analysis import levels as L
+        r = L.multi_tf(self._view(), tfs=("H1",))
+        h1 = r["by_tf"]["H1"]
+        self.assertEqual(h1["status"], "OK")
+        self.assertGreaterEqual(len(h1["zones"]), 4)
+        for z in h1["zones"]:
+            self.assertLessEqual(z["high"] - z["low"], h1["tolerance"] + 1e-6, z)
+            self.assertEqual(z["version"], "MQ-SR-1.1.0")
+        self.assertEqual(r["version"], "MQ-SR-1.1.0")
+
+    def test_zone_map_rule_is_unchanged(self):
+        from masterquo.analysis import levels as L
+        v = self._view()
+        r = L.zones_for_tf(v.tfs["H1"], "H1", point=0.01)                  # default = the rule of the zone map / trained zone features
+        self.assertEqual({z["version"] for z in r["zones"]}, {"MQ-SR-1.0.0"})
+        self.assertEqual(sorted(round(z["high"] - z["low"], 2) for z in r["zones"]), [4.0, 4.0])
+
+    def test_cluster_rules(self):
+        from masterquo.analysis import levels as L
+        piv = [{"price": 100.0 + 0.8 * k} for k in range(10)]
+        self.assertEqual([len(c) for c in L.cluster_pivots(piv, 1.0, "CHAIN")], [10])
+        bounded = L.cluster_pivots(piv, 1.0, "BOUNDED")
+        self.assertEqual(len(bounded), 5)
+        self.assertTrue(all(c[-1]["price"] - c[0]["price"] <= 1.0 for c in bounded))
+
+
+if __name__ == "__main__":
+    unittest.main()

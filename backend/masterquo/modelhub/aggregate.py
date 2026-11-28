@@ -34,7 +34,8 @@ def dev_skill(inst: str, key: str, version: str) -> float | None:
     from ..trainhub import registry as R
     for v in (R.registry(inst).get("versions") or {}).get(key, []):
         if v["version"] == version:
-            return (v.get("walk_forward") or {}).get("dev_skill_vs_baseline")
+            # arch146 I0643: a Studio import registered before 1.46 arch has no walk_forward in registry.json - read from its package
+            return (R.version_info(inst, key, v).get("walk_forward") or {}).get("dev_skill_vs_baseline")
     return None
 
 

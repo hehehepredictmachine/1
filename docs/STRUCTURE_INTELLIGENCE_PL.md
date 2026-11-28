@@ -82,7 +82,7 @@ BE = PRICE_BREAK_EVEN, nigdy nie pogarsza SL. Realne tryby przechodzą przez wsp
   (przed wynikiem) i `si_outcomes` (dojrzewanie).
 - API: `GET /api/v1/structure-intelligence`, `/snapshots/{id}`, `/forecasts`, `/models`, `/quality`; `POST /jobs`, `GET /jobs/{id}`, `POST /jobs/{id}/cancel`,
   `POST /models/select|rollback`; Manual Pad `/api/v1/manual/*`.
-- Agent: wiedza K01–K18, K36 (`analysis/structure_knowledge.py`, PMW-SI-KNOWLEDGE-1.0.0), narzędzie `get_structure_intelligence`, prompt 1.6.0.
+- Agent: wiedza K01–K18, K36 (`agent/structure_knowledge.py`, w 1.46 przeniesione z `analysis/` – stary import działa przez shim; PMW-SI-KNOWLEDGE-1.0.0), narzędzie `get_structure_intelligence`, prompt 1.6.0.
   To instrukcja w promptcie – nie fine-tuning modelu językowego.
 
 ## 11. Komendy

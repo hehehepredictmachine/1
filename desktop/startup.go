@@ -133,8 +133,12 @@ func boot(ctx context.Context, l Layout, ui bootUI, importArg string, logf func(
 		} // 1.46: an outdated engine of this folder was stopped -> prepare the environment below and start the new one
 	}
 	ui.Status("Sprawdzanie składników…")
-	cleanupBrokenEnvs(l.EnvRoot)
-	site, err := ensureEnv(ctx, l, ui.Status, ui.Detail)
+	// 1.46 arch (I0846): the Studio shell never repairs / reinstalls the SHARED dependency folder while the bot uses it
+	busy, why := false, ""
+	if isStudio() {
+		busy, why = botUsesSharedEnv(l, eng.client)
+	}
+	site, err := prepareSharedEnv(ctx, l, ui.Status, ui.Detail, busy, why)
 	if err != nil {
 		return err
 	}
@@ -145,6 +149,11 @@ func boot(ctx context.Context, l Layout, ui bootUI, importArg string, logf func(
 	if err := eng.Start(ctx); err != nil {
 		if !importFailure(err) || os.Getenv("PMW_SKIP_PYENV") == "1" {
 			return err
+		}
+		if isStudio() { // 1.46 arch (I0846): the import failure is read from Studio's own log; the shared folder is repaired only when free
+			if b, w := botUsesSharedEnv(l, eng.client); b {
+				return fmt.Errorf("%w\n\nStudio nie naprawia wspólnego folderu składników, gdy %s – zamknij bota i uruchom Studio ponownie", err, w)
+			}
 		}
 		// 1.40.4: a component does not import (damaged dependency folder) - install the components again and start once more
 		logf("silnik: błąd importu składnika – ponowna instalacja składników i drugi start")
@@ -164,8 +173,7 @@ func boot(ctx context.Context, l Layout, ui bootUI, importArg string, logf func(
 			return err
 		}
 	}
-	st.LastVersion, st.BackupVersion = version, "" // 1.46: the next version change makes its own copy again
-	_ = saveState(l.Home, st)
+	rememberSuccessfulStart(l, st) // 1.46 arch (I0846): the bot shell only (Studio never overwrites LastVersion / BackupVersion)
 	return nil
 }
 

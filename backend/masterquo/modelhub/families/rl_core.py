@@ -41,6 +41,33 @@ class ReplayCore:
         self.log = []
         return self.obs()
 
+    def set_live_state(self, pos: float, entry: float | None, bars_in_pos: int | None) -> None:
+        """1.46 (I0465): the position part of the observation for a LIVE proposal (after reset(t)). The observation holds the exposure,
+        the unrealised P/L (pos x (close - entry) / reward_scale) and the bars in position; setting only `pos` (1.45 / 1.46.0) left
+        entry = 0, so unreal = pos x close / scale - a price-level value far outside the training distribution. pos must be in the
+        training units (a multiple of `unit`, |pos| <= max_units x unit); a non-flat pos needs a finite entry > 0 and bars_in_pos >= 0,
+        otherwise ValueError (the caller reports an incomplete position state - never a guessed one). pos = 0 is exactly the reset state."""
+        try:
+            p = float(pos)
+        except (TypeError, ValueError):
+            raise ValueError("POSITION_INVALID") from None
+        if not np.isfinite(p):
+            raise ValueError("POSITION_INVALID")
+        if p == 0.0:
+            self.pos, self.entry, self.in_pos = 0.0, 0.0, 0
+            return
+        k = p / self.unit
+        if abs(k - round(k)) > 1e-9 or abs(round(k)) > self.max_units:
+            raise ValueError(f"POSITION_UNITS: {p} nie jest wielokrotnością unit={self.unit} w granicy max_units={self.max_units}")
+        try:
+            e = float(entry)
+            n = int(bars_in_pos)
+        except (TypeError, ValueError):
+            raise ValueError("POSITION_STATE_INCOMPLETE") from None
+        if not np.isfinite(e) or e <= 0 or n < 0 or n != bars_in_pos:
+            raise ValueError("POSITION_STATE_INCOMPLETE")
+        self.pos, self.entry, self.in_pos = p, e, n
+
     def mtm(self, px: float) -> float:
         return self.cash + self.pos * px
 
