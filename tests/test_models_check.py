@@ -114,5 +114,21 @@ class TestVerdict(unittest.TestCase):
         self.assertIn("ZeroDivisionError", rows[0]["steps"]["train"]["detail"])
 
 
+class TestSmokeZeroIsAValue(unittest.TestCase):
+    """A smoke comparison `x or -1` turns a legitimate 0.0 (a TREE raw_score of exactly 0 on SYNTHETIC_TEST data, a confidence score of 0)
+    into 'missing' and reports BŁĄD for a model that works (Etap 5: lab:TREE failed one models check run of two). The smoke modules
+    compare numbers with an explicit `is not None`."""
+
+    def test_no_falsy_default_in_numeric_comparisons(self):
+        import re
+        smoke = _env.ROOT / "backend" / "masterquo" / "modelhub" / "smoke"
+        bad = []
+        for f in sorted(smoke.glob("*.py")):
+            for n, line in enumerate(f.read_text(encoding="utf-8").splitlines(), 1):
+                if re.search(r"\bor -1\b", line):
+                    bad.append(f"{f.name}:{n}: {line.strip()[:120]}")
+        self.assertEqual(bad, [])
+
+
 if __name__ == "__main__":
     unittest.main()

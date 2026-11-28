@@ -287,7 +287,7 @@ def _lab_family(fam: str):
         if c["status"] == "OK":
             x = recs[0]
             v = (x.get("result") or {}).get("raw_score")
-            c = check(x.get("state") == "READY" and _finite(v) and math.isclose(v, float(p or -1)) and x.get("data_kind") == "SYNTHETIC"
+            c = check(x.get("state") == "READY" and _finite(v) and math.isclose(v, float(p if p is not None else -1)) and x.get("data_kind") == "SYNTHETIC"
                       and x.get("unit") == "ratio",
                       f"quant.adapters.lab → PMW-PRED-2: {len(recs)} rekord READY, task {x.get('task')}, unit ratio, raw_score={v} = LabService, "
                       f"data_kind SYNTHETIC",

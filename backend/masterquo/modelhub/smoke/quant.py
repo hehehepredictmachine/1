@@ -413,7 +413,7 @@ def _tabicl(ctx) -> dict:
             errs = ctx.contract_errors(rec)
             if conf.get("state") != "READY" or conf.get("p_event_raw") != p2 or conf.get("influence") != "PRESENTATION":
                 errs.append(f"assess.confidence {conf}")
-            if abs((conf.get("confidence_score") or -1) - round(100.0 * p2, 1)) > 1e-9 or conf.get("calibration_status") != "UNCALIBRATED":
+            if abs((conf.get("confidence_score") if conf.get("confidence_score") is not None else -1) - round(100.0 * p2, 1)) > 1e-9 or conf.get("calibration_status") != "UNCALIBRATED":
                 errs.append(f"confidence_score {conf.get('confidence_score')} ≠ 100×p / kalibracja {conf.get('calibration_status')}")
             if cf.get("state") != "READY" or cf.get("p_event_raw") != p2:
                 errs.append(f"confidence_for {cf}")
