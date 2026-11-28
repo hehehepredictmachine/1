@@ -339,6 +339,13 @@ def _smoke_montecarlo(ctx) -> dict:
             errs = ctx.contract_errors(p)
             if errs:
                 return fail("; ".join(errs))
+            if r.get("status") == "OK" and p.get("state") == "DISABLED" and isinstance(p.get("service_status"), dict) \
+                    and "na żądanie" in str(p.get("unavailable_reason") or ""):
+                # 1.46 D11 (descriptive variant): the record stays DISABLED by design - the simulation is computed on request for one plan
+                # (panel / API), there is no market snapshot result for Quant; it carries the real service state. Feeding Quant (variant b)
+                # would be a new meta-model input - an owner decision (docs/arch146/ETAP2_PROJEKT.md §7 D11).
+                return ok(f"PMW-PRED-2 analysis:montecarlo DISABLED zgodnie z D11 (symulacja na żądanie dla planu, bez stanu migawki dla "
+                          f"Quant; stan usługi w rekordzie: {sorted(p['service_status'])}); wariant (b) – MC jako wejście Quant – do decyzji")
             if r.get("status") == "OK" and p.get("state") != "READY":
                 from ...montecarlo import service as MS
                 st = demo.status()
