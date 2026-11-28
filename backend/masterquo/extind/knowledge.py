@@ -56,7 +56,11 @@ def explain_pl(ctx: dict) -> str:
                      + (" – ryzyko whipsaw" if d.get("whipsaw_risk") == "HIGH" else "") + ". Flip to kontekst, nie sygnał zlecenia.")
     for a, v in (ctx.get("sources") or {}).items():
         if v.get("source_status") == "RECEIVING" and v.get("levels"):
-            parts.append(f"{a}: {len(v['levels'])} poziomów z zatwierdzonego mappingu (odczyt {v.get('available_at')}) – kontekst, nie potwierdzenie wejścia.")
+            # 1.46 arch (I0729): identical reads are one archive row - available_at is the FIRST read of this content (maybe hours ago),
+            # confirmed_at the last identical read (as_of); a context without confirmed_at keeps the old text
+            seen = (f"znane od {v.get('available_at')}, potwierdzone {v['confirmed_at']}"
+                    if v.get("confirmed_at") and v.get("confirmed_at") != v.get("available_at") else f"odczyt {v.get('available_at')}")
+            parts.append(f"{a}: {len(v['levels'])} poziomów z zatwierdzonego mappingu ({seen}) – kontekst, nie potwierdzenie wejścia.")
         else:
             parts.append(f"{a}: {v.get('identity_status') if v.get('identity_status') != 'IDENTIFIED' else v.get('source_status')} – brak wartości (nie zero).")
     m = ctx.get("model") or {}

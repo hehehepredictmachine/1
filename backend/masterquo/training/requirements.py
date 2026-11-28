@@ -11,41 +11,14 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from . import tasks as _T
+
 BAR_COLUMNS = ("time_open_utc", "open", "high", "low", "close", "tick_volume")
 
-# kind -> (title, required TFs, optional TFs, reader in code, recommended rows of the first required TF)
-REQUIREMENTS: dict[str, dict] = {
-    "forecast": {"title": "Prognozy świec gold_candles 5/15/30 min", "required": ("M5", "M30"), "optional": (),
-                 "reader": "gold_candles_runtime/plan_train.py (<prefix>_M5.csv, <prefix>_M30.csv)", "recommended_rows": 20000},
-    "scalp": {"title": "Scalp A/B/C (kierunek, P(TP1 przed SL), polityka hedge/REDUCE)", "required": ("M1",), "optional": (),
-              "reader": "gold_candles_runtime/scalp_train.py (<prefix>_M1.csv)", "recommended_rows": 60000},
-    "ml": {"title": "Legacy ML: Decision Tree + XGBoost (setupy S01–S12)", "required": ("M1", "M5", "M15", "H1", "H4", "D1"), "optional": (),
-           "reader": "masterquo/ml/offline.py load_dataset (NEED)", "recommended_rows": 60000},
-    "lab": {"title": "Lab: LOGREG/TREE/MiniRocket/XGB/ResNet1D/SEW-SNN", "required": ("M5",), "optional": (),
-            "reader": "masterquo/training/cli.py load_m5", "recommended_rows": 20000},
-    "indicator_context": {"title": "Kontekst wskaźników SAR + IQ/PAL", "required": ("M1", "M5", "M15"), "optional": (),
-                          "reader": "masterquo/extind/trainer.py", "recommended_rows": 60000},
-    "ml_scalp": {"title": "Scalp ML: XGBoost netto cyklu", "required": ("M1",), "optional": (),
-                 "reader": "masterquo/ml/scalp_task.py (_bars M1)", "recommended_rows": 60000},
-    "neural_scalp": {"title": "Neural Scalp System TCN", "required": ("M1", "M5", "M15", "H1"), "optional": (),
-                     "reader": "masterquo/lab/nss.py", "recommended_rows": 60000},
-    "structure_intelligence": {"title": "Structure Intelligence (ruch M1 h=3/5/15)", "required": ("M1", "M5", "M15", "H1"), "optional": (),
-                               "reader": "masterquo/lab/structure_task.py", "recommended_rows": 60000},
-    "flow_context": {"title": "Flow context: Markov3 + koszyki + model reakcji", "required": ("M1",), "optional": (),
-                     "reader": "masterquo/lab/flow_context/task.py (_bars M1)", "recommended_rows": 60000},
-    "context_indicators": {"title": "Kontekst VAMD / FD / Pullback+SMC", "required": ("M5",), "optional": (),
-                           "reader": "masterquo/lab/context_ind/task.py (_bars M5)", "recommended_rows": 20000},
-    "sh_models": {"title": "SCALPING/HEDGING: replay + P(TP2 przed SL) + walidacja", "required": ("M1",), "optional": ("M5", "M15", "H1"),
-                  "ticks": "opcjonalne – rozstrzygają kolejność TP/SL w jednej świecy", "reader": "masterquo/sh/replay.py load_dataset (M5/M15/H1 składane z M1, gdy brak)",
-                  "recommended_rows": 60000},
-    "sh_pack": {"title": "Pakiet 20 strategii SC/HG: replay walk-forward", "required": ("M1",), "optional": ("M3", "M5", "M15", "H1"),
-                "ticks": "opcjonalne – bez ticków kolejność TP/SL w jednej świecy = STOP_FIRST", "reader": "masterquo/sh/pack/replay.py load",
-                "recommended_rows": 120000},
-    "master_models": {"title": "Master models (HDC/GPR/event engine/STE-FlowNet + ewaluacje)", "required": ("M1", "M5"), "optional": ("M15", "M30"),
-                      "reader": "masterquo/mm/data.py open_snapshot (M1,M5,M15,M30)", "recommended_rows": 60000},
-    "monte_carlo": {"title": "Monte Carlo ścieżek (walidacja P(TP przed SL))", "required": ("M1",), "optional": ("M5", "M15"),
-                    "ticks": "opcjonalne – kolejność TP/SL w jednej świecy", "reader": "masterquo/montecarlo/validate.py", "recommended_rows": 40000},
-}
+# kind -> (title, required TFs, optional TFs, reader in code, recommended rows of the first required TF). arch146 I0131: derived from the one
+# task registry (training/tasks.py) - the readiness keys are unchanged ('scalp' for the A/B/C unit); the row order is the one of 1.46.0
+# (tasks.REQUIREMENTS_ORDER: master_models before monte_carlo), not the runner order.
+REQUIREMENTS: dict[str, dict] = _T.requirements()
 
 
 def _file_info(p: Path) -> dict:
@@ -68,9 +41,12 @@ def _file_info(p: Path) -> dict:
 
 
 def check_dataset(ds: Path, kinds: list[str] | None = None) -> dict:
-    """Readiness of every (or the given) training task for this export folder."""
+    """Readiness of every (or the given) training task for this export folder. `kinds` may name readiness keys or task ids (scalp_A ->
+    'scalp', alias on input only - the rows keep the readiness key)."""
     # 1.46 arch I0085: leaf module (was forecast.export = the export <-> requirements cycle)
     from ..forecast.dataset_state import dataset_state
+    if kinds:
+        kinds = [k if k in REQUIREMENTS else (_T.requirements_kind(k) or k) for k in kinds]
     ds = Path(ds)
     state = dataset_state(ds)
     meta = None

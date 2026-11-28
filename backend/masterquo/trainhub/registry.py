@@ -55,7 +55,7 @@ def _mm(v: str | None) -> str | None:
     return ".".join(str(v).split(".")[:2]) if v else None
 
 
-def save_package(inst: str, cfg: dict, trained: dict, ds_desc: dict, store_manifest: dict) -> dict:
+def save_package(inst: str, cfg: dict, trained: dict, ds_desc: dict, store_manifest: dict, dataset_ref: dict | None = None) -> dict:
     import joblib
     res = trained["result"]
     key = model_key(res["model_id"], cfg["base_tf"], cfg["horizon"])
@@ -85,9 +85,14 @@ def save_package(inst: str, cfg: dict, trained: dict, ds_desc: dict, store_manif
     atomic_json(d / "config.json", conf)
     metrics = {k: v for k, v in res.items() if k != "sample"}
     atomic_json(d / "metrics.json", metrics)
+    if dataset_ref is None:                       # arch146 I0064: lineage of the training set (training/dataset_ref.py)
+        from ..training import dataset_ref as DR
+        dataset_ref = DR.from_store(inst, store_manifest, sha256=ds_desc.get("hash"), range_utc=ds_desc.get("range_utc"),
+                                    rows=ds_desc.get("rows_usable"))
     atomic_json(d / "data_manifest.json", {"instrument": inst, "symbol": store_manifest.get("symbol"), "data_kind": store_manifest.get("data_kind"),
                                            "dataset": ds_desc, "time_model": store_manifest.get("time_model"),
-                                           "costs": store_manifest.get("costs"), "store_schema": store_manifest.get("schema_version")})
+                                           "costs": store_manifest.get("costs"), "store_schema": store_manifest.get("schema_version"),
+                                           "dataset_ref": dataset_ref})
     atomic_json(d / "deps.json", deps())
     atomic_json(d / "inference_sample.json", res["sample"])
     atomic_bytes(d / "REPRODUCE.md", _reproduce(inst, conf, ds_desc).encode("utf-8"))
@@ -96,12 +101,45 @@ def save_package(inst: str, cfg: dict, trained: dict, ds_desc: dict, store_manif
                                               "created_at": iso(time.time()), "files": files})
     with reg_lock(inst):                          # 1.46: read-modify-write of registry.json under the shared registry lock
         reg = _reg(inst, strict=True)
-        reg.setdefault("versions", {}).setdefault(key, []).append({"version": version, "created_at": iso(time.time()), "model_id": res["model_id"],
-                                                                    "base_tf": cfg["base_tf"], "horizon": cfg["horizon"], "data_kind": store_manifest.get("data_kind"),
-                                                                    "holdout": res["holdout"], "walk_forward": {k: v for k, v in res["walk_forward"].items() if k != "folds"},
-                                                                    "trading_eval_holdout": res["trading_eval_holdout"], "path": str(d.relative_to(root()))})
+        reg.setdefault("versions", {}).setdefault(key, []).append(
+            version_entry(version=version, created_at=iso(time.time()), model_id=res["model_id"], base_tf=cfg["base_tf"], horizon=cfg["horizon"],
+                          data_kind=store_manifest.get("data_kind"), metrics=res, path=str(d.relative_to(root()))))
         _save_reg(inst, reg)
     return {"model_key": key, "version": version, "path": str(d)}
+
+
+def version_entry(*, version: str, created_at, model_id, base_tf, horizon, data_kind, metrics: dict, path: str | None) -> dict:
+    """One registry.json version entry (arch146 I0643: the SAME fields for a trained and for a Studio-imported package - the import wrote
+    only version / created_at / source / import_id / package, so dev_skill() was None (weight 0 in the evidence board) and the panel showed
+    no metrics and no data kind, a SYNTHETIC Studio package was not marked as such)."""
+    return {"version": version, "created_at": created_at, "model_id": model_id, "base_tf": base_tf, "horizon": horizon, "data_kind": data_kind,
+            "holdout": metrics.get("holdout"), "walk_forward": {k: v for k, v in (metrics.get("walk_forward") or {}).items() if k != "folds"},
+            "trading_eval_holdout": metrics.get("trading_eval_holdout"), "path": path}
+
+
+def package_entry(inst: str, key: str, version: str) -> dict | None:
+    """The version entry rebuilt from the files of a package on disk (config.json, metrics.json, data_manifest.json, package_manifest.json);
+    None when the names are not safe path segments or the package has no config / metrics. Read only."""
+    if not (SAFE_ID.match(str(key or "")) and SAFE_ID.match(str(version or ""))):
+        return None
+    d = package_dir(inst, key, version)
+    conf, met = read_json(d / "config.json", None), read_json(d / "metrics.json", None)
+    if not isinstance(conf, dict) or not isinstance(met, dict):
+        return None
+    dm = read_json(d / "data_manifest.json", {}) or {}
+    man = read_json(d / "package_manifest.json", {}) or {}
+    return version_entry(version=version, created_at=man.get("created_at"), model_id=conf.get("model_id") or met.get("model_id"),
+                         base_tf=conf.get("base_tf"), horizon=conf.get("horizon"), data_kind=dm.get("data_kind") if isinstance(dm, dict) else None,
+                         metrics=met, path=str(d.relative_to(root())))
+
+
+def version_info(inst: str, key: str, v: dict) -> dict:
+    """A registry entry with the metadata of its package: an entry written by a Studio import before 1.46 arch (no walk_forward) is
+    completed from the package files (read only - registry.json is not rewritten); fields present in the entry win."""
+    if not isinstance(v, dict) or "walk_forward" in v:
+        return v
+    pe = package_entry(inst, key, v.get("version"))
+    return v if pe is None else {**{k: x for k, x in pe.items() if k != "created_at"}, **v}
 
 
 def _reproduce(inst: str, conf: dict, ds: dict) -> str:
@@ -346,13 +384,76 @@ def remove_version(inst: str, key: str, version: str) -> None:
     shutil.rmtree(package_dir(inst, key, version), ignore_errors=True)
 
 
+NO_SERVICE_REASON = "serwis inferencji Centrum treningu nie działa w tym procesie – brak predykcji aktywnej wersji"
+
+
+def status_of(inst: str, model_id: str | None = None, rt=None) -> dict:
+    """arch146 I0010: ONE state of the trainhub models of an instrument - the catalog (modelhub/catalog), the SH probe th_direction
+    (sh/models), the Quant inventory and the TH_RF / TH_XGB / TH_SVM family view computed it four times with different results (an active
+    version without a prediction was SHADOW_ONLY / BLOCKED_DATA / SHADOW_ONLY / CANDIDATE). Read only; never raises for a missing service.
+
+    model_id: one trainhub model (TH_LOGREG ...) or None = every model (the SH row th_direction). Package keys always match '<model_id>_'.
+    rt: the running bot (trainhub jobs + live predictions) or None = no live view (generated report, the SH cycle's own matrix).
+    Returns {state, reason, cause, active, versions}; state in the catalog vocabulary (modelhub/contract.STATES): TRAINING | DISABLED |
+    READY | BLOCKED_DATA | INCOMPATIBLE | ERROR | NOT_TRAINED; cause tells the consumers apart what one state covers:
+    TRAINING, NO_LIBRARY, NO_ACTIVE (versions, none active), NO_LIVE_VIEW (rt None), NO_SERVICE (bot without the inference service),
+    SERVICE_ERROR, PREDICTION (state of the live prediction), WAITING (active, no prediction yet), None (READY / NOT_TRAINED)."""
+    reg = registry(inst)
+    pref = (model_id + "_") if model_id else ""
+    keys = [k for k in (reg.get("versions") or {}) if k.startswith(pref)]
+    act = {k: v for k, v in (reg.get("active") or {}).items() if k.startswith(pref)}
+    nver = sum(len((reg.get("versions") or {}).get(k) or []) for k in keys)
+    out = {"active": act, "versions": keys, "n_versions": nver}
+
+    def res(state, reason, cause=None):
+        return {"state": state, "reason": reason, "cause": cause, **out}
+    if model_id:
+        running = set()
+        try:
+            tc = getattr(rt, "trainhub", None) if rt is not None else None
+            if tc is not None:
+                for j in tc.list(20):
+                    if j["status"] in ("RUNNING", "QUEUED") and j["instrument"] == inst and j["kind"] in ("TRAIN", "FULL"):
+                        running.update((j.get("params") or {}).get("models") or ["TH_BASELINE", "TH_LOGREG", "TH_HGB"])
+        except Exception:  # noqa: BLE001, S110 - the job list is optional
+            pass
+        if model_id in running:
+            return res("TRAINING", "zadanie treningu w Centrum treningu", "TRAINING")
+        from .learn import available
+        if not available().get(model_id):
+            return res("DISABLED", "biblioteka modelu niedostępna w tym środowisku", "NO_LIBRARY")
+    if act:
+        desc = ", ".join(f"{k}={v}" for k, v in act.items())
+        if rt is None:
+            return res("DISABLED", NO_SERVICE_REASON, "NO_LIVE_VIEW")
+        try:
+            inf = getattr(rt, "trainhub_inference", None)
+            if inf is None:
+                return res("DISABLED", NO_SERVICE_REASON, "NO_SERVICE")
+            preds = {p.get("model_key"): p for p in inf.predictions(inst)}
+        except Exception as exc:  # noqa: BLE001
+            return res("ERROR", f"inferencja Centrum treningu: {type(exc).__name__}: {exc}"[:200], "SERVICE_ERROR")
+        ps = [preds.get(k) for k in act]
+        bad = [p for p in ps if p and p.get("state") != "READY"]
+        if bad:
+            return res(bad[0]["state"], bad[0].get("unavailable_reason"), "PREDICTION")
+        if all(ps):
+            return res("READY", "aktywna wersja: " + desc)
+        # 1.46: READY means a result exists (PMW-PRED-2) - an active version without any prediction yet is waiting for data
+        return res("BLOCKED_DATA", "aktywna wersja bez predykcji (czeka na pierwszą zamkniętą świecę): " + desc, "WAITING")
+    if keys:
+        # 1.46: the message said "none inactive" (= all active) in the branch where NO version is active
+        return res("DISABLED", f"{nver} wersji, żadna nie jest aktywna – aktywacja ręczna w Centrum treningu", "NO_ACTIVE")
+    return res("NOT_TRAINED", "brak paczki – trening w Centrum treningu")
+
+
 def summary(inst: str) -> dict:
     reg = _reg(inst)
     out = []
     for key, vers in (reg.get("versions") or {}).items():
         act = (reg.get("active") or {}).get(key)
         for v in vers:
-            out.append({**v, "model_key": key, "active": v["version"] == act})
+            out.append({**version_info(inst, key, v), "model_key": key, "active": v["version"] == act})   # arch146 I0643: old imports
     def _when(v):                                   # 1.46: tolerant to a numeric created_at written by Studio 1.45.0 imports
         c = v.get("created_at")
         if isinstance(c, (int, float)):

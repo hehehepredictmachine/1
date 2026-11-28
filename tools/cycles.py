@@ -37,6 +37,9 @@ LAYERS: dict[str, int] = {
     # (after the merge of wave 2b) import-free / stdlib-only leaves: contract records (I0082), settings files (I0097), the local-API
     # client of the CLI entry points (I0075/I0080, imports only config/paths), the model-runtime environment registry (I0117, paths only)
     "contracts": 0, "settings_store": 0, "localapi": 0, "runtimes": 0,
+    # (after the merge of training_studio) the registry of the server's training child processes and kill_tree (I0100, stdlib only;
+    # one lazy helper import of training.core._proc_start - baseline edge, candidate for L0 in Etap 4)
+    "procs": 0,
     # L1 - data and external I/O: database, MT5 bridge, market data stores, data quality, news, notifications, licence
     "db": 1, "mt5": 1, "marketdata": 1, "data": 1, "markets": 1, "news": 1, "notify": 1, "licensing": 1, "stats": 1,
     # L2 - analyses (deterministic, no order path)

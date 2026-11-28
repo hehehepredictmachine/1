@@ -102,8 +102,11 @@ def import_package(pkg: str | Path) -> dict:
         shutil.copytree(src, tmp)
         tmp.replace(dst)
         from ..marketdata.store import iso as _iso                     # 1.46: ISO text like native versions (a float broke summary() sorting)
-        R.register_imported_version(inst, res["model_key"], {"version": res["version"], "created_at": _iso(time.time()), "source": "STUDIO",
-                                                             "import_id": iid, "package": str(pkg)})   # 1.46 arch: under reg_lock
+        # arch146 I0643: the full version entry of a trained package (model_id, base_tf, horizon, data_kind, holdout, walk_forward without
+        # folds, trading_eval_holdout, path) read from the copied package - not only {version, created_at, source, import_id, package}
+        entry = R.package_entry(inst, res["model_key"], res["version"]) or {"version": res["version"]}
+        entry.update(created_at=_iso(time.time()), source="STUDIO", import_id=iid, package=str(pkg))
+        R.register_imported_version(inst, res["model_key"], entry)     # 1.46 arch: under reg_lock
         rec = {"import_id": iid, "kind": "TRAINHUB", "instrument": inst, "model_key": res["model_key"], "version": res["version"]}
     elif res["kind"] == "FAMILY":
         from ..modelhub.families import base as FB

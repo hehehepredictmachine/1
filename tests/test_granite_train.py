@@ -86,7 +86,8 @@ class TestGraniteTrainBot(unittest.TestCase):
             (d / "model.safetensors").write_bytes(b"changed")
         (d / "granite_finetune.json").write_text(json.dumps({"run_id": rid, "base_fingerprint": base or L.fingerprint("granite_ttm"), "files": files,
                                                              "data": {"timeframe": "M5"}, "train": {"horizon": horizon},
-                                                             "metrics": {"verdict": verdict}}), encoding="utf-8")
+                                                             # 1.46 (I0845): activation also needs >= 100 test windows
+                                                             "metrics": {"verdict": verdict, "test_windows": 150}}), encoding="utf-8")
 
     def test_activation_rules_history_and_rollback(self):
         from masterquo.tsfm import granite_train as G

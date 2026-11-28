@@ -18,10 +18,11 @@ import time
 from datetime import datetime
 from pathlib import Path
 
-from ..timeutil import iso, utcnow
+from ..timeutil import iso, parse_iso, utcnow
 from . import adapters, hedge as hedge_mod, indicators as ind, replay, sessions, strategy as st
 
 TFS = {"M1": 1, "M5": 5, "M15": 15, "M30": 30, "H1": 60}
+RISK_REF_MAX_LAG_S = 600            # 1.46 arch (I0810): the day reference must be observed within 10 min after 00:00 UTC
 
 
 # w2 (I0031): the outcome definition of scalp_shadow rows (_outcome / replay.walk on M1, net of costs, full TP1/TP2/BE cycle) - the same
@@ -94,13 +95,21 @@ class ScalpService:
             self.state.update(instrument=self.inst, profile_id=self.prof["profile_id"], profile_hash=st.profile_hash(self.prof))
             if self.dashboard is not None:
                 self.dashboard.last = None                  # no snapshot of the previous instrument under the new one
+        try:                                                # 1.46 arch (I0810): loss-limit references from the first equity of the UTC day / week
+            self._risk_reference(self.bridge.account_status() or {})
+        except Exception:                                 # a reference file problem is reported by the gate, never stops the SHADOW machine
+            import logging
+            logging.getLogger("masterquo.scalp").warning("risk reference update failed", exc_info=True)
         bars = {tf: [b for b in self.bridge.bars(tf, cfg.scalp.m1_bars if tf == "M1" else 400, include_forming=False) if b.get("open_utc")]
                 for tf in TFS}
         if not bars["M1"] or not bars["M5"]:
             if self.state["status"] != "NO_DATA":
                 self._set("NO_DATA", "brak zamkniętych M1/M5 z bieżącej sesji MT5")
             return
-        key = f"{bars['M1'][-1]['open_utc']}|{bars['M1'][-1].get('revision')}"
+        m1_key = f"{bars['M1'][-1]['open_utc']}|{bars['M1'][-1].get('revision')}"
+        # 1.46 arch (I0737): the key covers the last closed bar of EVERY TF - an M5 / M15 / M30 / H1 bar that arrives one poll after the
+        # M1 of its close is fed at once (before: only with the next M1); candidates still come only from a new M1
+        key = m1_key + "".join(f"|{tf}:{bars[tf][-1]['open_utc']}:{bars[tf][-1].get('revision')}" for tf in TFS if tf != "M1" and bars[tf])
         epoch = getattr(self.bridge, "session_epoch", None)
         if key == self.last_key and epoch == self.epoch:
             return
@@ -112,9 +121,10 @@ class ScalpService:
             self.machine, self.fed, self.epoch = st.ScalpMachine(self.prof, tick), {}, epoch     # restart / reconnect: rebuild from history
         self._feed(bars, point)
         self._bars = bars
-        if getattr(self, "nss", None) is not None:            # PMW-UPD-04: context telemetry on every new closed M1 (latest wins)
+        new_m1 = m1_key != getattr(self, "_last_m1_key", None) or epoch != getattr(self, "_last_m1_epoch", None)
+        if getattr(self, "nss", None) is not None and new_m1:  # PMW-UPD-04: context telemetry on every new closed M1 (latest wins)
             self.nss.on_m1(bars, instrument=self.inst, epoch=epoch, point=point)
-        self.last_key = key
+        self.last_key, self._last_m1_key, self._last_m1_epoch = key, m1_key, epoch
         cands = self.machine.candidates
         self.machine.candidates = []
         for plan in cands:
@@ -148,14 +158,31 @@ class ScalpService:
                     x["spread_price"] = b["spread"] * point if b.get("spread") is not None else None
                     ev.append((t + mins * 60, pri, tf, x, t))
         ev.sort(key=lambda e: (e[0], e[1]))
+        race = getattr(self, "_race", None)
+        if race is None:
+            race = self._race = {}
+        m1_open = {st.ts(b["open_utc"]) for b in bars["M1"]}
         for _, _, tf, x, t in ev:
             if tf in ("M15", "M30", "H1"):
                 self.machine.add_context(TFS[tf], x)
             elif tf == "M5":
+                # 1.46 arch (I0737): an M5 fed AFTER the M1 of its close (polling race) arms its range with that M1 inside the zone search,
+                # unlike the replay (M5 before M1 at a common close) - such a range gives no candidates (NOT_VERIFIED, never a new one)
+                late = len(self.machine.m1) > 0 and self.machine.m1.close_time() >= t + 300
+                before = self.machine.range
                 self.machine.on_m5_close(x)
+                if late and self.machine.range is not None and self.machine.range is not before:
+                    for d in ("BUY", "SELL"):
+                        self.machine.close_direction(d, "BLOCKED", "NOT_VERIFIED – zakres uzbrojony po spóźnionej M5 (M1 z tym samym zamknięciem "
+                                                     "już podana): strefa niezgodna z replay", t + 300)
             else:
+                lag = _tf_lag(bars, t + 60, m1_open)
+                if lag:
+                    race[t + 60] = lag                          # a higher TF bar closing at or before this M1's close is not there yet
                 self.machine.on_m1_close(x)
             self.fed[tf] = t
+        for k in sorted(race)[:-50]:
+            race.pop(k, None)
 
     # ------------------------------------------------------------ gates (logical AND; missing information = BLOCKED)
     def _evaluate(self, plan: dict, cfg, info: dict, tick: float) -> None:
@@ -168,6 +195,10 @@ class ScalpService:
         import mq_instruments
         gate(f"symbol {self.inst}", info.get("currency_base") is None or mq_instruments.check_metadata(self.inst, info)[0],
              f"{info.get('currency_base')}/{info.get('currency_profit')}")
+        lag = (getattr(self, "_race", None) or {}).get(plan["decision_ts"])
+        gate("komplet TF w chwili decyzji", not lag,           # 1.46 arch (I0737): the M1 of the decision was fed before a higher TF bar of its close
+             ("NOT_VERIFIED – brak zamkniętej świecy " + "/".join(lag) + " z zamknięciem ≤ decyzji (wyścig pollingu; replay podaje ją przed M1)")
+             if lag else "M5/M15/M30/H1 zamknięte w chwili decyzji")
         q = self.bridge.quote_status() or {}
         age = q.get("age_seconds")
         fresh = bool(q.get("bid") and q.get("ask") and q["bid"] <= q["ask"] and age is not None and age <= st.V(self.prof, "risk", "quote_ttl_s"))
@@ -187,18 +218,26 @@ class ScalpService:
         cs = float(info.get("trade_contract_size") or 0)
         com = cfg.scalp.commission_per_lot_side
         gate("prowizja znana", com is not None, "ustaw scalp.commission_per_lot_side (Zero ≠ 0 kosztów)" if com is None else f"{com}/lot/stronę")
+        acc = self.bridge.account_status() or {}
+        # 1.46 arch (I0738): budget and commission are in the ACCOUNT currency, contract_size converts into the QUOTE currency. MT5's
+        # money per price unit (trade_tick_value / trade_tick_size) converts into the account currency; another account currency without
+        # it cannot be verified -> blocked. Costs and lots use the more conservative of both conversions (never fewer costs / more lots).
+        mpp = money_per_price(info)
+        acc_ccy, q_ccy = acc.get("currency"), info.get("currency_profit")
+        cross = bool(acc_ccy and q_ccy and str(acc_ccy).upper() != str(q_ccy).upper())
+        gate("wartość ticka (waluta konta)", mpp is not None or not cross,
+             f"{mpp:.4g} {acc_ccy or '?'} / 1.0 ceny / lot" if mpp is not None else
+             f"NOT_VERIFIED – konto {acc_ccy}, kwotowanie {q_ccy}, brak trade_tick_value" if cross else "waluta konta = waluta kwotowania")
         eco = extra = None
         if fill is not None and cs > 0:
-            extra = 2 * (com or 0.0) / cs + 2 * cfg.scalp.slippage_ticks * tick
-            eco = st.economics(plan, fill, sp, extra, self.prof)
-            gate("koszt i RR (filtr geometrii)", eco["ok"], eco["reason"])
+            eco, extra, eco_ok, eco_detail = economics_gate(plan, fill, sp, com or 0.0, cs, mpp, cfg.scalp.slippage_ticks, tick, self.prof)
+            gate("koszt i RR (filtr geometrii)", eco_ok, eco_detail)
             sp_ok = sp <= cfg.scalp.max_spread_atr_m1 * plan["atr_m1"] and (cfg.scalp.max_spread_price is None or sp <= cfg.scalp.max_spread_price)
             gate("spread", sp_ok, f"{sp:.3f}")
-        acc = self.bridge.account_status() or {}
         sz = None
         if eco and acc.get("equity"):
             sz = st.size(eco["risk_per_unit"], cs, float(acc["equity"]), self.prof, float(info.get("volume_min") or 0.01),
-                         float(info.get("volume_step") or 0.01), float(info.get("volume_max") or 100))
+                         float(info.get("volume_step") or 0.01), float(info.get("volume_max") or 100), money_per_price=mpp)
             gate("wielkość pozycji", sz["ok"], sz.get("reason") or f"{sz['lots']} lot ({sz['exit_variant']})")
         else:
             gate("wielkość pozycji", False, "brak equity / kosztu")
@@ -247,31 +286,77 @@ class ScalpService:
                 import logging
                 logging.getLogger("masterquo.scalp").exception("scalp listener failed")
 
-    def _loss_limits(self, acc: dict) -> tuple[bool, str]:
+    def _risk_reference(self, acc: dict, now: datetime | None = None, candidate: bool = False) -> dict | None:
+        """Equity references of the daily / weekly loss limits (risk_reference.json, persisted: a restart does not reset them).
+        1.46 arch (I0810): the reference of a UTC day / ISO week is the FIRST equity observed in it - tick() calls this on every poll,
+        so a running bot records it right after 00:00 UTC (before: the equity at the first CANDIDATE of the day, hours later). The
+        first-candidate equity is kept too (candidate=True) and the gate uses the higher of both (never a looser limit than before).
+        Unreadable JSON -> a new reference marked unreadable_day (the gate blocks that day; before: a fresh baseline that passed);
+        another read error -> None (the gate blocks, the file is left as it is for the next poll)."""
+        eq = acc.get("equity")
+        now = now or utcnow()
+        day, week = now.strftime("%Y-%m-%d"), now.strftime("%G-W%V")
+        p = self._root() / "risk_reference.json"
+        cached = getattr(self, "_risk_ref", None)
+        changed = False
+        if cached is not None and cached[0] == str(p):
+            ref = cached[1]
+        else:
+            try:
+                ref = json.loads(p.read_text(encoding="utf-8"))
+            except FileNotFoundError:
+                ref = {}
+            except ValueError:
+                ref = None
+            except OSError:
+                return None
+            if not isinstance(ref, dict):
+                ref, changed = {"unreadable_day": day, "unreadable_at": iso(now)}, True
+        if eq:
+            if ref.get("day") != day:
+                ref.update(day=day, day_equity=eq, day_observed_at=iso(now))
+                changed = True
+            if ref.get("week") != week:
+                ref.update(week=week, week_equity=eq, week_observed_at=iso(now))
+                changed = True
+            if candidate and ref.get("day_candidate") != day:
+                ref.update(day_candidate=day, day_candidate_equity=eq)
+                changed = True
+            if candidate and ref.get("week_candidate") != week:
+                ref.update(week_candidate=week, week_candidate_equity=eq)
+                changed = True
+        if changed:
+            p.parent.mkdir(parents=True, exist_ok=True)
+            _atomic_write_text(p, json.dumps(ref))                         # 1.46: tmp + replace (an interrupted write_text left a broken file)
+        self._risk_ref = (str(p), ref)
+        return ref
+
+    def _loss_limits(self, acc: dict, now: datetime | None = None) -> tuple[bool, str]:
         eq = acc.get("equity")
         if not eq:
             return False, "brak equity"
-        p = self._root() / "risk_reference.json"
-        now = utcnow()
-        day, week = now.strftime("%Y-%m-%d"), now.strftime("%G-W%V")
-        try:
-            ref = json.loads(p.read_text(encoding="utf-8"))
-        except (OSError, ValueError):
-            ref = {}
-        changed = False
-        if ref.get("day") != day:
-            ref.update(day=day, day_equity=eq)
-            changed = True
-        if ref.get("week") != week:
-            ref.update(week=week, week_equity=eq)
-            changed = True
-        if changed:                                                        # persisted: a restart does not reset the counters
-            p.parent.mkdir(parents=True, exist_ok=True)
-            _atomic_write_text(p, json.dumps(ref))                         # 1.46: tmp + replace (an interrupted write_text left a broken file)
-        dl = (ref["day_equity"] - eq) / ref["day_equity"] * 100
-        wl = (ref["week_equity"] - eq) / ref["week_equity"] * 100
+        now = now or utcnow()
+        ref = self._risk_reference(acc, now, candidate=True)
+        if ref is None:
+            return False, "UNAVAILABLE – risk_reference.json nie daje się odczytać – limity strat niezweryfikowane"
+        day_ref = max(float(ref["day_equity"]), float(ref.get("day_candidate_equity") or 0.0))
+        week_ref = max(float(ref["week_equity"]), float(ref.get("week_candidate_equity") or 0.0))
+        dl = (day_ref - eq) / day_ref * 100
+        wl = (week_ref - eq) / week_ref * 100
         ok = dl < st.V(self.prof, "risk", "daily_loss_pct") and wl < st.V(self.prof, "risk", "weekly_loss_pct")
-        return ok, f"dzień {dl:.2f}% / tydzień {wl:.2f}% (equity całego konta, reset 00:00 UTC; wpłaty/wypłaty nie są korygowane)"
+        why = f"dzień {dl:.2f}% / tydzień {wl:.2f}% (equity całego konta, reset 00:00 UTC; wpłaty/wypłaty nie są korygowane)"
+        if ref.get("unreadable_day") == now.strftime("%Y-%m-%d"):
+            return False, "UNAVAILABLE – risk_reference.json był nieczytelny, odniesienie dnia nieznane (do 00:00 UTC); " + why
+        obs = ref.get("day_observed_at")
+        midnight = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        lag = (parse_iso(obs) - midnight).total_seconds() if obs else None
+        if lag is None or lag > RISK_REF_MAX_LAG_S:                        # started during the day: the loss since 00:00 is unknown
+            # 1.46 arch (I0810, review): a bot started after 00:10 UTC has no READY_SHADOW (no scalp signal, no SHADOW settlement) until
+            # 00:00 UTC; reconstructing the day reference from the MT5 deal history is a separate item (not implemented)
+            return False, (f"NOT_VERIFIED – brak equity z początku dnia (pierwsza obserwacja {obs[11:16] if obs else '?'} UTC, start w trakcie dnia); "
+                           f"do 00:00 UTC żaden kandydat nie dostanie READY_SHADOW – bot działający o północy UTC (do 00:{RISK_REF_MAX_LAG_S // 60:02d}) "
+                           "zapisze odniesienie następnego dnia; " + why)
+        return ok, why
 
     def _calendar(self) -> tuple[bool, str]:
         if not self.news:
@@ -368,7 +453,9 @@ class ScalpService:
         info = self.bridge.symbol_info or {}
         cs = float(info.get("trade_contract_size") or 100.0)
         tick = float(info.get("trade_tick_size") or 0.01)
-        return {"commission_price_side": (cfg.scalp.commission_per_lot_side or 0.0) / cs, "slippage_price": cfg.scalp.slippage_ticks * tick}
+        # 1.46 arch (I0738): commission (account currency) -> price with the same conservative conversion as the live economics gate
+        return {"commission_price_side": commission_price(cfg.scalp.commission_per_lot_side or 0.0, cs, money_per_price(info)),
+                "slippage_price": cfg.scalp.slippage_ticks * tick}
 
     def liquidity_context(self, plan: dict) -> dict:
         if self.liquidity is None:
@@ -410,19 +497,23 @@ class ScalpService:
             return {"status": "ERROR", "reason": f"{type(exc).__name__}: {exc}"[:200]}
 
     def indicator_context(self, plan: dict) -> dict:
-        """SCALP_INDICATOR_CONTEXT_V1 for THIS setup (same composer as training). No active model -> NO_MODEL (no percentage)."""
+        """SCALP_INDICATOR_CONTEXT_V2 for THIS setup (same composer as training). No active model -> NO_MODEL (no percentage).
+        1.46 arch: the model comes from the injected ExtIndService (I0077 - scalp does not import extind); the SAR window gets its
+        own fetch of closed M5 / M15 (I0165 - the 400 bars of tick() lose one bar to _closed when an M5 closed after the decision)."""
         try:
-            from ..extind import trainer as ict
-            m = ict.active_model(self.inst)
+            why: list = []
+            m = self.extind.active_model(self.inst, why) if self.extind is not None else None
             if m is None:
                 return {"status": "NO_MODEL", "task_id": "SCALP_TP1_FIRST_WITHIN_FROZEN_POLICY_V1",
-                        "reason": "brak aktywnego modelu kontekstu wskaźników (indicator-context train + activate)"}
+                        "reason": (f"aktywny model kontekstu wskaźników nie daje się wczytać: {why[0]}" if why else
+                                   "brak aktywnego modelu kontekstu wskaźników (indicator-context train + activate)")}
             from datetime import datetime as _dt, timezone as _tz
             t = _dt.fromtimestamp(plan["decision_ts"], _tz.utc)
-            bars = getattr(self, "_bars", {}) or {}
-            ext = {a: (self.extind.as_of(a, self.inst, t) if self.extind else None) for a in ("IQ_GOLD_GANN", "IQ_STAR_LINES")}
+            need = int(getattr(m, "bars_needed", 404))
+            bars = {k: [b for b in self.bridge.bars(k, need, include_forming=False) if b.get("open_utc")] for k in ("M5", "M15")}
+            ext = {a: self.extind.as_of(a, self.inst, t) for a in ("IQ_GOLD_GANN", "IQ_STAR_LINES")}
             return dict(m.predict({"decision_time": t, "side": plan["direction"], "price": plan["ref_close_bid"], "atr_m5": plan["range"]["atr_m5"],
-                                   "base": plan.get("features") or {}, "bars": {k: bars.get(k) or [] for k in ("M5", "M15")}, "ext": ext}, self.inst),
+                                   "base": plan.get("features") or {}, "bars": bars, "ext": ext}, self.inst),
                         setup_id=plan["setup_id"], as_of=plan["decision_time"])
         except Exception as exc:  # noqa: BLE001 - observation only
             return {"status": "ERROR", "reason": f"{type(exc).__name__}: {exc}"[:200]}
@@ -525,8 +616,11 @@ class ScalpService:
         if why:
             return {"status": "UNAVAILABLE", "reason": why["reason"], "reason_code": why["code"]}
         try:
+            # 1.46 arch (I0025): no symbol spec = no forecast (it guessed point 0.01 for the spread scale; training uses the export's point)
+            pt = float((self.bridge.symbol_info or {}).get("point") or 0)
+            if pt <= 0:
+                return {"status": "UNAVAILABLE", "reason": "brak specyfikacji symbolu (point) z MT5 – prognoza bez zgadywania skali spreadu"}
             m1 = self.bridge.bars("M1", 400, include_forming=False)
-            pt = float((self.bridge.symbol_info or {}).get("point") or 0.01)
             req = {"cmd": "scalp_forecast", "m1": [dict({k: b[k] for k in ("open_utc", "o", "h", "l", "c", "tv")},
                                                         spread_price=b["spread"] * pt if b.get("spread") is not None else None) for b in m1],
                    **self._feed_contract()}
@@ -624,6 +718,51 @@ class ScalpService:
         if not v:
             return {}
         return {"p50": round(v[len(v) // 2], 1), "p95": round(v[int(0.95 * (len(v) - 1))], 1), "n": len(v)}
+
+
+def _tf_lag(bars: dict, T: int, m1_open: set) -> list[str]:
+    """Higher TFs whose bar closing at or before T is not in the poll although the market traded in its last minute (an M1 opened
+    at its close - 60 s is there): the M1 of T would reach the machine before it (1.46 arch I0737)."""
+    out = []
+    for tf in ("M5", "M15", "M30", "H1"):
+        b = bars.get(tf) or []
+        if not b:
+            continue                                        # no bars at all: the context filter reports WARMUP
+        due = st.ts(b[-1]["open_utc"]) + 2 * TFS[tf] * 60   # close of the bar after the newest one received
+        if due <= T and (due - 60) in m1_open:
+            out.append(tf)
+    return out
+
+
+def money_per_price(info: dict) -> float | None:
+    """Account currency per 1.0 of price per 1 lot from MT5 (trade_tick_value / trade_tick_size), None when MT5 did not give both."""
+    try:
+        tv, ts_ = float(info.get("trade_tick_value") or 0), float(info.get("trade_tick_size") or 0)
+    except (TypeError, ValueError):
+        return None
+    return tv / ts_ if tv > 0 and ts_ > 0 else None
+
+
+def commission_price(com: float, contract_size: float, mpp: float | None) -> float:
+    """Commission per lot side (account currency) in price units per unit volume - the larger of com / contract size (quote currency =
+    account currency, the value before 1.46 arch) and com / money_per_price (MT5 conversion): never a smaller cost than before."""
+    old = com / contract_size if contract_size > 0 else 0.0
+    return max(old, com / mpp) if mpp else old
+
+
+def economics_gate(plan: dict, fill: float, spread: float, com: float, contract_size: float, mpp: float | None, slippage_ticks: float,
+                   tick: float, prof: dict) -> tuple[dict, float, bool, str]:
+    """The live 'koszt i RR' gate: (economics at the account-currency cost, that cost, ok, detail).
+    1.46 arch (I0738, review): a higher cost alone is not monotonic in economics (risk = side + cost crosses 0 for an entry at / beyond the
+    SL), so the gate also requires the economics at the cost before 1.46 arch (2 x com / contract size + slippage, the same formula) -
+    by construction never a pass that the code before did not give. economics() itself rejects an execution price at / beyond the SL."""
+    extra = 2 * commission_price(com, contract_size, mpp) + 2 * slippage_ticks * tick
+    eco = st.economics(plan, fill, spread, extra, prof)
+    extra0 = 2 * com / contract_size + 2 * slippage_ticks * tick
+    eco0 = eco if extra0 == extra else st.economics(plan, fill, spread, extra0, prof)
+    ok = bool(eco["ok"] and eco0["ok"])
+    detail = eco["reason"] if ok or not eco["ok"] else f"{eco0['reason']} (koszt sprzed 1.46: prowizja / rozmiar kontraktu)"
+    return eco, extra, ok, detail
 
 
 def _read_json(p: Path, bad: list[str]):

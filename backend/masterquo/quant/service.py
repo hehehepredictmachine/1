@@ -17,6 +17,9 @@ import inspect
 import json
 import logging
 import math
+import os
+import subprocess
+import sys
 import threading
 import time
 import uuid
@@ -627,15 +630,68 @@ class QuantService:
                 job["state"] = "DONE"
             except Exception as exc:  # noqa: BLE001
                 job["state"], job["error"] = "FAILED", f"{type(exc).__name__}: {exc}"[:300]
-            job["finished_at"] = self.clock()
-            write_json_atomic(self.base / "jobs" / f"{jid}.json", job)
-            with self._lock:
-                self._models.clear()
-        if background:
+            self._job_done(job)
+        # arch146 I0069: the panel's background training runs in its own process (`python -m masterquo quant train` - the same
+        # train_from_ledger on the same ledger file), not in a thread of the bot (trainhub/jobs.py: training never runs in the panel /
+        # inference process). The artifacts are the same; activation stays a separate, explicit call. A call with its own criteria or
+        # another data folder (tests) keeps the in-process path.
+        if background and crit is None and self.base.resolve() == qdir().resolve():
+            self._train_child(job, inst, task_hash)
+        elif background:
             threading.Thread(target=work, name="quant-train", daemon=True).start()
         else:
             work()
         return job
+
+    def _job_done(self, job: dict) -> None:
+        job["finished_at"] = self.clock()
+        write_json_atomic(self.base / "jobs" / f"{job['job_id']}.json", job)
+        with self._lock:
+            self._models.clear()
+
+    def _train_child(self, job: dict, inst: str, task_hash: str | None) -> None:
+        jdir = self.base / "jobs"
+        jdir.mkdir(parents=True, exist_ok=True)
+        out, logp = jdir / f"{job['job_id']}.result.json", jdir / f"{job['job_id']}.log"
+        cmd = [sys.executable, "-m", "masterquo", "quant", "train", "--instrument", inst, "--job-out", str(out)] + \
+            (["--task", str(task_hash)] if task_hash else [])
+        env = dict(os.environ, PYTHONIOENCODING="utf-8", MASTERQUO_DATA_DIR=str(paths.data_dir()), MQ_TRAINING="1")
+        kw = {"creationflags": getattr(subprocess, "CREATE_NO_WINDOW", 0) | getattr(subprocess, "BELOW_NORMAL_PRIORITY_CLASS", 0)} \
+            if os.name == "nt" else {"start_new_session": True}
+        try:
+            with open(logp, "a", encoding="utf-8") as lf:
+                p = subprocess.Popen(cmd, cwd=str(paths.ROOT_DIR / "backend"), env=env, stdout=lf, stderr=subprocess.STDOUT, **kw)
+        except OSError as exc:
+            job["state"], job["error"] = "FAILED", f"nie można uruchomić procesu treningu: {exc}"[:300]
+            self._job_done(job)
+            return
+        job["pid"] = p.pid
+        try:
+            from ..training import core as _tcore
+            _tcore.limit_child(p)
+            from .. import procs as _procs
+            _procs.REGISTRY.register(f"quant:{job['job_id']}", p, "training")
+        except Exception:  # noqa: BLE001, S110 - the cap / registry are best effort
+            pass
+
+        def watch():
+            rc = p.wait()
+            try:
+                res = json.loads(out.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                res = None
+            # job['log'] of /api/v1/quant/jobs as with the in-process training: the child's log lines (result file), else the tail of
+            # jobs/<jid>.log (a crash without a result: the traceback)
+            lines = res.get("log") if isinstance(res, dict) else None
+            job["log"] = [str(x) for x in lines][-200:] if isinstance(lines, list) else _log_tail(logp)
+            if isinstance(res, dict) and isinstance(res.get("results"), list):
+                job["results"], job["state"] = res["results"], "DONE"
+            else:
+                job["state"] = "FAILED"
+                job["error"] = (res or {}).get("error") if isinstance(res, dict) else None
+                job["error"] = (job["error"] or f"proces treningu zakończył się kodem {rc} bez wyniku (log: {logp.name})")[:300]
+            self._job_done(job)
+        threading.Thread(target=watch, name="quant-train-watch", daemon=True).start()
 
     # ------------------------------------------------------------------ read side
     def status(self) -> dict:
@@ -701,6 +757,15 @@ def _safe(fn, default):
         return fn()
     except Exception:  # noqa: BLE001
         return default
+
+
+def _log_tail(p: Path, n: int = 40) -> list[str]:
+    """Last non-empty lines of a training child's log file (arch146 I0069: job['log'] when the child left no result)."""
+    try:
+        lines = [x for x in p.read_text(encoding="utf-8", errors="replace").splitlines() if x.strip()]
+    except OSError:
+        return []
+    return [x[:500] for x in lines[-n:]]
 
 
 def train_from_ledger(ledger: QuantLedger, inst: str, task_hash: str | None = None, *, crit: dict | None = None, log=print) -> list[dict]:

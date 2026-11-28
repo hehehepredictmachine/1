@@ -461,6 +461,7 @@ def stage_train(ctx: Ctx) -> dict:
 
 def _train_runner(ctx: Ctx) -> dict:
     from ..training import core as RC
+    from ..training import profiles as RP
     from ..training import runner as RN
     task = ctx.task
     kind = task["task_id"]
@@ -471,7 +472,8 @@ def _train_runner(ctx: Ctx) -> dict:
         raise Blocked("BLOCKED_DATA", "brak symbolu / instrumentu w metadanych eksportu runnera (raw/export/runner_dataset)")
     # 1.46 arch: the runner profiles are TEST_INSTALACJI / PELNY_TRENING (config/training_profiles_v1.json); 'quick' / 'standard' (the
     # names the runner passes DOWN to its sub-tools) raised KeyError for every Studio runner-group task. Activation stays off below.
-    plan, tasks = RN.build_plan(instruments=[task["instrument"]], profile="TEST_INSTALACJI" if ctx.profile == "smoke" else "PELNY_TRENING",
+    # arch146 I0134: the mapping Studio profile -> runner profile lives in training/profiles.py (smoke -> TEST_INSTALACJI, else PELNY_TRENING)
+    plan, tasks = RN.build_plan(instruments=[task["instrument"]], profile=RP.runner_profile_for_studio(ctx.profile),
                                 symbols={task["instrument"]: meta["symbol"]}, commissions={}, months=None,
                                 synthetic=ctx.source["mode"] == "SYNTHETIC", tasks=[kind],
                                 datasets={task["instrument"]: str(ctx.pkg.dir / RAW / "runner_dataset")}, origin="studio")

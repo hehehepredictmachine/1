@@ -1,4 +1,5 @@
-"""Smoke of the extind area (`models check --smoke --area extind`): the indicator-context model (SCALP_INDICATOR_CONTEXT_V1), the SAR
+"""Smoke of the extind area (`models check --smoke --area extind`): the indicator-context model (features.FEATURE_SCHEMA, since 1.46 arch
+SCALP_INDICATOR_CONTEXT_V2: training gets the live decision inputs ref_close_bid / range ATR frozen at arming; V1 artefacts ABSTAIN), the SAR
 context with its grid calibration, the knowledge rules IND-K01..K12 and the bot side of the two native MQL5 sources (IQ Gold Gann,
 IQ Star Lines: pmw-extind-1 envelope -> ingest -> approved mapping -> point-in-time archive -> composer).
 
@@ -56,7 +57,8 @@ def _closed(bridge, tf: str, n: int) -> list[dict]:
 # ---------------------------------------------------------------------------------------------------------------- indicator context
 def _ic_data(ctx) -> dict:
     """Generated cycle table on the FakeMT5 history (the shape trainer.build_dataset produces from the replay): decision at the close
-    of an M5 bar, price = that close, atr_m5 = trainer.ind_atr of the 40 closed M5 (as trainer.py:109-110), BASE = random setup
+    of an M5 bar, price = that close, atr_m5 = trainer.ind_atr of the 40 closed M5 (the fallback of trainer.decision_inputs for a replay
+    record without range_atr_m5 - a synthetic fixture, the real dataset takes the range ATR frozen at arming), BASE = random setup
     features, y = 1 with a logistic signal on er10 (SYNTHETIC_TEST, the fixture of tests/test_ind_context.py)."""
     if "ic_data" in _CORE:
         return _CORE["ic_data"]
@@ -147,18 +149,18 @@ def _indicator_context(ctx) -> dict:
     live = sc.indicator_context(plan)                                # real live method: no active model (fixture refused) -> NO_MODEL
     snap = {"decision_time": tdec, "side": "BUY", "price": plan["ref_close_bid"], "base": plan["features"], "bars": bars,
             "ext": {a: c["ext"].as_of(a, INST, tdec) for a in ("IQ_GOLD_GANN", "IQ_STAR_LINES")}}
-    p_dec = m.predict(dict(snap, atr_m5=atr_dec), INST)               # the call scalp/service.py:412 makes, ATR at the decision (as in training)
+    p_dec = m.predict(dict(snap, atr_m5=atr_dec), INST)               # ContextModel.predict as ScalpService.indicator_context calls it, ATR at the decision
     atr_frozen = T.ind_atr(bars["M5"][-52:-12])
-    p_frz = m.predict(dict(snap, atr_m5=atr_frozen), INST)            # ATR frozen 12 M5 earlier (range armed) - the live input of service.py:412
+    p_frz = m.predict(dict(snap, atr_m5=atr_frozen), INST)            # ATR frozen 12 M5 earlier (range armed) - the live and V2 training input
     btc = m.predict(dict(snap, atr_m5=atr_dec), "BTC")
     warm = m.predict(dict(snap, atr_m5=atr_dec, bars={"M5": bars["M5"][:3], "M15": []}), INST)
     okp = (live.get("status") == "NO_MODEL" and p_dec.get("status") == "READY_INFERENCE" and 0.0 < p_dec.get("p_tp1_first", -1) < 1.0
            and btc.get("status") == "ABSTAIN" and warm.get("status") == "ABSTAIN")
     pd_, pf_ = p_dec.get("p_tp1_first", float("nan")), p_frz.get("p_tp1_first", float("nan"))
     out["predict"] = check(okp, f"ScalpService.indicator_context -> {live.get('status')} (fixture nieaktywowalny); ContextModel.predict (wywołanie "
-                                f"scalp/service.py:412) -> {p_dec.get('status')} p={pd_:.3f} SHADOW; BTC/3 świece -> ABSTAIN. ZNANY PROBLEM (nie FAIL): skew "
-                                f"atr_m5 trening=ATR w decyzji (extind/trainer.py:109-112), live=range.atr_m5 z uzbrojenia (scalp/service.py:412): ATR "
-                                f"{atr_dec:.2f} vs {atr_frozen:.2f} -> p {pd_:.3f} vs {pf_:.3f}",
+                                f"ScalpService.indicator_context) -> {p_dec.get('status')} p={pd_:.3f} SHADOW; BTC/3 świece -> ABSTAIN. Informacyjnie: "
+                                f"wrażliwość na atr_m5 (od {F.FEATURE_SCHEMA} trening i live biorą ATR zakresu z uzbrojenia, trainer.decision_inputs): ATR "
+                                f"w decyzji {atr_dec:.2f} vs z uzbrojenia {atr_frozen:.2f} -> p {pd_:.3f} vs {pf_:.3f}",
                            f"live {live.get('status')}, predict {p_dec.get('status')} {p_dec.get('reason')}, BTC {btc.get('status')}, warmup "
                            f"{warm.get('status')} (scalp/service.py:400-416, extind/trainer.py:362-374)")
     ctx.step = "contract"

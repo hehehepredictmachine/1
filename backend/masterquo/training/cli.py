@@ -139,6 +139,13 @@ def _ask_commission(inst: str) -> float | None:
 
 def cmd_run(a) -> int:
     from . import runner
+    from . import tasks as TT
+    if a.tasks:                                                   # arch146 I0133: before any MT5 connection / export (code 2 = blocked)
+        try:
+            TT.validate(a.tasks.split(","))
+        except ValueError as exc:
+            print(f"[BLAD] {exc}")
+            return 2
     if a.profile is None:
         a.profile = "PELNY_TRENING"
         if a.interactive:
@@ -479,7 +486,8 @@ def parser() -> argparse.ArgumentParser:
     r.add_argument("--symbol-btc", dest="symbol_btc")
     r.add_argument("--commission-xauusd", dest="commission_xauusd", type=float)
     r.add_argument("--commission-btc", dest="commission_btc", type=float)
-    r.add_argument("--tasks", help="podzbiór: forecast,scalp_A,ml,lab (eksport, kontrola, aktywacja i bot zawsze)")
+    r.add_argument("--tasks", help="podzbiór: forecast,scalp_A,ml,lab (eksport, kontrola, aktywacja i bot zawsze); 'none' = bez zadań modeli; "
+                   "nieznana nazwa = kod 2")
     r.add_argument("--no-approx", action="store_true", help="ML bez próbek APPROX (tylko dla tego zadania)")
     r.add_argument("--lab-bars", type=int)
     r.add_argument("--ml-days", type=int)

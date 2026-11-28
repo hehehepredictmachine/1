@@ -369,8 +369,11 @@ class MLService:
             kw["creationflags"] = getattr(subprocess, "BELOW_NORMAL_PRIORITY_CLASS", 0) | getattr(subprocess, "CREATE_NO_WINDOW", 0)
         else:
             kw["preexec_fn"] = lambda: os.nice(10)
-        return subprocess.Popen([sys.executable, "-m", "masterquo.ml.trainer", str(job_file)], cwd=str(BACKEND_ROOT), env=env,
-                                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, **kw)
+        p = subprocess.Popen([sys.executable, "-m", "masterquo.ml.trainer", str(job_file)], cwd=str(BACKEND_ROOT), env=env,
+                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, **kw)
+        from ..training import core as _tcore
+        _tcore.limit_child(p)                                    # arch146 I0069: the one RAM budget (the ML trainer had no cap)
+        return p
 
     def phase(self) -> str | None:
         with self._lock:

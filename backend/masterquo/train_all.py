@@ -23,16 +23,16 @@ from __future__ import annotations
 
 from . import localapi
 from .localapi import Bot  # noqa: F401 - 1.46 arch (I0075/I0080): the local-API client lives in masterquo/localapi.py; old name kept
+from .training import tasks as _TT
 
 # 1.46: LAB_FAMILIES / LAB_EXPERIMENTS and _wait removed - unused since train_all runs `training run` (families come from the training profile)
 
-# 1.46 (I0132): the explicit subset of `training run` tasks (order and set unchanged) with the --skip-* flag that switches each off
-TRAIN_ALL_TASKS = (("forecast", "skip_candles"), ("scalp_A", "skip_candles"), ("ml", "skip_ml"), ("lab", "skip_lab"),
-                   ("indicator_context", "skip_candles"), ("ml_scalp", "skip_ml"), ("neural_scalp", "skip_lab"),
-                   ("structure_intelligence", "skip_lab"), ("flow_context", "skip_lab"), ("context_indicators", "skip_lab"))
+# 1.46 (I0132): the explicit subset of `training run` tasks (order and set unchanged) with the --skip-* flag that switches each off.
+# arch146 I0131: read from the one task registry (training/tasks.py, field train_all) - no second hand-written copy
+TRAIN_ALL_TASKS = tuple((s["id"], s["train_all"]) for s in _TT.SPECS if s.get("train_all"))
 # tasks of training/runner.TASKS that train-all never trains (only `training run` without --tasks, as 22_TRENUJ_WSZYSTKIE_MODELE.bat does);
 # scalp_B / scalp_C are NOT here - runner.build_plan adds them to scalp_A (a test keeps this list equal to what the runner leaves out)
-NOT_IN_TRAIN_ALL = ("sh_models", "sh_pack", "monte_carlo", "master_models")
+NOT_IN_TRAIN_ALL = tuple(s["id"] for s in _TT.SPECS if not s.get("train_all") and s["id"] not in (*_TT.ALWAYS, "scalp_B", "scalp_C"))
 DEPRECATED_FLAGS = (("--scalp-months", "scalp_months"), ("--mt5-wait", "mt5_wait"))     # parsed for compatibility, never read
 
 
@@ -50,7 +50,9 @@ def train_all(a) -> int:
     for flag, attr in DEPRECATED_FLAGS:
         if getattr(a, attr, None) is not None:
             say(f"UWAGA: {flag} jest przestarzały i ignorowany (historia: --months; połączenie MT5 sprawdza `training run`)")
-    tasks = [t for t, skip in TRAIN_ALL_TASKS if not getattr(a, skip)]
+    # arch146 I0131: the train-all set comes from the one task registry (training/tasks.py, field train_all): the same 10 tasks in the same
+    # order with the same skip flags - never sh_models / sh_pack / monte_carlo / master_models
+    tasks = _TT.train_all_tasks({"skip_candles": a.skip_candles, "skip_ml": a.skip_ml, "skip_lab": a.skip_lab})
     argv = ["run", "--instruments", a.instruments, "--profile", "TEST_INSTALACJI" if a.quick else "PELNY_TRENING", "--origin", "train-all",
             "--tasks", ",".join(tasks) or "none"]
     for flag, v in (("--months", a.months), ("--commission-xauusd", a.commission), ("--commission-btc", a.commission_btc), ("--ml-days", a.ml_days),

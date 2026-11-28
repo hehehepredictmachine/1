@@ -591,8 +591,9 @@ class TestProducerHorizonsAndTimeframes(_Base):
             self.assertEqual((cap["tf"], cap["horizons"]), ("M5", [6]))
             self.assertEqual(cap["tf_allowed"], list(TF.HTF_OF))
             self.assertIn("paczk", cap["horizon_source"])
-        summary = {"versions": [{"model_key": "TH_RF_M15_H8"}], "active": {"TH_RF_M15_H8": "v3", "TH_XGB_M1_H12": "v1"}}
-        with mock.patch("masterquo.trainhub.registry.summary", return_value=summary):
+        # scalenie z training_studio (I0010): trainhub_state czyta jeden stan registry.status_of (rejestr paczek), nie summary()
+        reg = {"versions": {"TH_RF_M15_H8": [{"version": "v3"}]}, "active": {"TH_RF_M15_H8": "v3", "TH_XGB_M1_H12": "v1"}}
+        with mock.patch("masterquo.trainhub.registry.registry", return_value=reg):
             st = tabular.RF().trainhub_state("XAUUSD")
         self.assertEqual(st["active_config"], [{"model_key": "TH_RF_M15_H8", "version": "v3", "base_tf": "M15", "horizon": 8}])
         self.assertEqual((st["artifact"], st["use"]), ("CANDIDATE", "SHADOW"))                   # dotychczasowe pola bez zmian

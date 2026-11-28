@@ -1,19 +1,20 @@
-"""Chronos-2 and Granite TTM forecasts in the bot (1.37; 1.40: Granite TTM replaced FinCast) - OBSERVE by default, never an order.
+"""Chronos-2 (1.37), Granite TTM (1.40) and TiRex-2 (1.41) forecasts in the bot - OBSERVE by default, never an order. FinCast is
+retired (wycofany w 1.40, replaced by Granite TTM): history only.
 
 Data path (the SAME as Kronos - no second terminal connection, no new data source):
   closed bars of the existing MT5 bridge -> kronos.quality.check (closed only, order, duplicates, gaps, NaN/Inf, OHLC geometry, staleness)
   -> kronos.calendar (future candle times from the broker's real session slots: no weekend / break candles) -> ONE immutable snapshot
-  per (instrument, timeframe, last closed bar) shared by both models -> JSON line -> long-lived model process (`python -m
-  tsfm_runtime.worker` from .venv_chronos2 / .venv_granite, weights loaded once) -> forecast -> stored BEFORE its outcome.
+  per (instrument, timeframe, last closed bar) shared by all models -> JSON line -> long-lived model process (`python -m
+  tsfm_runtime.worker` from .venv_chronos2 / .venv_granite / .venv_tirex2, weights loaded once) -> forecast -> stored BEFORE its outcome.
 
-Load control: a forecast only after a NEW closed bar of an enabled (model, instrument, timeframe) or on demand; one bounded queue for both
+Load control: a forecast only after a NEW closed bar of an enabled (model, instrument, timeframe) or on demand; one bounded queue for all
 models processed by ONE executor thread (the models never run at the same time -> no shared-GPU OOM, CPU threads not oversubscribed); a
 newer bar replaces a waiting older job (dedup on (model, instrument, timeframe)); timeouts kill and restart the process with back-off; a
 heartbeat (ping) checks an idle process; the MT5 bridge, the UI and the order path never wait for a model.
 A result that arrives after a NEWER bar closed is stored but never shown as current (`superseded`). Failures (not installed, checksum,
 wrong checkpoint, out of memory, timeout, MT5 disconnected, stale / bad data, uncertain calendar) give a state with a reason and NO value.
 
-Output meaning (kept, never re-labelled): close-only REGRESSION in price units; point = Chronos-2 median / Granite TTM point (point_kind);
+Output meaning (kept, never re-labelled): close-only REGRESSION in price units; point = Chronos-2 / TiRex-2 median, Granite TTM point (point_kind);
 model quantiles (uncalibrated on the user's data); direction UP / FLAT / DOWN from the point at H by the explicit neutral band rule
 (the same rule as Kronos). No probability is derived from it.
 """
@@ -23,6 +24,7 @@ import hashlib
 import json
 import logging
 import os
+import re
 import subprocess
 import sys
 import threading
@@ -37,18 +39,31 @@ from ..kronos import quality as Q                   # 1.46: unused `kronos.calen
 from ..kronos.service import KronosService, scorecard_horizon
 from ..timeutil import TF_SECONDS, iso, parse_iso, utcnow
 from .core import neutral_band, predict_request
-from .settings import MODEL_IDS, PATHS, RETIRED_IDS as RETIRED, SettingsStore, default_weights_root, find_python, tsfm_dir
+from .settings import (
+    MODEL_IDS,
+    PATHS,
+    RETIRED_IDS as RETIRED,
+    SettingsStore,
+    default_weights_root,
+    find_python,
+    model_config_problems,
+    process_config_problems,
+    target_config_problems,
+    tsfm_dir,
+)
 
 log = logging.getLogger("masterquo.tsfm")
 
 STATUS_PL = {"NOT_INSTALLED": "nie zainstalowano środowiska modelu (przycisk „Zainstaluj” albo 38_MODELE_CHRONOS2_GRANITE.bat)",
              "NO_WEIGHTS": "brak zweryfikowanych wag modelu", "DISABLED": "model wyłączony w ustawieniach", "INSTALLING": "instalacja w toku",
              "STARTING": "uruchamianie procesu modelu", "LOADING": "ładowanie wag (raz na proces)", "READY": "model załadowany",
-             "ERROR": "błąd modelu", "IDLE": "zainstalowany – proces uruchomi się przy pierwszej prognozie"}
+             "ERROR": "błąd modelu", "IDLE": "zainstalowany – proces uruchomi się przy pierwszej prognozie",
+             "CONFIG": "ustawienia niezgodne z modelem – popraw je (model nie jest wywoływany)"}
 TARGET_PL = {"RESOURCE_PAUSED": "wstrzymane przez Memory Governor (za mało pamięci)", "READY": "prognoza aktualna", "WAITING": "czeka na zamkniętą świecę", "QUEUED": "w kolejce", "RUNNING": "liczenie",
              "MODEL_UNAVAILABLE": "model niedostępny", "NO_SYMBOL": "brak symbolu brokera", "MT5_DISCONNECTED": "MT5 rozłączony",
              "STALE": "dane nieaktualne", "BLOCK": "dane odrzucone (jakość)", "WARMUP": "za mało świec", "ERROR": "błąd", "DISABLED": "wyłączony",
-             "CALENDAR_UNCERTAIN": "niepewny kalendarz sesji", "SESSION_BREAK": "przerwa w notowaniach"}
+             "CALENDAR_UNCERTAIN": "niepewny kalendarz sesji", "SESSION_BREAK": "przerwa w notowaniach",
+             "CONFIG": "ustawienia niezgodne z modelem"}
 DIR_PL = {"UP": "wzrost", "DOWN": "spadek", "FLAT": "bocznie"}
 NAMES = {"chronos2": "Chronos-2", "granite_ttm": "Granite TTM", "tirex2": "TiRex-2", "fincast": "FinCast (wycofany)"}
 RETIRED_PL = "wycofany w 1.40 – zastąpiony przez Granite TTM; historia prognoz zachowana, model nie jest uruchamiany"
@@ -72,13 +87,32 @@ class ModelWorker:
         self.timings: list[float] = []
         self.errlog = None
         self.last_used = time.monotonic()            # last forecast request (heartbeat pings do not count) - idle release by the governor
+        self.gpu_fallback: dict | None = None        # 1.46 (I0200): the CURRENT process replaced a GPU process with a broken CUDA context
 
     def set_state(self, status: str, reason: str | None = None, code: str | None = None) -> None:
         self.state = {"status": status, "code": code, "reason": reason, "updated_at": iso(utcnow())}
 
+    def config_state(self, s) -> bool:
+        """1.46 (I0205): settings under which this model answers NO target (Granite TTM: context_len < 512, lookback < 512, profile ->
+        settings.process_config_problems) -> state CONFIG with the exact reason; the process is not started / asked (it could only
+        answer WARMUP / PROFILE_UNSUPPORTED at every bar). Decisions as before: no forecast -> the same unavailable state (ERROR) in the
+        contract, SH and the coordinator. Review (S0 fail-open): it switched the WHOLE model off also for settings it partly answers today
+        (a horizon > 96 on one TF, context_len > 512 with lookback 512) - their forecasts and ASSIST holds disappeared; a horizon > 96 is
+        now a CONFIG of that target only (TsfmService.tick) and context_len > 512 is computed as today."""
+        probs = process_config_problems(s, self.mid)
+        if not probs:
+            return False
+        if self.proc:
+            self.kill()
+        self.set_state("CONFIG", "; ".join(probs)[:400], "CONFIG")
+        return True
+
     def kill(self) -> None:
         p, self.proc = self.proc, None
         self.load_info, self.load_key = None, None
+        # 1.46 (I0200): the CPU fallback lives only as long as the broken GPU process would have - any later end of the process
+        # (timeout, heartbeat, governor release, settings, install, stop) starts the configured device again, as before
+        self.gpu_fallback = None
         if p and p.poll() is None:
             try:
                 p.stdin.write('{"cmd":"quit"}\n')
@@ -133,12 +167,24 @@ class ModelWorker:
     def ensure(self) -> bool:
         s = self.svc.settings.get()
         c = s.models[self.mid]
+        if self.config_state(s):
+            return False
         threads = self.svc.threads_for(self.mid, c)
-        key = (str(self.svc.weights_root()), c.device, threads, c.checkpoint)
+        fb = self.gpu_fallback
+        if fb and (fb.get("device_setting") != c.device or fb.get("python_path") != c.python_path):
+            self.gpu_fallback = fb = None                    # the user changed the device / environment: their setting applies again
+        device = "CPU" if fb else c.device                   # 1.46 (I0200): replacement of a process with a broken CUDA context
+        key = (str(self.svc.weights_root()), device, threads, c.checkpoint)
         if self.proc and self.proc.poll() is None and self.load_info and self.load_key == key:
             return True
         if self.proc and self.load_key != key:
             self.kill()
+            if fb:
+                # review (I0200): kill() ended the fallback (any other end of the process starts the configured device again) - the new
+                # process starts on the configured device; before it started once more on CPU marked as a fallback and the next
+                # ensure() restarted it again (two restarts for one key change)
+                fb, device = None, c.device
+                key = (str(self.svc.weights_root()), device, threads, c.checkpoint)
         if time.monotonic() < self.retry_at:
             return False
         py = find_python(self.mid, c)
@@ -171,7 +217,7 @@ class ModelWorker:
             self.info = {k: hello.get(k) for k in ("runtime", "versions", "cuda", "pid")} | {"python": py}
             self.set_state("LOADING", STATUS_PL["LOADING"])
             t0 = time.monotonic()
-            r = self.ask({"cmd": "load", "weights_root": str(self.svc.weights_root()), "device": c.device, "threads": threads, "verify_files": True,
+            r = self.ask({"cmd": "load", "weights_root": str(self.svc.weights_root()), "device": device, "threads": threads, "verify_files": True,
                           "checkpoint": c.checkpoint, "finetune_dir": str(tsfm_dir() / "finetuned" / self.mid)}, c.load_timeout_s)
         except (TimeoutError, RuntimeError, ValueError) as exc:
             return self.fail("WORKER_TIMEOUT" if isinstance(exc, TimeoutError) else "WORKER", str(exc))
@@ -179,6 +225,9 @@ class ModelWorker:
             return self.fail(r.get("code") or "LOAD_ERROR", r.get("error"))
         self.load_info, self.load_key, self.backoff = r["info"], key, 30.0
         self.load_info["cold_start_s"] = round(time.monotonic() - t0, 1)
+        if fb:
+            self.load_info["gpu_fallback"] = True
+            self.load_info["device_note"] = f"GPU_ERROR_FALLBACK_CPU: {fb.get('reason')}"[:300]
         gov = getattr(self.svc, "governor", None)
         if gov is not None:
             gov.record(self.mid, load_ms=r["info"].get("load_ms"))
@@ -198,6 +247,32 @@ class ModelWorker:
         except Exception:  # noqa: BLE001
             pass
         return False
+
+    def gpu_sticky(self, err: str | None) -> bool:
+        """1.46 (I0200): a predict EXCEPTION is a STICKY GPU failure only when the model runs on CUDA, the message is a GPU error AND the
+        process's CUDA context is broken (cuda_check). Then every later forecast of this process fails as well. A transient error (healthy
+        context, e.g. one CUDA OOM), an unknown answer (older worker: UNKNOWN_COMMAND) or a failed check -> False = the previous behaviour
+        (the process stays, the next bar is computed on the same device; a hung check is killed by ask() like a hung forecast)."""
+        if not str((self.load_info or {}).get("device") or "").startswith("cuda") or not gpu_error(err):
+            return False
+        try:
+            r = self.ask({"cmd": "cuda_check"}, 30)
+        except (TimeoutError, RuntimeError, ValueError):
+            return False
+        return bool(r.get("ok")) and r.get("healthy") is False
+
+    def fallback_to_cpu(self, err: str | None) -> None:
+        """1.46 (I0200): the GPU process with a broken CUDA context (before: kept, failing at EVERY bar until a restart / settings change)
+        is ended and replaced by a CPU process of the same weights. Its forecasts carry the use restriction GPU_FALLBACK_CPU (holds only,
+        see use_restriction); the fallback ends with that process (kill) or when the user changes the device / environment setting."""
+        c = self.svc.settings.get().models[self.mid]
+        self.fail("GPU_ERROR", f"{err} – kontekst CUDA procesu uszkodzony; restart procesu na CPU (te same wagi)"[:380])
+        self.gpu_fallback = {"reason": str(err or "")[:240], "device_setting": c.device, "python_path": c.python_path, "at": iso(utcnow())}
+        try:
+            self.svc.applog.info("TSFM", "GPU_FALLBACK", f"{NAMES[self.mid]}: błąd GPU ({str(err)[:120]}) – kolejna prognoza na CPU; prognozy "
+                                                         "awaryjne tylko wstrzymują wejścia (REQUIRED ich nie potwierdza).")
+        except Exception as exc:  # noqa: BLE001 - the event log never breaks the fallback
+            log.warning("tsfm applog: %s", exc)
 
     def heartbeat(self) -> None:
         if self.proc is None or self.proc.poll() is not None or not self.load_info or time.monotonic() - self.last_ok < 120:
@@ -337,8 +412,10 @@ class TsfmService:
                 w.set_state("NOT_INSTALLED", STATUS_PL["NOT_INSTALLED"], "NOT_INSTALLED")
             elif not env["weights_installed"]:
                 w.set_state("NO_WEIGHTS", env["weights_reason"], "NO_WEIGHTS")
+            elif w.config_state(s):
+                continue                                                 # 1.46 (I0205): CONFIG - never queued, the process is not asked
             else:
-                if w.state["status"] in ("NOT_INSTALLED", "NO_WEIGHTS", "DISABLED", "INSTALLING"):
+                if w.state["status"] in ("NOT_INSTALLED", "NO_WEIGHTS", "DISABLED", "INSTALLING", "CONFIG"):
                     w.set_state("IDLE", STATUS_PL["IDLE"])
                 elif w.state["status"] == "ERROR" and w.state.get("code") == "TICK":
                     # 1.46: a one-off scheduler exception (sqlite lock, manifest read, ...) is not a model failure - it no longer leaves
@@ -356,7 +433,15 @@ class TsfmService:
             mids = [m for m in mids if m in ready_models]
             for m in wanted[(inst, tf)]:
                 if m not in mids:
-                    self._ms((m, inst, tf)).update(state="MODEL_UNAVAILABLE", reason=self.workers[m].state.get("reason"))
+                    ws = self.workers[m].state
+                    self._ms((m, inst, tf)).update(state="CONFIG" if ws.get("status") == "CONFIG" else "MODEL_UNAVAILABLE", reason=ws.get("reason"))
+            for m in list(mids):
+                tp = target_config_problems(s, m, tf)
+                if tp:
+                    # 1.46 (I0205, review): a target the model can never answer (Granite TTM horizon > 96 on THIS TF - the engine answered
+                    # CONFIG for it at every bar) is not queued; the other timeframes of the model are computed exactly as before
+                    mids.remove(m)
+                    self._ms((m, inst, tf)).update(state="CONFIG", reason="; ".join(tp)[:400])
             if mids:
                 self._check_target(inst, tf, mids, s, conn, now, force=(force == (inst, tf)), force_model=force_model)
 
@@ -525,7 +610,13 @@ class TsfmService:
             self.counters["errors"] += 1
             if r.get("code") in ("RESOURCE_LIMIT",):
                 w.fail(r["code"], r.get("error"))
-            ms.update(state="ERROR", reason=f"{r.get('code')}: {r.get('error')}"[:400], last_key=job["bar_key"])
+            elif r.get("code") == "EXCEPTION" and w.gpu_sticky(r.get("error")):
+                w.fallback_to_cpu(r.get("error"))                 # 1.46 (I0200): was kept on the broken GPU - the error at every bar
+            hint = ""
+            if r.get("code") in ("WARMUP", "CONFIG", "PROFILE_UNSUPPORTED"):
+                probs = model_config_problems(s, mid)             # 1.46 (I0205): the setting behind it (message only - same ERROR state)
+                hint = f" – ustawienia: {'; '.join(probs)}" if probs else ""
+            ms.update(state="ERROR", reason=f"{r.get('code')}: {r.get('error')}{hint}"[:400], last_key=job["bar_key"])
             return None
         w.timings.append(float(r.get("ms") or 0))
         w.last_ok = w.last_used = time.monotonic()
@@ -600,7 +691,7 @@ class TsfmService:
                 "freq_class": r.get("freq_class"), "quality": job["quality"], "calendar": cinfo, "state": "READY",
                 "calibration": {"status": "UNCALIBRATED", "note": "kwantyle modelu nie były kalibrowane na danych brokera" if r.get("quantiles")
                                 else "prognoza punktowa – brak kwantyli; nie jest prawdopodobieństwem"},
-                "mode": "SHADOW", "execution_permission": False,
+                "mode": "SHADOW", "execution_permission": False, "use_restriction": use_restriction(load, job["instrument"], tf, H),
                 "note": "prognoza close (nie świece OHLC); kierunek z reguły pasma neutralnego – nie jest prawdopodobieństwem",
                 **({"band_incomplete_reason": "+".join(band_missing)} if band_missing else {})}
 
@@ -799,7 +890,8 @@ class TsfmService:
                         "status_pl": STATUS_PL.get(w.state["status"], w.state["status"]), "code": w.state.get("code"), "reason": w.state.get("reason"),
                         "updated_at": w.state.get("updated_at"), "worker": w.info, "load": w.load_info, "timing": w.timing(), "restarts": w.starts,
                         "enabled": c.enabled, "instruments": c.instruments, "timeframes": c.timeframes, "profile": c.profile, "context_len": c.context_len,
-                        "device": c.device, "use": {p: c.use[p].model_dump() for p in PATHS}, "env": self.env_status(mid),
+                        "device": c.device, "gpu_fallback": w.gpu_fallback,
+                        "use": {p: c.use[p].model_dump() for p in PATHS}, "env": self.env_status(mid),
                         "targets": [self.target_view((mid, i, tf)) for i in c.instruments for tf in c.timeframes],
                         "jobs": {n: (j and {x: j.get(x) for x in ("state", "message", "step", "total", "updated_at", "code")})
                                  for n, j in self.jobs.items() if n.endswith(mid)}}
@@ -1000,6 +1092,39 @@ class TsfmService:
                                                                "activation_policy": "VALIDATION", "activated_at": None}}}}})
         self.applog.info("TSFM", "USE", f"{NAMES[mid]}: {path} = {use} ({tf}), raporty {ids}.")
         return {"ok": True, "use": use, "reports": ids}
+
+
+_GPU_ERROR_RX = re.compile(r"cuda|cudnn|cublas|cufft|cusparse|curand|nvrtc|device-side|illegal memory access|out of memory|"
+                           r"accelerator\s*error", re.IGNORECASE)
+
+
+def gpu_error(text: str | None) -> bool:
+    """1.46 (I0200): does a model error message come from the GPU stack (CUDA / cuDNN / cuBLAS / device-side assert / CUDA OOM)?"""
+    return bool(text) and bool(_GPU_ERROR_RX.search(str(text)))
+
+
+def use_restriction(load: dict, inst: str, tf: str, H: int) -> dict | None:
+    """1.46: a forecast that may only HOLD an entry, never CONFIRM one (masterquo/tsfm/predictions.py: a REQUIRED role treats it as
+    unavailable; ASSIST / OBSERVE use it as before). None = no restriction.
+      GPU_FALLBACK_CPU (I0200): computed by the CPU process that replaced a GPU process with a broken CUDA context (before: no forecast
+                       at all until a restart) - in the contract rows (Quant inputs, model hub) AND in the ACTIVE coordinator rows (every
+                       role - review: the REQUIRED role also comes from config.json decision.required_models) it stays unavailable as
+                       before; only the SH receiver uses it, for an ASSIST hold;
+      CHECKPOINT_SCOPE (I0834 / I0844): a fine-tuned Granite TTM checkpoint outside the instrument / timeframe / horizon it was trained
+                       for (the checkpoint was used for every pair; the value is kept - Quant inputs and ASSIST holds stay as they were)."""
+    if load.get("gpu_fallback"):
+        return {"code": "GPU_FALLBACK_CPU", "reason": f"prognoza awaryjna na CPU po błędzie GPU ({load.get('device_note') or ''})"[:300]
+                + " – tylko wstrzymania ASSIST w odbiorniku SH; REQUIRED, ścieżka ACTIVE i wejścia Quant jej nie używają; ustaw urządzenie w "
+                "ustawieniach, by liczyć normalnie"}
+    ck = load.get("checkpoint") or "BASE"
+    if ck == "BASE":
+        return None
+    from tsfm_runtime.engines import finetune_scope
+    sc = finetune_scope(load.get("finetune"), instrument=inst, timeframe=tf, horizon=H)
+    if sc["in_scope"]:
+        return None
+    return {"code": "CHECKPOINT_SCOPE", "scope": sc,
+            "reason": f"checkpoint Granite TTM {ck} poza zakresem dotrenowania ({sc['reason']}) – prognoza nie potwierdza roli REQUIRED"}
 
 
 def ledger_fingerprint(fingerprint: str, checkpoint: str | None) -> str:

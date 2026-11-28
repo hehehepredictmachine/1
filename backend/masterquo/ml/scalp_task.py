@@ -218,15 +218,19 @@ def _day_boot(days: np.ndarray, x: np.ndarray, reps=2000, seed=7) -> dict:
 def reserve_holdout(db, inst: str, start: str, end: str, artifact_hash: str, task_id: str = TASK_ID, same_run: list | None = None) -> dict:
     """Transactional reservation BEFORE the holdout labels are read. An overlapping, already used period of the same market
     (any task / family / name) returns REUSED_PERIOD_EXPLORATORY. `same_run` = ledger entries ({"at", "artifact_hash"}) reserved
-    earlier by THIS run (the other side): the frozen models of one run are not a re-use of the period by each other."""
-    prev = db.query("SELECT * FROM eval_ledger WHERE instrument=? AND NOT (period_end <= ? OR period_start >= ?)", (inst, start, end))
+    earlier by THIS run (the other side): the frozen models of one run are not a re-use of the period by each other.
+    1.46 arch (I0038): the SELECT of overlapping periods and the INSERT run in ONE write transaction (BEGIN IMMEDIATE) - two
+    separate statements let two parallel trainings of the same period both read FRESH. Rows and statuses are unchanged."""
     own = {(e["at"], e["artifact_hash"]) for e in same_run or []}
-    prev = [x for x in prev if (x["at"], x["artifact_hash"]) not in own]
-    status = "REUSED_PERIOD_EXPLORATORY" if prev else "FRESH"
     at = datetime.now(timezone.utc).isoformat()
-    db.execute("INSERT INTO eval_ledger(at, instrument, task_id, period_start, period_end, artifact_hash, status) VALUES (?,?,?,?,?,?,?)",
-               (at, inst, task_id, start, end, artifact_hash, status))
-    return {"status": status, "previous": [dict(x) for x in prev][:5], "entry": {"at": at, "artifact_hash": artifact_hash}}
+    with db.tx() as c:
+        prev = [dict(r) for r in c.execute("SELECT * FROM eval_ledger WHERE instrument=? AND NOT (period_end <= ? OR period_start >= ?)",
+                                           (inst, start, end)).fetchall()]
+        prev = [x for x in prev if (x["at"], x["artifact_hash"]) not in own]
+        status = "REUSED_PERIOD_EXPLORATORY" if prev else "FRESH"
+        c.execute("INSERT INTO eval_ledger(at, instrument, task_id, period_start, period_end, artifact_hash, status) VALUES (?,?,?,?,?,?,?)",
+                  (at, inst, task_id, start, end, artifact_hash, status))
+    return {"status": status, "previous": prev[:5], "entry": {"at": at, "artifact_hash": artifact_hash}}
 
 
 # ------------------------------------------------------------------ the run

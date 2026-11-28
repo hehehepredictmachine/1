@@ -493,6 +493,9 @@ def create_app(rt, port: int) -> FastAPI:
             if pr is not None and pr.poll() is None:
                 raise HTTPException(409, "JOB_RUNNING – jedno zadanie treningu naraz (poprzedni proces jeszcze działa)")
             train_procs[kind] = start()
+            # arch146 I0100: ended by Runtime.stop() (tree without MT5)
+            from .. import procs as _procs
+            _procs.REGISTRY.register(f"api:{kind}", train_procs[kind], "training")
             return train_procs[kind]
 
     @app.post("/api/v1/indicator-context/train")

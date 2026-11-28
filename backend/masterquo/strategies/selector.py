@@ -10,7 +10,12 @@ enter the rank (no verified out-of-sample history exists yet - documented rule, 
 
 * signals sharing an event_id (same breakout/level/move) are grouped; only the best one is ranked,
   the others are listed as `grouped_with` (no double counting, no duplicate orders)
-* LONG vs SHORT in the same horizon with rank difference < conflict_margin -> CONFLICT, no selection
+* LONG vs SHORT in the same horizon with rank difference < conflict_margin -> CONFLICT, no selection. 1.46 arch (I0749): a HELD
+  selection whose best opposite candidate of its own horizon ranks within conflict_margin of it (or above it) is SUSPENDED - an extra
+  block only: `selected` stays exactly what the rules above hold (the engine's SELECTION_CHANGED, the AI agent requests, its context,
+  CONTEXT_HOURLY and the AI gate see the same setup as before), `suspended` carries the code and engine/active.decision_inputs passes
+  it to the decision (node PERMISSION FAIL -> no order). Before, the conflict cleared only the new candidate and the held setup could
+  be executed in the CONFLICT state. The selection log and reason_codes do not change (the selection itself did not change).
 * hysteresis: a challenger replaces the current selection only if it leads by >= min_switch_margin
   on `switch_confirm_updates` consecutive updates with NEW data and the current selection is older
   than min_selection_hold_seconds. Invalid/expired/stale/disabled selections are dropped immediately.
@@ -39,6 +44,9 @@ class StrategyAutoSelector:
         self.db = db
         self.selected: dict | None = None        # {"setup_id", "strategy_id", "at", "rank"}
         self.challenger: dict | None = None      # {"setup_id", "count"}
+        # 1.46 arch (I0749): {"setup_id", "strategy_id", "since", "code", "detail"} while the HELD selection is in a LONG/SHORT
+        # conflict (not executable - engine/active.decision_inputs); None otherwise. Never changes `selected`.
+        self.suspended: dict | None = None
         self.last_change: dict | None = None
         self.state: dict = {"system_state": "STARTING", "selected": None, "ranking": [], "reason_codes": ["NO_SCAN_YET"]}
         row = db.one("SELECT * FROM strategy_selection_log ORDER BY id DESC LIMIT 1")
@@ -56,6 +64,7 @@ class StrategyAutoSelector:
 
     def reset(self, reason: str) -> None:
         self.selected = None
+        self.suspended = None
         self.challenger = None
         self.state = {"system_state": "SCANNING", "selected": None, "ranking": [], "reason_codes": [reason]}
 
@@ -163,11 +172,26 @@ class StrategyAutoSelector:
             sel = next((x for x in grouped if x["setup_id"] == self.selected["setup_id"]), None)
             if sel is None:
                 self.selected = None
+        self._suspend(next((x for x in grouped if self.selected and x["setup_id"] == self.selected["setup_id"]), None), grouped,
+                      cfg.conflict_margin, now_s)
         if not self.selected:
             reasons.append("NO_VALID_CANDIDATE" if not grouped else "NO_SELECTION")
             if signal_only and not grouped:
                 reasons.append("ONLY_SIGNAL_ONLY_STRATEGIES_HAVE_SETUPS")
         return self._publish(regime, mode, manual, grouped, per_strategy, now_s, snapshot_id, reasons, signal_only)
+
+    def _suspend(self, row: dict | None, grouped: list[dict], margin: float, now_s: str) -> None:
+        """1.46 arch (I0749): sets `suspended` when the held selection `row` is in a same-horizon LONG/SHORT conflict - the best opposite
+        candidate of its horizon ranks within `margin` of it (or above it; this also covers the conflict of the best pair in the
+        horizon of the held selection). An overlay only: `selected`, the challenger, the log and reason_codes are untouched."""
+        opp = None if row is None else next((x for x in grouped if x["direction"] != row["direction"] and x["horizon"] == row["horizon"]), None)
+        if opp is None or row["rank_score"] - opp["rank_score"] >= margin:
+            self.suspended = None
+            return
+        code = f"SELECTION_SUSPENDED_CONFLICT_{row['direction']}_{opp['direction']}_{row['horizon']}"
+        keep = self.suspended if self.suspended and self.suspended["setup_id"] == row["setup_id"] else None
+        self.suspended = {"setup_id": row["setup_id"], "strategy_id": row["strategy_id"], "since": keep["since"] if keep else now_s,
+                          "code": code, "detail": f"{code}_DIFF_{row['rank_score'] - opp['rank_score']:.1f}_VS_{opp['strategy_id']}"}
 
     def _publish(self, regime, mode, manual, grouped, per_strategy, now_s, snapshot_id, reasons, signal_only=(), *, stale: bool = False) -> dict:
         sel = next((x for x in grouped if self.selected and x["setup_id"] == self.selected["setup_id"]), None)
@@ -192,6 +216,7 @@ class StrategyAutoSelector:
                       "regime": regime, "selected": sel, "selected_at": (self.selected or {}).get("at"),
                       "candidate_ranking": (list(grouped) + list(signal_only))[:10],
                       "alternative": alt, "reason_codes": reasons, "last_evaluated_at": now_s, "snapshot_id": snapshot_id,
+                      "suspended": dict(self.suspended) if self.suspended else None,      # 1.46 arch (I0749), added field
                       "last_change": self.last_change, "per_strategy": per_strategy}
         return self.state
 

@@ -710,6 +710,8 @@ class EngineService:
                 for a_ in ("IQ_GOLD_GANN", "IQ_STAR_LINES", "PAL02M"):
                     snap = ext.as_of(a_, inst, t) if a_ != "PAL02M" else None
                     sources[a_] = {k: st[a_][k] for k in ("identity_status", "source_status", "mapping_status", "runtime_status")}
+                    if snap and snap.get("confirmed_at"):     # 1.46 arch (I0729): available_at = first read of identical content, confirmed_at = last
+                        sources[a_]["confirmed_at"] = snap["confirmed_at"]
                     if snap:
                         # 1.46 arch I0180: a read without a verified server offset (TIME_BASIS_UNVERIFIED) is passed for its price levels
                         # only - windows and trendlines without a UTC time are dropped (not a schedule: no IND-K04/K05) and the read is marked

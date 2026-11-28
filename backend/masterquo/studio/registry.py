@@ -6,47 +6,19 @@ from __future__ import annotations
 import hashlib
 import json
 
+from ..training import tasks as _TT
+
 VERSION = "PMW-STUDIO-REG-1"
 INSTRUMENTS = ("XAUUSD", "BTC")
 ADAPTER_VERSION = {"TRAINHUB": "1", "FAMILY": "1", "RUNNER_GROUP": "1", "DETERMINISTIC": "1", "PRETRAINED": "1"}
 
-# existing training/runner.py tasks: each is ONE model task group with its own trainer + registry; activation stays manual.
-# kind -> (category, title, environment of the runner step, base timeframe). 1.46 (I0622): scalp_A runs in .venv_candles like forecast
-# (training/runner.py t_scalp / t_forecast: core.candles_python(); every other step core.bot_python() = .venv).
-_RUNNER = {
-    "forecast": ("TRAINABLE", "gold_candles 5/15/30 min (kierunek świecy)", ".venv_candles", "M5"),
-    "scalp_A": ("TRAINABLE", "Scalp A/B: kierunek 1/3/5 min + P(TP1 przed SL); C = ocena polityki w replayu", ".venv_candles", "M1"),
-    "ml": ("TRAINABLE", "Legacy ML: Decision Tree + XGBoost na historii setupów S01–S12", ".venv", "M5"),
-    "lab": ("TRAINABLE", "Lab: LOGREG/TREE/MiniRocket/XGB/ResNet1D/SEW-SNN (strona LONG)", ".venv", "M1"),
-    "indicator_context": ("CALIBRATABLE", "SAR + IQ/PAL: kalibracja SAR i model reakcji P(TP1 przed SL)", ".venv", "M1"),
-    "ml_scalp": ("TRAINABLE", "Scalp ML: XGBoost P(wynik netto > 0) + net_R, osobno LONG/SHORT", ".venv", "M1"),
-    "neural_scalp": ("TRAINABLE", "Neural Scalp System: TCN M1/M5 – P(TP1/SL/TIMEOUT), net_R", ".venv", "M1"),
-    "structure_intelligence": ("TRAINABLE", "Structure Intelligence: ruch M1 h=3/5/15", ".venv", "M1"),
-    "flow_context": ("CALIBRATABLE", "Flow context: kalibracja + model reakcji FLOW_CONTEXT_MOVE_M1_V1", ".venv", "M1"),
-    "context_indicators": ("CALIBRATABLE", "VAMD / FD / Pullback+SMC: kalibracja + CONTEXT_MOVE_M5_V1", ".venv", "M5"),
-    "sh_models": ("TRAINABLE", "SCALPING/HEDGING: model zdarzenia P(TP2 przed SL) + replay", ".venv", "M1"),
-    "sh_pack": ("SIMULATION", "Pakiet 20 strategii SC/HG: replay walk-forward i werdykt per wariant (bez treningu parametrów)", ".venv", "M1"),
-    "monte_carlo": ("SIMULATION", "Monte Carlo ścieżek: walidacja wariantów IID/BLOCK/REGIME", ".venv", "M1"),
-    "master_models": ("TRAINABLE", "Master models: HDC/GPR/event engine/STE-FlowNet + ewaluacja deterministycznych", ".venv", "M5"),
-}
-RUNNER_REQUIREMENTS_KEY = {"scalp_A": "scalp"}          # runner step name -> training/requirements.REQUIREMENTS key
+# existing training/runner.py tasks: each is ONE model task group with its own trainer + registry; activation stays manual. arch146 I0131: from the
+# one task registry (training/tasks.py) - the same keys, categories, venvs and base timeframes. kind -> (category, title, environment of
+# the runner step, export timeframes). 1.46 (I0622): scalp_A runs in .venv_candles like forecast (training/runner.py t_scalp / t_forecast:
+# core.candles_python(); every other step core.bot_python() = .venv). 1.46 (I0130): the export timeframes = the base timeframe (first,
+# part of task_key) + what the trainer reads (training/requirements.REQUIREMENTS, required + optional) - tasks.studio_export_tfs.
+RUNNER_GROUPS = _TT.studio_runner_groups()
 
-
-def runner_tfs(kind: str, base_tf: str) -> list[str]:
-    """1.46 (I0130 / I0622): the export timeframes of a runner group = what its trainer reads (training/requirements.REQUIREMENTS,
-    required + optional - taken from the trainers' code) instead of a hand list (ml / indicator_context / neural_scalp /
-    structure_intelligence / master_models got an export without required timeframes, scalp_A two it never reads). The base timeframe
-    stays first: it is part of task_key, so existing Studio tasks and packages keep their keys."""
-    from ..training.requirements import REQUIREMENTS
-    rq = REQUIREMENTS[RUNNER_REQUIREMENTS_KEY.get(kind, kind)]
-    out = [base_tf]
-    for tf in (*rq["required"], *rq["optional"]):
-        if tf not in out:
-            out.append(tf)
-    return out
-
-
-RUNNER_GROUPS = {kind: (cat, title, env, runner_tfs(kind, base)) for kind, (cat, title, env, base) in _RUNNER.items()}
 DETERMINISTIC = {
     "IND_AVWAP_SESSION": ("AVWAP od początku sesji (PMW-IND-AVWAP-1)", "M5"),
     "IND_SEMIVAR": ("Semiwariancja 20/60 M1 (PMW-IND-SEMIVAR-1)", "M1"),
@@ -124,11 +96,16 @@ def tasks(cfg_store=None) -> list[dict]:
                              sources=src, resume={"export": "CHUNK_CHECKPOINT", "training": "RESTART_FROM_DATASET"}, state=st, reason=why,
                              transfer="FAMILY_STORE", fit_label=f.FIT_LABEL))
         for kind, (cat, title, env, tfs) in RUNNER_GROUPS.items():
+            # arch146 I0704: a runner task that does not apply to the instrument (sh_pack: XAUUSD only) was offered as SUPPORTED - the user
+            # waited for the export (up to 240 months) and the runner then skipped it (BLOCKED_DEPENDENCY); the task key does not depend on state
+            applies = _TT.applies_to(kind, inst)
             out.append(_task(model_id=f"RUNNER:{kind}", task_id=kind, instrument=inst, broker_symbol=sym.get(inst), base_tf=tfs[0], horizon=None,
                              feature_schema_version=f"runner:{kind}", label_schema_version=f"runner:{kind}", adapter="RUNNER_GROUP", category=cat,
                              name=title, trainer=f"training.runner STEPS['{kind}'] (jawny dataset, bez aktywacji)", loader="rejestr zadania (runner)",
                              env=env, sources=[{"kind": "BARS_RUNNER_EXPORT", "tf": t, "mandatory": True} for t in tfs],
-                             resume={"export": "RUNNER_EXPORT", "training": "RESTART_FROM_DATASET"}, state="SUPPORTED", reason=None,
+                             resume={"export": "RUNNER_EXPORT", "training": "RESTART_FROM_DATASET"},
+                             state="SUPPORTED" if applies else "NOT_IMPLEMENTED",
+                             reason=None if applies else f"{_TT.NOT_APPLICABLE_DETAIL} {inst}: {_TT.scope_reason(kind)}",
                              transfer="MANUAL_ACTIVATION_IN_BOT", group_note="zadanie grupowe runnera – wewnątrz osobne modele i artefakty"))
         for iid, (title, tf) in DETERMINISTIC.items():
             out.append(_task(model_id=iid, task_id="FEATURE_EXPORT", instrument=inst, broker_symbol=sym.get(inst), base_tf=tf, horizon=None,

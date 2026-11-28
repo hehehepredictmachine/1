@@ -635,7 +635,8 @@ class TestIndicatorContextTrainServeParity(unittest.TestCase):
         snap = {"decision_time": datetime(2026, 10, 19, 12, tzinfo=UTC), "side": "BUY", "price": 100.0, "atr_m5": 1.0, "base": {"er10": 0.3}, "bars": {}, "ext": {}}
         old = T.ContextModel(self._man("SCALP_INDICATOR_CONTEXT_V1"), obj).predict(snap, "XAUUSD")
         self.assertEqual(old["status"], "ABSTAIN")
-        self.assertEqual(old["reason"], "FEATURE_SCHEMA_MISMATCH:SCALP_INDICATOR_CONTEXT_V1")
+        # after the merge with scalp_extind (I0164/I0784, the same V2 bump): the reason also names the expected schema
+        self.assertEqual(old["reason"], "FEATURE_SCHEMA_MISMATCH:SCALP_INDICATOR_CONTEXT_V1!=SCALP_INDICATOR_CONTEXT_V2")
         self.assertEqual(T.ContextModel(self._man(F.FEATURE_SCHEMA), obj).predict(snap, "XAUUSD")["status"], "READY_INFERENCE")
         self.assertEqual(F.FEATURE_SCHEMA, "SCALP_INDICATOR_CONTEXT_V2")
 
