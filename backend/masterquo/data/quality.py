@@ -105,12 +105,118 @@ def duplicate_count(times: list) -> int:
 
 def find_gaps(times: list, tf_sec: int, classify) -> list[dict]:
     """Missing intervals between consecutive bars longer than one TF step; kind = classify(prev_open, next_open, tf_sec)."""
-    out = []
-    for a, b in pairwise(times):
-        step = b - a
-        if step > tf_sec:
-            out.append({"from_raw": a + tf_sec, "to_raw": b, "missing_bars": step // tf_sec - 1, "kind": classify(a, b, tf_sec)})
+    return [{"from_raw": a + tf_sec, "to_raw": b, "missing_bars": (b - a) // tf_sec - 1, "kind": classify(a, b, tf_sec)}
+            for a, b in gap_pairs(times, tf_sec)]
+
+
+# ---------------------------------------------------------------------------------------------------------------- dq core, part 2 (Etap 4)
+# The remaining tracks use the same CHECKS (PMW-DQ-CORE-1); each keeps its POLICY at the call site - which checks run, how a price is
+# read, positivity, tolerance, thresholds, messages and status - exactly as before (tests/test_arch146_e4_dq.py compares every track with
+# its previous code on random series with gaps / duplicates / bad geometry / NaN / inf / None / bool / text):
+#   geometry   ACTIVE geometry_ok(strict)        real numbers, l > 0, l <= min(o, c) <= max(o, c) <= h
+#              SH     geometry_ok(strict=False)  float() finite, h >= l (last 50 bars)
+#              Quant snapshot qc                 finite_values(lenient) + ohlc_ordered(tol=1e-9)
+#              Kronos / TSFM input check         finite_values(number) + prices_positive(all) + not ohlc_crossed(slack=1e-9 x max(|h|, 1))
+#              Kronos forecast steps             ohlc_crossed (counted, informative)
+#              marketdata ingest check_rows      prices_positive(all) + ohlc_ordered
+#              marketdata report                 ohlc_ordered + prices_positive(l)
+#              forecast export                   prices_positive(o) + ohlc_ordered
+#              Monte Carlo history               prices_positive(o) + ohlc_ordered + finite_values(number), after float()
+#   order      ACTIVE / SH / marketdata report   order_violations (b <= a), duplicate_count (all repeats)
+#              Quant snapshot                    repeat_count (b == a) + step_back_count (b < a), separately
+#   gaps       ACTIVE find_gaps (> 1 TF, session model) - offline reports classify_gap_series - Quant gap_pairs(> 1.5 TF) + weekend_closure
+#   freshness  SH closed bar is_forming(+1 s) / is_stale(max_bar_age_s) - Kronos / TSFM is_stale(bars x TF + 60 s) - ACTIVE and Quant quote
+#              age_within(max age)
+FINITE_MODES = ("real", "number", "coerce", "lenient")
+
+
+def finite_values(*xs, mode: str = "real") -> bool:
+    """Every value is a finite price number. mode (how a track reads a price):
+      real    - a real int / float; bool or text is not a price (ACTIVE, = ohlc_finite(coerce=False));
+      number  - an int / float, bool counted as an int (Kronos / TSFM input, Monte Carlo after float());
+      coerce  - float(x) is finite; a value float() rejects raises (SH, = ohlc_finite(coerce=True));
+      lenient - None / bool are not prices, anything else float(x) finite; a text float() rejects raises (Quant snapshot)."""
+    if mode == "real":
+        return _finite(*xs)
+    if mode == "number":
+        return all(isinstance(x, (int, float)) and math.isfinite(x) for x in xs)
+    if mode == "coerce":
+        return all(math.isfinite(float(x)) for x in xs)
+    if mode == "lenient":
+        return all(x is not None and not isinstance(x, bool) and math.isfinite(float(x)) for x in xs)
+    raise ValueError(f"finite_values: unknown mode {mode!r}")
+
+
+def prices_positive(*xs) -> bool:
+    """Every value is > 0 (checked in the given order)."""
+    return all(x > 0 for x in xs)
+
+
+def ohlc_ordered(o, h, l, c, *, tol: float = 0.0) -> bool:
+    """Every bound of the bar HOLDS: h >= max(o, c), l <= min(o, c), h >= l (a NaN fails a bound it takes part in). tol > 0 relaxes the
+    body bounds to max(o, c) - tol / min(o, c) + tol (absolute price units, the Quant snapshot rule); 0 = the exact comparison."""
+    if tol:
+        return h >= max(o, c) - tol and l <= min(o, c) + tol and h >= l
+    return h >= max(o, c) and l <= min(o, c) and h >= l
+
+
+def ohlc_crossed(o, h, l, c, *, slack: float = 0.0) -> bool:
+    """A bound of the bar is visibly CROSSED: h < max(o, c), l > min(o, c) or h < l (a NaN crosses nothing). slack > 0 widens the bar to
+    h + slack / l - slack (the Kronos input rule, relative slack computed by the caller); 0 = the exact comparison."""
+    if slack:
+        return h + slack < max(o, c) or l - slack > min(o, c) or h + slack < l
+    return h < max(o, c) or l > min(o, c) or h < l
+
+
+def repeat_count(times: list) -> int:
+    """Consecutive pairs with the same time (a repeated bar next to its copy)."""
+    return sum(1 for a, b in pairwise(times) if b == a)
+
+
+def step_back_count(times: list) -> int:
+    """Consecutive pairs going back in time (b < a)."""
+    return sum(1 for a, b in pairwise(times) if b < a)
+
+
+def gap_pairs(times: list, threshold, *, exact: bool = False) -> list[tuple]:
+    """Consecutive (prev, next) pairs that are a gap: distance > threshold, or with exact=True every distance != threshold."""
+    return [(a, b) for a, b in pairwise(times) if (b - a != threshold if exact else b - a > threshold)]
+
+
+def weekday_seconds(t0: float, t1: float) -> float:
+    """Seconds of [t0, t1) that fall on Monday-Friday (UTC)."""
+    out, t = 0.0, t0
+    while t < t1:
+        day = math.floor(t / 86400.0)
+        seg_end = min((day + 1) * 86400.0, t1)
+        if (day + 3) % 7 < 5:                                # 1970-01-01 (day 0) was a Thursday (weekday 3)
+            out += seg_end - t
+        t = seg_end
     return out
+
+
+def weekend_closure(gap_start: float, gap_end: float, tf_sec: int, *, max_span_s: float) -> bool:
+    """The missing span [gap_start, gap_end) is the weekend market closure: 0 < span <= max_span_s and less than one bar of it falls on a
+    weekday (UTC) - the Quant snapshot rule (D1 / H4 of a market closed at the weekend have one such gap per week)."""
+    span = gap_end - gap_start
+    if span <= 0 or span > max_span_s:
+        return False
+    return weekday_seconds(gap_start, gap_end) < tf_sec
+
+
+def is_forming(close_t: float, now: float, tolerance_s: float) -> bool:
+    """The bar has not closed yet at `now` (close time beyond now + tolerance_s)."""
+    return close_t > now + tolerance_s
+
+
+def is_stale(t: float, now: float, max_age_s: float) -> bool:
+    """More than max_age_s seconds passed since t (a bar close, a quote time)."""
+    return now - t > max_age_s
+
+
+def age_within(age_s, max_age_s: float) -> bool:
+    """A known age (not None) of at most max_age_s seconds - a fresh quote."""
+    return age_s is not None and age_s <= max_age_s
 
 
 # ---------------------------------------------------------------------------------------------------------------- offline gap classifier (1.46, I0051)
@@ -129,7 +235,7 @@ def classify_gap_series(times: list, step: int, *, weekend_min_s: float, weekend
     gap_if_not_step=True: every consecutive pair whose distance differs from the step is a gap (the export rule), else only distance > step.
     Returns {"gaps": [(prev, next, kind, missing_bars)], "recurring": {start second of day}}. The live gate (SessionModel) is separate:
     it learns break HOURS of the broker's server time from H1."""
-    gaps = [(a, b) for a, b in pairwise(times) if (b - a != step if gap_if_not_step else b - a > step)]
+    gaps = gap_pairs(times, step, exact=gap_if_not_step)
 
     def start_key(a):
         return ((a + step) % 86400) // step * step
@@ -214,7 +320,7 @@ def assess(*, symbol: str, bars_by_tf: dict[str, list[dict]], required: dict[str
     session = SessionModel([b["t_raw"] for b in bars_by_tf.get("H1", [])])
     reasons: list[str] = []
     # ---- market / quote
-    quote_fresh = bool(quote and quote.get("age_seconds") is not None and quote["age_seconds"] <= max_quote_age)
+    quote_fresh = bool(quote and age_within(quote.get("age_seconds"), max_quote_age))
     tick_ahead = bool(quote and quote.get("source_age_seconds") is not None and quote["source_age_seconds"] < -5)
     server_now = now + timedelta(seconds=offset) if offset is not None else None
     if connection_state != "CONNECTED":
@@ -289,4 +395,5 @@ def tf_status_message(r: dict) -> str:
 
 
 __all__ = ["assess", "SessionModel", "tf_status_message", "datetime", "ohlc_finite", "geometry_ok", "order_violations", "duplicate_count",
-           "find_gaps", "classify_gap_series"]
+           "find_gaps", "classify_gap_series", "FINITE_MODES", "finite_values", "prices_positive", "ohlc_ordered", "ohlc_crossed",
+           "repeat_count", "step_back_count", "gap_pairs", "weekday_seconds", "weekend_closure", "is_forming", "is_stale", "age_within"]
