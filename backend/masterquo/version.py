@@ -2,7 +2,7 @@
 
 APP_NAME = "PepeMarketWizard"        # STABLE engine identity (health "app", desktop handshake, data paths) - do not rename
 DISPLAY_NAME = "Apollo23"            # 1.45 (TASK 019): user-visible product name
-APP_VERSION = "1.46.0"
+APP_VERSION = "1.46.1"
 # Backend <-> frontend contract. Bump on any breaking change of /api/v1 or WS payloads.
 API_CONTRACT_VERSION = "1.0.0"
 # Decision record schema produced by the backend (engine + risk + agent).

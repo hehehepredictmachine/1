@@ -33,7 +33,7 @@ import zipfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-VERSION = "1.46.0"
+VERSION = "1.46.1"
 # 1.46: package file names carry the display name Apollo23 (the folder inside the ZIP, exe names, data paths and ids stay PepeMarketWizard)
 APP_ZIP = f"Apollo23_{VERSION.replace('.', '_')}.zip"   # derived from VERSION (a stale constant overwrote the previous release)
 FORBIDDEN_PARTS = {".venv", "node_modules", "__pycache__", ".git"}
