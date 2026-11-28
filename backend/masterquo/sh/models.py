@@ -15,6 +15,8 @@ Participation rules (docs/strategie_sh/03_MODELE_I_ROLE.md):
 * 1.46 w2: the SH cycle reads the rows of the LIVE runtime through a cached provider (MatrixCache, refreshed off the SH thread); without
   it every row is NOT_EVALUATED (use NONE) - never the false DATA_MISSING / UNAVAILABLE of a probe without the runtime. data_quality and
   news are probed from the cycle's own snapshot / calendar. PRETRAINED = a pretrained model with no training in the bot.
+* 1.46 arch Etap 4: REGISTRY is a VIEW of the canonical registry - every row id is an alias or a GROUPS key of quant/ids (its canonical id:
+  quant/ids.sh_row_id); roles, groups and probes stay here (participation unchanged).
 """
 from __future__ import annotations
 
@@ -198,6 +200,7 @@ def probe(item: dict, rt, inst: str, *, snap: dict | None = None, news=None) -> 
     status and risk level (I0557). Both optional keywords: the callers with `rt` are unchanged."""
     import mq_instruments as mi
     from .. import paths
+    from ..quant import ids as I                     # the canonical registry (TSFM ids, MM artifact of a row) - import-free module
     mid = item["id"]
     try:
         if item["kind"] == "DETERMINISTIC":
@@ -292,7 +295,6 @@ def probe(item: dict, rt, inst: str, *, snap: dict | None = None, news=None) -> 
                                                          "(F-17), tylko replay z CLI", "detail": {"runs": n, "selected": cid}}
         if mid.startswith("mm_") and item["kind"] == "TRAINED":
             from ..mm import artifacts as MA
-            from ..quant import ids as I
             art = I.mm_artifact_of(mid)          # 1.46 arch (I0009): from quant/ids.ALIASES (mm_gpr -> gpr_logret ...), was a copied dict
             if art is None:
                 raise KeyError(mid)              # as the dict lookup before: an unknown TRAINED mm_ row is an ERROR probe, never a guess
@@ -324,7 +326,7 @@ def probe(item: dict, rt, inst: str, *, snap: dict | None = None, news=None) -> 
             if arts:
                 return {"status": "NOT_CONNECTED", "reason": f"{len(arts)} kandydat(ów) bez walidacji na REAL_USER_DATA ({arts[-1].get('status')}) – brak ścieżki na żywo"}
             return {"status": "NOT_TRAINED", "reason": "brak artefaktu – zadanie treningu master_models nie było uruchomione"}
-        if mid in ("chronos2", "granite_ttm", "tirex2"):
+        if mid in I.TSFM_MODELS:                 # Etap 4: chronos2 / granite_ttm / tirex2 from quant/ids (was a copied literal)
             ts = getattr(rt, "tsfm", None) if rt else None
             if ts is None:
                 return {"status": "UNAVAILABLE", "reason": "serwis Chronos-2/Granite TTM/TiRex-2 niedostępny"}

@@ -4,6 +4,8 @@ purpose, required data, input / output, instruments, training method, category a
 Sources (not re-declared here): sh/models.REGISTRY (role per strategy + live probes), mm/inventory.MODULES (PMW-MM modules, spec /
 blocked status), trainhub registry (Training Center packages) + the modules added in 1.28 (market zones). A documented model without
 code appears only from those sources with its blocker - nothing is reported as implemented or trained without evidence.
+1.46 arch Etap 4: the catalog is a VIEW of quant/ids.PRODUCERS - every canonical_id is derived there (sh_row_id, mm_module_id,
+CATALOG_ROWS), none is declared here.
 Categories: TRAINABLE (artifact from training), PRETRAINED (pretrained weights, no training in the bot - 1.46 w2), ONLINE (estimated /
 filtered online), INDICATOR (deterministic calculation), RULE (rule / state machine / strategy), SIMULATION (Monte Carlo), EXTERNAL
 (Claude agent), INFRA (optimiser, benchmark, data).
@@ -82,12 +84,15 @@ CAT_FROM_INV = {"MODEL_TRAINED": "TRAINABLE", "MODEL_PRETRAINED": "TRAINABLE", "
                 "META_MODEL": "TRAINABLE", "MODEL_ESTIMATED": "ONLINE", "MEASUREMENT": "INDICATOR", "RULE_OR_MEASUREMENT": "RULE",
                 "ANALYSIS": "INDICATOR", "NATIVE_MQL5": "INDICATOR", "VISUALIZATION": "INDICATOR", "SIMULATION": "SIMULATION", "AGENT": "EXTERNAL",
                 "RESEARCH": "INFRA", "TOOL": "INFRA", "OPTIMIZER": "INFRA", "BENCHMARK": "INFRA", "DATA_INFRA": "INFRA"}
-_FIXED_CANON = {"market_zones": "analysis:market_zones", "zone_map": "analysis:zones", "monte_carlo": "analysis:montecarlo"}
+# 1.46 arch Etap 4: RULE (not INDICATOR) for the deterministic SH rows that are data-quality / risk gates in every strategy - derived from
+# their roles in sh/models.REGISTRY (was the id list ("data_quality", "risk_engine", "news"), the same three rows)
+RULE_ROLES = ("DATA_QUALITY", "RISK_ANOMALY")
 
 
 def _canonical_of(r: dict) -> str:
     """Canonical id (quant/ids) of an existing catalog row - the same id the inventory gives its producer. One source: canonical_row_id
-    (I0009); the rules below only name rows it leaves without an id (e.g. TH_BASELINE, plain SH rows)."""
+    (I0009); only a Training Center row it leaves without an id (a model not in quant/ids.ALIASES) is named here, every other row the way
+    quant/ids.sh_row_id names a SH row (Etap 4: the MM / fixed-row branches were unreachable copies of canonical_row_id)."""
     from ..quant import ids as I
     cid = canonical_row_id(r)
     if cid:
@@ -95,14 +100,7 @@ def _canonical_of(r: dict) -> str:
     rid, src = r["id"], r.get("source")
     if src == "trainhub":
         return "trainhub:" + rid.upper()
-    if src == "mm/inventory.MODULES":
-        mid = rid.removeprefix("mm_")
-        return I.resolve(mid) or I.resolve("mm:" + mid) or "mm:" + mid
-    if rid in _FIXED_CANON:
-        return _FIXED_CANON[rid]
-    if rid in I.GROUPS:
-        return "group:" + rid
-    return I.resolve(rid) or "sh:" + rid
+    return I.sh_row_id(rid)
 
 
 def _family_state(fid: str, rt, inst: str) -> tuple[str, str]:
@@ -190,23 +188,20 @@ def _use_note(pr: dict) -> str | None:
     return None
 
 
-_FIXED_CANON = {"market_zones": "analysis:market_zones", "zone_map": "analysis:zones", "monte_carlo": "analysis:montecarlo"}
-
-
 def canonical_row_id(r: dict) -> str | None:
     """1.46 arch (I0009): canonical id of a catalog row in the canonical registry (quant/ids + quant/inventory): SH rows as the inventory
     folds them (group:<id> for a group row, aliases resolved, else sh:<id>), MM modules mm:<module>, Training Center packages trainhub:<MODEL>.
-    Additive field - the row 'id' stays as it was (the panel matches predictions by canonical_id first)."""
+    Additive field - the row 'id' stays as it was (the panel matches predictions by canonical_id first).
+    Etap 4: every derivation is the one of quant/ids (sh_row_id, mm_module_id, CATALOG_ROWS) - the inventory uses the same functions."""
     from ..quant import ids as I
     rid, src = str(r.get("id") or ""), r.get("source")
     if src == "sh/models.REGISTRY":
-        return f"group:{rid}" if rid in I.GROUPS else (I.resolve(rid) or f"sh:{rid}")
+        return I.sh_row_id(rid)
     if src == "mm/inventory.MODULES":
-        m = rid.removeprefix("mm_")
-        return I.resolve(m) or f"mm:{m}"
+        return I.mm_module_id(rid.removeprefix("mm_"))
     if src == "trainhub":
         return I.resolve(rid.upper())
-    return _FIXED_CANON.get(rid)
+    return I.CATALOG_ROWS.get(rid)
 
 
 def build(rt, inst: str) -> dict:
@@ -221,7 +216,7 @@ def build(rt, inst: str) -> dict:
         state = STATE_FROM_PROBE.get(pr["status"], "ERROR")
         loc, data = LOCATION.get(it["id"], ("?", "?"))
         cat = CAT_FROM_KIND.get(it["kind"], "INDICATOR")
-        if it["id"] in ("data_quality", "risk_engine", "news"):
+        if it["kind"] == "DETERMINISTIC" and set(it["roles"].values()) <= set(RULE_ROLES):
             cat = "RULE"
         rows.append({"id": it["id"], "name": it["name"], "category": cat, "location": loc, "purpose": it["output"], "required_data": data,
                      "input": data, "output": it["output"], "instruments": ["XAUUSD", "BTC"], "training": it.get("train") or "nie dotyczy",
@@ -238,7 +233,7 @@ def build(rt, inst: str) -> dict:
         from ..mm import inventory as MI
         for m in MI.MODULES:
             rid = "mm_" + m["id"]
-            if rid in seen or m["id"] in ("fusion_board",) or (I.resolve(m["id"]) or I.resolve("mm:" + m["id"])) in seen_canon:
+            if rid in seen or m["id"] in ("fusion_board",) or I.mm_module_id(m["id"]) in seen_canon:
                 continue
             blocked = m.get("blocked")
             rows.append({"id": rid, "name": m["name"], "category": CAT_FROM_MM.get(m.get("category"), "INFRA"), "location": ", ".join(m.get("files") or []) or "—",
