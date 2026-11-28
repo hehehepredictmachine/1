@@ -173,6 +173,12 @@ class ModelWorker:
             return True
         if self.proc and self.load_key != key:
             self.kill()
+            if fb:
+                # review (I0200): kill() ended the fallback (any other end of the process starts the configured device again) - the new
+                # process starts on the configured device; before it started once more on CPU marked as a fallback and the next
+                # ensure() restarted it again (two restarts for one key change)
+                fb, device = None, c.device
+                key = (str(self.svc.weights_root()), device, threads, c.checkpoint)
         if time.monotonic() < self.retry_at:
             return False
         py = find_python(self.mid, c)
@@ -1087,12 +1093,15 @@ def use_restriction(load: dict, inst: str, tf: str, H: int) -> dict | None:
     """1.46: a forecast that may only HOLD an entry, never CONFIRM one (masterquo/tsfm/predictions.py: a REQUIRED role treats it as
     unavailable; ASSIST / OBSERVE use it as before). None = no restriction.
       GPU_FALLBACK_CPU (I0200): computed by the CPU process that replaced a GPU process with a broken CUDA context (before: no forecast
-                       at all until a restart) - in the contract rows (Quant inputs, model hub) it stays unavailable as before;
+                       at all until a restart) - in the contract rows (Quant inputs, model hub) AND in the ACTIVE coordinator rows (every
+                       role - review: the REQUIRED role also comes from config.json decision.required_models) it stays unavailable as
+                       before; only the SH receiver uses it, for an ASSIST hold;
       CHECKPOINT_SCOPE (I0834 / I0844): a fine-tuned Granite TTM checkpoint outside the instrument / timeframe / horizon it was trained
                        for (the checkpoint was used for every pair; the value is kept - Quant inputs and ASSIST holds stay as they were)."""
     if load.get("gpu_fallback"):
         return {"code": "GPU_FALLBACK_CPU", "reason": f"prognoza awaryjna na CPU po błędzie GPU ({load.get('device_note') or ''})"[:300]
-                + " – tylko wstrzymania (ASSIST); REQUIRED i wejścia Quant jej nie używają; ustaw urządzenie w ustawieniach, by liczyć normalnie"}
+                + " – tylko wstrzymania ASSIST w odbiorniku SH; REQUIRED, ścieżka ACTIVE i wejścia Quant jej nie używają; ustaw urządzenie w "
+                "ustawieniach, by liczyć normalnie"}
     ck = load.get("checkpoint") or "BASE"
     if ck == "BASE":
         return None

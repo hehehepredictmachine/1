@@ -1,8 +1,9 @@
 """1.46 arch, fala 2 - grupa „tsfm” (Chronos-2 / Granite TTM / TiRex-2, TabICLv2 runtime): testy regresji pozycji
 
 I0200 (+I0204)  błąd CUDA w predict: proces zostawał na zepsutym GPU, błąd przy każdej świecy - teraz restart na CPU (tylko po
-                potwierdzonym trwałym błędzie kontekstu CUDA); prognoza awaryjna jest WYŁĄCZNIE do wstrzymań (REQUIRED nadal czeka,
-                ASSIST może wstrzymać, wiersz kontraktu dla Quant/prezentacji nadal niedostępny jak dziś)
+                potwierdzonym trwałym błędzie kontekstu CUDA); prognoza awaryjna jest WYŁĄCZNIE do wstrzymań w odbiorniku SH (REQUIRED
+                nadal czeka, ASSIST SH może wstrzymać); wiersz kontraktu (Quant/prezentacja) i wiersze ACTIVE koordynatora (każda rola,
+                także REQUIRED z config.json decision.required_models - uwaga recenzenta S0) nadal niedostępne jak dziś
 I0201           docstringi tsfm_runtime / service: TiRex-2 aktywny, FinCast tylko jako wycofany
 I0205           Granite TTM: zła konfiguracja (context_len ≠ 512, profil, lookback < 512, horyzont > 96) odrzucana przy zapisie,
                 istniejący plik -> stan CONFIG bez wywołania procesu (zamiast WARMUP co świecę)
@@ -11,7 +12,8 @@ I0207           TiRex2Engine: load / predict / _direct / selftest na podstawiony
 I0213           TabICLv2 z prawdziwym tabicl i checkpointem (proces tabicl_runtime.worker; bez .venv_tabicl / wag SKIP)
 I0540           tabicl_runtime.engine.Engine: walidacje fit / predict / selftest na podstawionych modułach tabicl + torch
 I0834 / I0844   checkpoint Granite poza zakresem dotrenowania (instrument / TF / horyzont): prognoza nie może POTWIERDZIĆ roli
-                REQUIRED (ASSIST i wejścia Quant bez zmian - wariant wyłącznie zaostrzający)
+                REQUIRED - z ustawień TSFM i z config.json decision.required_models (ASSIST i wejścia Quant bez zmian - wariant
+                wyłącznie zaostrzający)
 I0835           approval_ok: REQUIRED bez raportu dopuszczenia DLA TEGO instrumentu -> nieaktualne (ASSIST bez zmian)
 I0836           ścieżka ACTIVE: REQUIRED przy wyłączonym modelu / instrumencie / TF / braku prognozy -> wiersz niedostępny (jak SH)
 I0845           werdykt dotrenowania IMPROVED_VS_BASE tylko przy >= 100 oknach testowych (INSUFFICIENT_TEST), aktywacja też to sprawdza
@@ -46,6 +48,13 @@ class _Svc(unittest.TestCase):
     """Real TsfmService, stub model processes (tests/tsfm_stub_worker.py), fake MT5 bridge with M5 + M15 bars, isolated data dir."""
 
     def setUp(self):
+        # the model environment variables (env_all.sh: MQ_<MODEL>_PYTHON) win over python_path in find_python - the stub worker of
+        # these tests must be the process, so they are removed for the duration of each test (restored afterwards)
+        env = mock.patch.dict(os.environ)
+        env.start()
+        self.addCleanup(env.stop)
+        for m in ("CHRONOS2", "GRANITE_TTM", "TIREX2"):
+            os.environ.pop(f"MQ_{m}_PYTHON", None)
         self.td = TempData()
         self.dir = Path(self.td.dir)
         os.environ["MQ_TSFM_ALLOW_FIXTURE"] = "1"
@@ -95,17 +104,20 @@ class _Svc(unittest.TestCase):
         return rep["report_id"]
 
     @staticmethod
-    def ev(rows, side):
+    def ev(rows, side, required=()):
         from masterquo.decision.coordinator import evaluate_models
-        return evaluate_models(rows, side, required=set(), assist_threshold=0.6, max_age_s=10 ** 9, now=WED_1200 + 60)
+        return evaluate_models(rows, side, required=set(required), assist_threshold=0.6, max_age_s=10 ** 9, now=WED_1200 + 60)
+
+    def required_models(self, *ids):
+        """decision.required_models of config.json (the coordinator's second source of the REQUIRED role - role_of)."""
+        self.cfg.get().decision = types.SimpleNamespace(enabled=True, required_models=list(ids), required_max_age_s=10 ** 9, assist_on_active=True)
 
 
 # ======================================================================================================== I0200 (+I0204) GPU -> CPU
 GPU_ERR = {"ok": False, "code": "EXCEPTION", "error": "AcceleratorError: CUDA error: an illegal memory access was encountered"}
 
 
-@unittest.skipUnless(POSIX, "stub worker uses a POSIX shell wrapper")
-class TestI0200GpuFallback(_Svc):
+class _GpuSvc(_Svc):
     def _gpu_broken(self, w, healthy=False, record=None):
         orig = w.ask
 
@@ -128,6 +140,23 @@ class TestI0200GpuFallback(_Svc):
         w.load_info["device"] = "cuda:0"                         # the stub reports cpu; the real engine reports the torch device
         return w
 
+    def _fallback_forecast(self, **models):
+        """chronos2 on a GPU whose CUDA context breaks -> replaced by the CPU process -> a READY fallback forecast (direction UP)."""
+        svc = self.make(tfs=("M5",), chronos2={"use": {"ACTIVE": {"timeframe": "M5"}}, **models})
+        w = self._loaded_on_gpu(svc)
+        orig = self._gpu_broken(w)
+        svc.refresh("chronos2", "XAUUSD", "M5")
+        self.run_queue()
+        w.ask, w.retry_at = orig, 0.0
+        svc.refresh("chronos2", "XAUUSD", "M5")
+        self.run_queue()
+        self.assertTrue(w.load_info["gpu_fallback"])
+        self.assertEqual(svc.latest[("chronos2", "XAUUSD", "M5")]["direction"], "UP")
+        return svc, w
+
+
+@unittest.skipUnless(POSIX, "stub worker uses a POSIX shell wrapper")
+class TestI0200GpuFallback(_GpuSvc):
     def test_sticky_cuda_error_restarts_the_process_on_cpu(self):
         from masterquo.tsfm import predictions as TP
         svc = self.make()
@@ -167,17 +196,10 @@ class TestI0200GpuFallback(_Svc):
 
     def test_fallback_forecast_only_holds(self):
         """Entry direction: REQUIRED is not satisfied by the CPU fallback (today: ERROR -> WAIT / MODEL_REQUIRED_UNAVAILABLE - unchanged);
-        ASSIST may hold on a contrary fallback forecast (today: no forecast -> no hold) = only fewer entries."""
+        SH ASSIST may hold on a contrary fallback forecast (today: no forecast -> no hold) = only fewer entries; the ACTIVE rows stay
+        unavailable for EVERY role exactly as during today's GPU error (review: the REQUIRED role can also come from config.json)."""
         from masterquo.tsfm import predictions as TP
-        svc = self.make(tfs=("M5",), chronos2={"use": {"ACTIVE": {"timeframe": "M5"}}})
-        w = self._loaded_on_gpu(svc)
-        orig = self._gpu_broken(w)
-        svc.refresh("chronos2", "XAUUSD", "M5")
-        self.run_queue()
-        w.ask, w.retry_at = orig, 0.0
-        svc.refresh("chronos2", "XAUUSD", "M5")
-        self.run_queue()
-        self.assertEqual(svc.latest[("chronos2", "XAUUSD", "M5")]["direction"], "UP")
+        svc, _w = self._fallback_forecast()
         self.approve("chronos2", "SCALPING", "M5")
         ctx = TP.context(svc, "chronos2", "XAUUSD", "SCALPING", side="BUY")
         self.assertEqual((ctx["available"], ctx["state"]), (False, "GPU_FALLBACK_CPU"))
@@ -191,8 +213,9 @@ class TestI0200GpuFallback(_Svc):
         self.assertEqual(TP.apply_to_setup({"status": "READY", "side": "SELL"}, ctx)["status"], "WAIT")    # contrary fallback holds
         self.assertTrue(svc.set_use("chronos2", "ACTIVE", "ASSIST", timeframe="M5", confirm=True)["ok"])
         rows = [r for r in TP.coordinator_rows(svc, "XAUUSD") if r["family"] == "tsfm:chronos2"]
-        self.assertEqual([(r["use"], r["state"]) for r in rows], [("ASSIST", "READY")])
-        self.assertEqual(self.ev(rows, "SELL")[1], ["MODEL_ASSIST_HOLD:tsfm:chronos2"])
+        self.assertEqual([(r["use"], r["state"], r["result"]) for r in rows], [("ASSIST", "STALE", None)])    # as today's ERROR row
+        self.assertIn("GPU", rows[0]["unavailable_reason"])
+        self.assertEqual(self.ev(rows, "SELL")[1], [])                                    # no hold - exactly as today (no forecast)
 
     def test_transient_error_keeps_todays_behaviour(self):
         svc = self.make()
@@ -231,6 +254,63 @@ class TestI0200GpuFallback(_Svc):
         svc.settings.update({"models": {"chronos2": {"device": "CUDA"}}})
         w.ask, w.retry_at = orig, 0.0
         self.assertTrue(w.ensure())
+        self.assertIsNone(w.gpu_fallback)
+        self.assertFalse(w.load_info.get("gpu_fallback"))
+
+
+@unittest.skipUnless(POSIX, "stub worker uses a POSIX shell wrapper")
+class TestI0200ReviewRequiredModels(_GpuSvc):
+    """Review (S0): the coordinator gives the REQUIRED role ALSO through config.json decision.required_models ('tsfm:<model>', role_of).
+    With the TSFM role OBSERVE / ASSIST the fallback row was READY and that REQUIRED PASSED - today the broken GPU process answers ERROR
+    at every bar -> MODEL_REQUIRED_UNAVAILABLE. The ACTIVE rows of a fallback forecast are now unavailable for every role (as today)."""
+
+    def _gate(self, svc, side="BUY"):
+        from masterquo.decision.coordinator import DecisionCoordinator
+        from masterquo.tsfm import predictions as TP
+        dc = DecisionCoordinator(svc.db, self.cfg, instrument_fn=lambda: "XAUUSD", clock=lambda: WED_1200 + 60)
+        dc.extra_providers = [lambda inst: TP.coordinator_rows(svc, inst)]
+        return dc.model_gate_active({"direction": "LONG" if side == "BUY" else "SHORT"})
+
+    def test_required_models_with_observe_role(self):
+        svc, _w = self._fallback_forecast()
+        self.required_models("tsfm:chronos2")
+        g = self._gate(svc, "BUY")
+        self.assertEqual(g["codes"], ["MODEL_REQUIRED_UNAVAILABLE:tsfm:chronos2"])   # before: [] (REQUIRED PASS) = a new ACTIVE entry
+        m = next(x for x in g["models"] if x["model_id"] == "tsfm:chronos2")
+        self.assertEqual((m["role"], m["state"], m["influence"]), ("REQUIRED", "STALE", "BLOCK"))
+
+    def test_required_models_with_assist_role(self):
+        svc, _w = self._fallback_forecast()
+        self.assertTrue(svc.set_use("chronos2", "ACTIVE", "ASSIST", timeframe="M5", confirm=True)["ok"])
+        self.required_models("tsfm:chronos2")
+        for side in ("BUY", "SELL"):
+            self.assertEqual(self._gate(svc, side)["codes"], ["MODEL_REQUIRED_UNAVAILABLE:tsfm:chronos2"], side)
+
+    def test_healthy_forecast_and_required_models_unchanged(self):
+        svc = self.make(tfs=("M5",), chronos2={"use": {"ACTIVE": {"timeframe": "M5"}}})
+        svc.tick()
+        self.run_queue()
+        self.required_models("tsfm:chronos2")
+        self.assertEqual(self._gate(svc, "BUY")["codes"], [])                         # a normal forecast UP confirms BUY (as today)
+        self.assertEqual(self._gate(svc, "SELL")["codes"], ["MODEL_REQUIRED_CONTRARY:tsfm:chronos2"])
+
+    def test_key_change_during_the_fallback_restarts_once_on_the_configured_device(self):
+        svc, w = self._fallback_forecast()
+        loads = []
+        orig = w.ask
+
+        def rec(req, timeout):
+            if req["cmd"] == "load":
+                loads.append(req["device"])
+            return orig(req, timeout)
+        w.ask = rec
+        n = 1 if svc.threads_for("chronos2", svc.settings.get().models["chronos2"]) != 1 else 2
+        svc.settings.update({"models": {"chronos2": {"cpu_threads": n}}})       # a new process key (e.g. threads of a governor profile)
+        self.assertTrue(w.ensure())
+        self.assertTrue(w.ensure())
+        # before: ["CPU", "AUTO"] - kill() ended the fallback, the new process still started on CPU marked as a fallback, and the
+        # next ensure() restarted it again on the configured device
+        self.assertEqual(loads, ["AUTO"])
         self.assertIsNone(w.gpu_fallback)
         self.assertFalse(w.load_info.get("gpu_fallback"))
 
@@ -779,6 +859,29 @@ class TestI0834CheckpointScopeDecisions(_Svc):
         row = next(r for r in TP.contract_predictions(svc, "XAUUSD") if r["model_id"] == "tsfm:granite_ttm" and r["timeframe"] == "M15")
         self.assertEqual(row["state"], "READY")                                                    # Quant FEAT-2 inputs unchanged
         self.assertEqual(row["use_restriction"]["code"], "CHECKPOINT_SCOPE")
+
+    def test_required_models_config_out_of_scope_not_confirmed(self):
+        """Review: REQUIRED through config.json decision.required_models is not confirmed by an out-of-scope checkpoint either
+        (before: READY -> the REQUIRED of the coordinator PASSED); ASSIST holds and the in-scope pair stay as they were."""
+        from masterquo.tsfm import predictions as TP
+        svc = self._svc()
+        req = {"tsfm:granite_ttm"}
+
+        def rows():
+            return [r for r in TP.coordinator_rows(svc, "XAUUSD") if r["family"] == "tsfm:granite_ttm"]
+        self.required_models(*req)
+        self.assertEqual([(r["use"], r["state"]) for r in rows()], [("SHADOW", "STALE")])       # ACTIVE M15 (default): out of scope
+        self.assertEqual(self.ev(rows(), "BUY", req)[1], ["MODEL_REQUIRED_UNAVAILABLE:tsfm:granite_ttm"])
+        self.assertTrue(svc.set_use("granite_ttm", "ACTIVE", "ASSIST", timeframe="M15", confirm=True)["ok"])
+        self.assertEqual([(r["use"], r["state"]) for r in rows()], [("ASSIST", "STALE")])       # role_of: REQUIRED wins over ASSIST
+        self.assertEqual(self.ev(rows(), "SELL", req)[1], ["MODEL_REQUIRED_UNAVAILABLE:tsfm:granite_ttm"])
+        self.required_models()                                                                     # no config REQUIRED: ASSIST as before
+        self.assertEqual([(r["use"], r["state"]) for r in rows()], [("ASSIST", "READY")])
+        self.assertEqual(self.ev(rows(), "SELL")[1], ["MODEL_ASSIST_HOLD:tsfm:granite_ttm"])
+        self.required_models(*req)
+        self.assertTrue(svc.set_use("granite_ttm", "ACTIVE", "OBSERVE", timeframe="M5")["ok"])  # in scope (XAUUSD M5, H 12): unchanged
+        self.assertEqual([(r["use"], r["state"]) for r in rows()], [("SHADOW", "READY")])
+        self.assertEqual(self.ev(rows(), "BUY", req)[1], [])
 
 
 # ======================================================================================================== I0835 approval per instrument

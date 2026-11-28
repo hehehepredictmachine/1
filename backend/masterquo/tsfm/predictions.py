@@ -73,9 +73,14 @@ def _restriction(fc: dict | None) -> dict | None:
 
 
 # restrictions under which the contract row (Quant FEAT-2 inputs, model hub, presentation) stays UNAVAILABLE - exactly as during the
-# failure the restricted forecast replaced (I0200: the broken GPU process gave no forecast); the decision rows (coordinator_rows /
-# context) still use it for holds only
+# failure the restricted forecast replaced (I0200: the broken GPU process gave no forecast); the SH receiver (context) still uses it
+# for holds only
 UNAVAILABLE_IN_CONTRACT: tuple[str, ...] = ("GPU_FALLBACK_CPU",)
+# restrictions under which the ACTIVE coordinator rows stay UNAVAILABLE for EVERY role - review (S0, I0200): the coordinator gives the
+# REQUIRED role also through config.json decision.required_models (role_of), which these rows cannot see reliably; a READY fallback row
+# with the TSFM role OBSERVE / ASSIST PASSED that REQUIRED (today the broken GPU process answers ERROR at every bar -> blocked). The
+# ACTIVE path is therefore exactly as during today's GPU failure (no ASSIST hold, every REQUIRED unavailable).
+UNAVAILABLE_ON_ACTIVE: tuple[str, ...] = ("GPU_FALLBACK_CPU",)
 
 
 def contract_predictions(svc, inst: str, *, decisions: bool = False) -> list[dict]:
@@ -160,12 +165,23 @@ def approval_ok(svc, mid: str, inst: str, path: str) -> tuple[bool, str | None]:
     return (not bad), ("; ".join(bad)[:220] if bad else None)
 
 
+def _config_required(svc) -> set[str]:
+    """config.json decision.required_models (the coordinator's second source of the REQUIRED role - decision/coordinator.role_of).
+    Unreadable -> empty set: the rows are then exactly as before this check (it can only make a restricted row unavailable)."""
+    try:
+        d = getattr(svc.cfg_store.get(), "decision", None)
+        return {str(x) for x in (getattr(d, "required_models", None) or [])}
+    except Exception:  # noqa: BLE001
+        return set()
+
+
 def coordinator_rows(svc, inst: str) -> list[dict]:
     """Rows for decision/coordinator (ACTIVE path): the timeframe of the ACTIVE role, `use` = OBSERVE / ASSIST / REQUIRED (ASSIST / REQUIRED
     only with a valid approval; a REQUIRED whose approval no longer matches stays REQUIRED and is reported unavailable = fail-closed)."""
     if svc is None:
         return []
     s = svc.settings.get()
+    req_cfg = _config_required(svc)
     preds = {(p["model_id"], p["timeframe"]): p for p in contract_predictions(svc, inst, decisions=True)}
     out = []
     for mid, c in s.models.items():
@@ -189,8 +205,14 @@ def coordinator_rows(svc, inst: str) -> list[dict]:
             elif not ok:
                 p = {**p, "state": "STALE", "result": None, "unavailable_reason": f"dopuszczenie REQUIRED nieaktualne ({why})"}
         rx = p.get("use_restriction") if p.get("state") == "READY" else None
-        if use == "REQUIRED" and rx:
-            # 1.46 (I0200 / I0834 / I0844): a restricted forecast never CONFIRMS a REQUIRED role (fail-closed); ASSIST / OBSERVE keep it
+        if rx and rx.get("code") in UNAVAILABLE_ON_ACTIVE:
+            # 1.46 (I0200, review S0): the CPU fallback forecast is unavailable on the ACTIVE path for EVERY role - exactly as the broken
+            # GPU process (ERROR at every bar): no ASSIST hold, every REQUIRED (TSFM setting or decision.required_models) blocks
+            p = {**p, "state": "STALE", "result": None, "unavailable_reason": f"ścieżka ACTIVE: {rx.get('reason')}"[:300]}
+        elif rx and (use == "REQUIRED" or f"tsfm:{mid}" in req_cfg):
+            # 1.46 (I0834 / I0844): a restricted forecast never CONFIRMS a REQUIRED role (fail-closed) - review: also the REQUIRED role of
+            # config.json decision.required_models (role_of: REQUIRED wins over ASSIST, so no ASSIST hold is removed); ASSIST / OBSERVE
+            # without a REQUIRED role keep the forecast (its holds stay as they are)
             p = {**p, "state": "STALE", "result": None, "unavailable_reason": f"REQUIRED niepotwierdzony: {rx.get('reason')}"[:300]}
         out.append({**p, "family": f"tsfm:{mid}", "use": use if use != "OBSERVE" else "SHADOW", "max_age_s": TF_AGE(u.timeframe, s),
                     "unavailable_reason": p.get("unavailable_reason") or note})
