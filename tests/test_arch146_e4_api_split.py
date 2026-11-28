@@ -82,6 +82,12 @@ def route_rows(app) -> list[list]:
     return rows
 
 
+def _without_version(spec: dict) -> dict:
+    out = json.loads(json.dumps(spec, default=str))
+    (out.get("info") or {}).pop("version", None)
+    return out
+
+
 def app_meta(app) -> dict:
     spec = app.openapi()
     ops = {f"{m.upper()} {p}": _sha(json.dumps(op, sort_keys=True, default=str)) for p, item in spec["paths"].items() for m, op in item.items()}
@@ -89,6 +95,9 @@ def app_meta(app) -> dict:
                            for m in app.user_middleware],
             "exception_handlers": sorted(repr(k) for k in app.exception_handlers),
             "openapi_sha256": _sha(json.dumps(spec, sort_keys=True, default=str)),
+            # the spec carries info.version = APP_VERSION (FastAPI(version=...)): a release number is not part of the route contract
+            "openapi_sha256_noversion": _sha(json.dumps(_without_version(spec), sort_keys=True, default=str)),
+            "openapi_version": (spec.get("info") or {}).get("version"),
             "openapi_components": sorted((spec.get("components") or {}).get("schemas", {})),
             "openapi_operations": dict(sorted(ops.items()))}
 
@@ -441,7 +450,10 @@ class TestRouteTableVsBase(unittest.TestCase):
             ops_b, ops_c = self.base[ed]["openapi_operations"], self.cur[ed]["openapi_operations"]
             self.assertEqual(sorted(ops_c), sorted(ops_b), ed)
             self.assertEqual([k for k in ops_b if ops_b[k] != ops_c[k]], [], ed)
-            self.assertEqual(self.cur[ed]["openapi_sha256"], self.base[ed]["openapi_sha256"], ed)
+            # whole spec without info.version (1.46.1: the release number moved, routes / schemas / operations did not)
+            self.assertEqual(self.cur[ed]["openapi_sha256_noversion"], self.base[ed]["openapi_sha256_noversion"], ed)
+            from masterquo.version import APP_VERSION
+            self.assertEqual(self.cur[ed]["openapi_version"], APP_VERSION, ed)
         self.assertEqual(self.cur["OWNER"]["middleware"], [["Guard", []]])
 
     def test_handlers_live_in_route_modules_page_and_session_in_app(self):
