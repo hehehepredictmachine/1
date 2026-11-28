@@ -59,8 +59,9 @@ def build(*, snapshot_id: str, as_of: str, symbol: str, account_key: str | None,
           legacy: dict, setup: dict | None, levels: dict | None, risk: dict | None, agent_gate: dict, mode_gate: dict,
           macro: dict, strategy_cfg, risk_cfg, dxy_status: str, synthetic: bool, active: dict | None = None,
           ml_gate: dict | None = None, model_gate: dict | None = None) -> dict:
-    """`active` (profile ACTIVE): {"regime", "bias", "trade_allowed", "reason_codes"} - the STRATEGY node then
-    validates the setup selected by StrategyAutoSelector instead of the legacy M02/M07 structure rule."""
+    """`active` (profile ACTIVE): {"regime", "bias", "trade_allowed", "reason_codes", "selection_suspended"?} - the STRATEGY node then
+    validates the setup selected by StrategyAutoSelector instead of the legacy M02/M07 structure rule; `selection_suspended` (code, 1.46
+    arch I0749 - the selection is in a LONG/SHORT conflict) only adds a PERMISSION block."""
     nodes = []
     m02 = legacy.get("m02")
     # 1 DATA
@@ -163,6 +164,11 @@ def build(*, snapshot_id: str, as_of: str, symbol: str, account_key: str | None,
         perm_ok = False
         perm_unmet.append("STRATEGY_ALLOWED_TO_TRADE")
         perm_codes.append(f"STRATEGY_TRADE_DISABLED_{setup['strategy_id']}")
+    if active is not None and setup is not None and active.get("selection_suspended"):
+        # 1.46 arch (I0749): the selected setup is in a LONG/SHORT conflict of its horizon (StrategyAutoSelector.suspended) - only blocks
+        perm_ok = False
+        perm_unmet.append("SELECTION_NOT_IN_CONFLICT")
+        perm_codes.append(str(active["selection_suspended"]))
     nodes.append(_node("PERMISSION", "PASS" if perm_ok else "FAIL",
                        met=["MODE_" + mode_gate["mode"]] if perm_ok else [], unmet=perm_unmet, codes=perm_codes))
 

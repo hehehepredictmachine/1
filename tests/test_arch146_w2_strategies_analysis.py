@@ -5,6 +5,7 @@ Każda klasa odpowiada pozycji triażu (klucz w docstringu); test nie przechodzi
 from __future__ import annotations
 
 import importlib
+import os
 import unittest
 
 import _env
@@ -250,26 +251,30 @@ class _SelectorCase(unittest.TestCase):
 
 
 class TestSelectorConflictSuspendsSelection(_SelectorCase):
-    """I0749: konflikt LONG/SHORT w horyzoncie zerował tylko `best`; istniejący wybór zostawał (żadna gałąź go nie zdejmowała) i bot mógł
-    wykonać setup w stanie CONFLICT. Teraz wybór w horyzoncie konfliktu jest ZAWIESZANY (niewykonywalny), a po ustąpieniu konfliktu wraca
-    ten sam (stan histerezy bez zmian) - wykonywalny wybór to zawsze dzisiejszy albo żaden."""
+    """I0749: konflikt LONG/SHORT w horyzoncie zerował tylko `best`; istniejący wybór zostawał i bot mógł wykonać setup w stanie CONFLICT.
+    Wariant wyłącznie zaostrzający (recenzja: S0 poprzedniej wersji - zmiana `selected` przesuwała i pomijała prośby do agenta AI):
+    `selected` jest DOKŁADNIE dzisiejszy (kotwica, SELECTION_CHANGED, triggery agenta, CONTEXT_HOURLY bez zmian), a zawieszenie to
+    nakładka `suspended` -> engine/active.decision_inputs -> węzeł PERMISSION FAIL (brak zlecenia)."""
 
-    def test_conflict_suspends_and_restores_the_same_selection(self):
+    def test_conflict_suspends_without_changing_the_selection(self):
         a = self.row("S01", "CONFIRMED", 60, 100, "LONG")
         self.assertEqual(self.pick([a], 0)[0], "S01")
         t0 = self.sel.selected["at"]
         s, st = self.pick([a, self.row("S07", "CONFIRMED", 62, 90, "SHORT")], 10)          # opposite setup, rank difference < margin
-        self.assertIsNone(s)
-        self.assertIsNone(self.sel.selected)                                               # engine: selected_row() -> None, no execution
-        self.assertTrue(any(r.startswith("CONFLICT_") for r in st["reason_codes"]))
-        self.assertIn("SELECTION_SUSPENDED_CONFLICT", st["reason_codes"])
-        self.assertEqual((st["suspended"] or {}).get("strategy_id"), "S01")
-        self.assertTrue(self.log()[-1][2].startswith("SELECTION_SUSPENDED_CONFLICT_"))
-        s, st = self.pick([a], 20)                                                          # conflict gone -> the same selection is back
+        self.assertEqual(s, "S01")                                                          # the selection is today's one
+        self.assertEqual(self.sel.selected["setup_id"], "MQA-S01-LONG")
+        self.assertEqual(st["suspended"]["code"], "SELECTION_SUSPENDED_CONFLICT_LONG_SHORT_INTRADAY")
+        self.assertEqual((st["suspended"]["setup_id"], st["suspended"]["since"]), ("MQA-S01-LONG", self.sel.state["last_evaluated_at"]))
+        self.assertNotIn("SELECTION_SUSPENDED_CONFLICT", st["reason_codes"])                # reason_codes / agent input unchanged
+        self.assertEqual(self.log(), [(None, "S01", "FIRST_SELECTION")])                    # no selection change -> no log row
+        since = st["suspended"]["since"]
+        s, st = self.pick([a, self.row("S07", "CONFIRMED", 63, 90, "SHORT")], 15)
+        self.assertEqual(st["suspended"]["since"], since)                                   # the same suspension keeps its start
+        s, st = self.pick([a], 20)                                                          # conflict gone -> executable again
         self.assertEqual(s, "S01")
-        self.assertEqual(self.sel.selected["at"], t0)                                       # hold time / hysteresis state unchanged
+        self.assertEqual(self.sel.selected["at"], t0)
         self.assertIsNone(st["suspended"])
-        self.assertEqual(self.log()[-1], (None, "S01", "CONFLICT_RESOLVED_SELECTION_RESTORED"))
+        self.assertIsNone(self.sel.suspended)
 
     def test_conflict_in_the_horizon_of_a_held_selection_that_is_not_the_best(self):
         a = self.row("S01", "CONFIRMED", 60, 100, "LONG")
@@ -277,32 +282,172 @@ class TestSelectorConflictSuspendsSelection(_SelectorCase):
         x = self.row("S03", "CONFIRMED", 66, 100, "LONG", horizon="SWING")                  # leads by < min_switch_margin, other horizon
         y = self.row("S07", "CONFIRMED", 58, 100, "SHORT")                                  # opposite, same horizon as S01, close rank
         s, st = self.pick([a, x, y], 10)
-        self.assertIsNone(s)
-        self.assertTrue(any(r.startswith("CONFLICT_LONG_SHORT_INTRADAY") for r in st["reason_codes"]))
+        self.assertEqual(s, "S01")
+        self.assertTrue(st["suspended"]["detail"].startswith("SELECTION_SUSPENDED_CONFLICT_LONG_SHORT_INTRADAY_DIFF_"), st["suspended"])
 
     def test_suspended_selection_that_disappears_is_dropped_as_today(self):
         a = self.row("S01", "CONFIRMED", 60, 100, "LONG")
         b = self.row("S02", "CONFIRMED", 61, 100, "LONG", setup="MQA-B")
         self.assertEqual(self.pick([a], 0)[0], "S01")
-        self.assertIsNone(self.pick([a, self.row("S07", "CONFIRMED", 62, 90, "SHORT")], 10)[0])
-        self.assertEqual(self.pick([b], 20)[0], "S02")                                     # S01 gone -> best at once (today's rule)
+        self.assertIsNotNone(self.pick([a, self.row("S07", "CONFIRMED", 62, 90, "SHORT")], 10)[1]["suspended"])
+        s, st = self.pick([b], 20)                                                          # S01 gone -> best at once (today's rule)
+        self.assertEqual(s, "S02")
+        self.assertIsNone(st["suspended"])
         self.assertEqual(self.log()[-1][2], "PREVIOUS_SETUP_NO_LONGER_VALID")
 
-    def test_log_reason_is_a_constant_code(self):
-        # recenzja I0749: powód w strategy_selection_log zawierał różnicę rankingu (..._DIFF_-15.3) - raport replay_strategies grupuje po
-        # pełnym powodzie, więc każdy konflikt dawał osobny klucz. Log: stały kod; różnica zostaje w reason_codes stanu.
+    def test_reset_and_stale_data_clear_the_suspension(self):
+        from datetime import timedelta
         a = self.row("S01", "CONFIRMED", 60, 100, "LONG")
-        self.assertEqual(self.pick([a], 0)[0], "S01")
-        s, st = self.pick([a, self.row("S07", "CONFIRMED", 62, 90, "SHORT")], 10)
-        self.assertIsNone(s)
-        self.assertEqual(self.log()[-1], ("S01", None, "SELECTION_SUSPENDED_CONFLICT_LONG_SHORT_INTRADAY"))
-        self.assertTrue(any(r.startswith("CONFLICT_LONG_SHORT_INTRADAY_DIFF_") for r in st["reason_codes"]), st["reason_codes"])
+        self.pick([a], 0)
+        self.assertIsNotNone(self.pick([a, self.row("S07", "CONFIRMED", 62, 90, "SHORT")], 10)[1]["suspended"])
+        self.sel.reset("USER_SELECTED_OTHER_STRATEGY")
+        self.assertIsNone(self.sel.suspended)
+        self.pick([a], 20)
+        self.assertIsNotNone(self.pick([a, self.row("S07", "CONFIRMED", 62, 90, "SHORT")], 30)[1]["suspended"])
+        st = self.sel.select([a], cfg=self.s.cfg, regime={"state": "STALE"}, data_ok=False, new_data=True,
+                             now=self.s.t0 + timedelta(seconds=40), snapshot_id="S", account_key="a", per_strategy={})
+        self.assertIsNone(st["suspended"])
 
     def test_no_conflict_no_change(self):
         rows = [self.row("S01", "EARLY", 60, 100), self.row("S07", "EARLY", 40, 90, "SHORT")]   # opposite but far below
         self.assertEqual(self.pick(rows, 0)[0], "S01")
-        self.assertEqual(self.pick(rows, 10)[0], "S01")
+        s, st = self.pick(rows, 10)
+        self.assertEqual(s, "S01")
+        self.assertIsNone(st["suspended"])
         self.assertEqual([x[2] for x in self.log()], ["FIRST_SELECTION"])
+
+
+class TestSuspensionKeepsTheAiGateInputs(unittest.TestCase):
+    """I0749 (recenzja, S0 poprzedniej wersji): sekwencja ai_gate_sim - t+0 wybrany S01 LONG EARLY; t+60 S07 SHORT w granicy
+    conflict_margin; t+120 S01 przechodzi w CONFIRMED w trakcie konfliktu; t+300 konflikt znika. Prośby do agenta AI (prawdziwe
+    EngineService._active_agent_triggers) i stan bramki AI (prawdziwy ClaudeAgent.gate_for, polityka VETO; agent odpowiada WAIT) mają być
+    w każdym kroku jak w bazie (c8277f4 / gałąź docelowa), a w czasie konfliktu decyzja (prawdziwe ActiveEngine.decision_inputs +
+    decision.build) ma blokadę PERMISSION. Przed poprawką recenzji: o t+120 agent nie był pytany, o t+300 bramka NOT_REQUIRED (PASS)."""
+
+    # base (c8277f4 and claude/architektura-modele-146 d3bc0f1, scratchpad ai_gate_sim.py): AI gate per step and the agent requests
+    BASE_GATE = (("PENDING", ("AI_EVALUATES_CONFIRMED_SETUPS_ONLY",)), ("PENDING", ("AI_EVALUATES_CONFIRMED_SETUPS_ONLY",)),
+                 ("PENDING", ("AI_ASSESSMENT_MISSING", "AI_VETO_WAIT_60S")), ("DISAGREE", ("AI_PROPOSES_WAIT",)), ("DISAGREE", ("AI_PROPOSES_WAIT",)))
+    BASE_REQUESTS = (("SETUP_NEW", "MQA-S01-LONG", "EARLY"), ("SETUP_NEW", "MQA-S01-LONG", "EARLY"),
+                     ("SETUP_CONFIRMED", "MQA-S01-LONG", "CONFIRMED"))
+
+    def setUp(self):
+        from _env import TempData
+        self.td = TempData()
+        os.environ.setdefault("ANTHROPIC_API_KEY", "sk-ant-test-not-a-real-key")
+
+    def tearDown(self):
+        self.td.close()
+
+    def test_agent_requests_and_ai_gate_are_todays_and_the_conflict_blocks(self):
+        import asyncio
+        import json
+        from datetime import timedelta
+        from types import SimpleNamespace as NS
+
+        import test_agent as TA
+        from masterquo.agent.service import ClaudeAgent
+        from masterquo.config import AppConfig, ConfigStore
+        from masterquo.db.database import Database
+        from masterquo.engine import decision
+        from masterquo.engine.active import ActiveEngine
+        from masterquo.engine.service import EngineService
+        from masterquo.events import AppLog, EventBus
+        from masterquo.secrets_store import SecretStore
+        from masterquo.timeutil import iso, parse_iso
+
+        db = Database()
+        store = ConfigStore()
+        store.update({"agent": {"model": "claude-opus-5-5"}})
+        agent = ClaudeAgent(store, SecretStore(), db, EventBus(), AppLog(db, EventBus()), lambda sid: TA.CTX)
+        self.assertEqual(agent.policy(), "VETO")
+        eng = ActiveEngine(db, store, None, None, None)
+        sel = eng.selector
+        cfg = store.get().active
+        t0 = parse_iso("2026-10-08T10:00:00Z")
+        changed: dict = {}
+        byid: dict = {}
+
+        def row(sid, stage, score, fit, direction, t):
+            k = f"MQA-{sid}-{direction}"
+            if changed.get(k, (None,))[0] != stage:
+                changed[k] = (stage, iso(t))
+            return {"setup_id": k, "status": "ACTIVE", "stale": 0, "stage": stage, "stage_changed_at": changed[k][1], "first_seen_at": iso(t0),
+                    "version": 1, "record": {"strategy_id": sid, "strategy_name": sid, "strategy_version": "1", "direction": direction,
+                                             "timeframe": "M15", "horizon": "INTRADAY", "setup_score": score, "strategy_fit_score": fit,
+                                             "countertrend": False, "event_id": f"EV-{sid}-{direction}", "score": {"points": {}}}}
+
+        requests = []
+
+        class FakeAgent:                         # records the requests; a SETUP_CONFIRMED request is answered WAIT (as _handle stores it)
+            def request(self, trig, *, snapshot_id, setup_id, setup_state, question=None):
+                requests.append((trig, setup_id, setup_state))
+                if trig == "SETUP_CONFIRMED":
+                    client = TA.ScriptedClient([TA.msg([TA.text(json.dumps(TA.answer(setup_id=setup_id, analysis_direction="LONG",
+                                                                                      proposed_action="WAIT")))], "end_turn")])
+                    agent._client_get = lambda: client
+                    ctx = dict(TA.CTX, setup=dict(TA.CTX["setup"], setup_id=setup_id, direction="LONG",
+                                                  state_changed_at=byid[setup_id]["stage_changed_at"]))
+                    req = {"trigger": trig, "snapshot_id": "SNP-1", "setup_id": setup_id, "setup_state": "CONFIRMED", "question": None, "key": "k"}
+                    agent.by_setup[setup_id] = asyncio.run(agent.run_once(req, ctx))
+
+        fake_engine = NS(agent=FakeAgent(), active=NS(selector=sel))
+        eng.selected_row = lambda: byid.get((sel.selected or {}).get("setup_id"))     # tracker lookup of selector.selected (unchanged code)
+        dq = {"analysis_allowed": True, "entries_allowed": True, "reason_codes": [], "market_state": "OPEN", "data_quality": "GOOD"}
+        scans = [(0, [("S01", "EARLY", 60, 100, "LONG")], [("NEW_EARLY", "MQA-S01-LONG")]),
+                 (60, [("S01", "EARLY", 60, 100, "LONG"), ("S07", "CONFIRMED", 62, 90, "SHORT")], [("NEW_CONFIRMED", "MQA-S07-SHORT")]),
+                 (120, [("S01", "CONFIRMED", 60, 100, "LONG"), ("S07", "CONFIRMED", 66, 90, "SHORT")], [("STAGE_CONFIRMED", "MQA-S01-LONG")]),
+                 (300, [("S01", "CONFIRMED", 60, 100, "LONG")], [("CANCELLED", "MQA-S07-SHORT")]),
+                 (360, [("S01", "CONFIRMED", 60, 100, "LONG")], [])]
+        gates, perms = [], []
+        for (sec, spec, tev) in scans:
+            now = t0 + timedelta(seconds=sec)
+            rows = [row(*x, t=now) for x in spec]
+            byid.update({r["setup_id"]: r for r in rows})
+            prev = (sel.selected or {}).get("setup_id")
+            sel.select(rows, cfg=cfg, regime={"state": "TREND_UP"}, data_ok=True, new_data=True, now=now, snapshot_id="SNP-1",
+                       account_key="srv:1", per_strategy={})
+            cur = (sel.selected or {}).get("setup_id")
+            self.assertEqual(cur, "MQA-S01-LONG", sec)                                   # today's selection at every step
+            events = [(k, byid.get(x, {"setup_id": x, "stage": None})) for k, x in tev]
+            if cur != prev:
+                events.append(("SELECTION_CHANGED", byid[cur]))
+            setup, levels, active = eng.decision_inputs()                                 # light_cycle: the decision before the triggers
+            g = agent.gate_for(setup, session_epoch=1, account_key="srv:1", now_iso=iso(now))
+            gates.append((g["status"], tuple(g["reason_codes"])))
+            d = decision.build(snapshot_id="SNP-1", as_of=iso(now), symbol="XAUUSD-", account_key="srv:1", session_epoch=1, dq=dq, legacy={},
+                               setup=setup, levels=levels, risk={"risk_gate": "PASS", "reason_codes": []}, agent_gate={"status": "NOT_REQUIRED",
+                               "reason_codes": []}, mode_gate={"mode": "AUTO_DEMO", "allowed": True, "reason_codes": []},
+                               macro={"status": "UNAVAILABLE"}, strategy_cfg=AppConfig().strategy, risk_cfg=AppConfig().risk,
+                               dxy_status="NOT_CONFIGURED", synthetic=True, active=active)
+            perm = next(n for n in d["decision_tree"] if n["node"] == "PERMISSION")
+            perms.append((perm["status"], active.get("selection_suspended")))
+            EngineService._active_agent_triggers(fake_engine, events, "SNP-1")
+        self.assertEqual(tuple(gates), self.BASE_GATE)
+        self.assertEqual(tuple(requests), self.BASE_REQUESTS)
+        code = "SELECTION_SUSPENDED_CONFLICT_LONG_SHORT_INTRADAY"
+        self.assertEqual(perms, [("PASS", None), ("FAIL", code), ("FAIL", code), ("PASS", None), ("PASS", None)])
+
+    def test_permission_block_only_adds(self):
+        from masterquo.config import AppConfig
+        from masterquo.engine import decision
+        cfg = AppConfig()
+        dq = {"analysis_allowed": True, "entries_allowed": True, "reason_codes": [], "market_state": "OPEN", "data_quality": "GOOD"}
+        setup = {"setup_id": "MQA-1", "state": "CONFIRMED", "signal_stage": "CONFIRMED", "direction": "LONG", "strategy_id": "S01",
+                 "profile": "ACTIVE", "setup_tf": "M15", "state_changed_at": "2026-10-08T11:59:00Z"}
+
+        def build(**extra):
+            return decision.build(snapshot_id="S", as_of="2026-10-08T12:00:00Z", symbol="XAUUSD-", account_key="a", session_epoch=1, dq=dq,
+                                  legacy={}, setup=setup, levels={}, risk={"risk_gate": "PASS", "reason_codes": []},
+                                  agent_gate={"status": "NOT_REQUIRED", "reason_codes": []}, mode_gate={"mode": "PAPER", "allowed": True,
+                                                                                                        "reason_codes": []},
+                                  macro={"status": "UNAVAILABLE"}, strategy_cfg=cfg.strategy, risk_cfg=cfg.risk, dxy_status="NOT_CONFIGURED",
+                                  synthetic=True, active={"regime": {"state": "TREND_UP", "conflicts": []}, "bias": "LONG", "trade_allowed": True,
+                                                          "reason_codes": [], **extra})
+        base, none = build(), build(selection_suspended=None)
+        self.assertEqual((base["decision_id"], base["execution_permission"]), (none["decision_id"], "ALLOWED"))   # no suspension: today's
+        d = build(selection_suspended="SELECTION_SUSPENDED_CONFLICT_LONG_SHORT_INTRADAY")
+        self.assertEqual((d["decision"], d["execution_permission"]), ("BUY", "BLOCKED"))                          # observation kept, no order
+        self.assertIn("SELECTION_SUSPENDED_CONFLICT_LONG_SHORT_INTRADAY", d["reason_codes"])
 
 
 class TestWallsStoreRestart(unittest.TestCase):
