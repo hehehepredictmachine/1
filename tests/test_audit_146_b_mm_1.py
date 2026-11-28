@@ -83,8 +83,11 @@ class TestAlignMeanSessionBoundary(unittest.TestCase):
 
     def test_mql5_indicator_uses_the_same_session_boundary(self):
         # parity: the MT5 indicator PMW_AlignMean.mq5 must assign sessions exactly like mm/align_mean.session_id
-        src = (Path(__file__).resolve().parents[1] / "mql5" / "MasterModels" / "Indicators" / "PMW_AlignMean.mq5").read_text("utf-8")
-        line = next(x for x in src.splitlines() if x.startswith("long Sid("))
+        # 1.46 arch I0501: the session function moved to the shared core PMW_AlignMeanCore.mqh (indicator + native self-test)
+        mm = Path(__file__).resolve().parents[1] / "mql5" / "MasterModels"
+        self.assertIn("#include <PMW\\PMW_AlignMeanCore.mqh>", (mm / "Indicators" / "PMW_AlignMean.mq5").read_text("utf-8"))
+        src = (mm / "Include" / "PMW" / "PMW_AlignMeanCore.mqh").read_text("utf-8")
+        line = next(x for x in src.splitlines() if x.startswith("long PmwAmSid("))
         self.assertIn("MathCeil(", line)
         self.assertTrue(line.rstrip().endswith("- 1; }"), line)
         self.assertNotIn("MathFloor", line)

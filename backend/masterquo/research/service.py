@@ -13,6 +13,18 @@ CLOSED M5 bar of the context:
            composite (graph / ETC / G7 roles) on the frozen objective (Brier score of the BPC10 event), applied on the next snapshot
 Published: features_for(inst, t) (as-of the decision time, for Quant / TabICL), PMW-PRED-2 records (ModelHub, decision trace),
 status with the four separate state axes (enabled, runtime, artifact, contribution). Nothing here sends an order.
+
+1.46 audit (wave 2: I0803 / I0804 / I0805 / I0806 / I0858) - corrected semantics are published as VERSIONED outputs next to the old ones:
+  G7 V2 (g7.radar: source-exact CheckOB, missing candles absent)        -> snapshot g7_smc_radar.v2, columns g7_v2_*
+  ETC change features vs the snapshot of bar i-1 with the same params   -> snapshot exponential_trend_channel.change_v2, columns *_v2
+  SDformerFlow only from a FRESH result (module on, PREDICTION_ACTIVE,
+  result of the newest closed H1 bar)                                    -> snapshot sdformerflow.fresh_v2, columns sdf_v2_*
+  research composite V2 (an input with a non-zero weight missing ->
+  p_event_raw None, state PARTIAL_INPUTS)                                -> snapshot composite_v2, column research_composite_v2_p_raw
+Every output that existed before (column names g7_* / etc_* / sdf_* / research_composite_p_raw, the PMW-PRED records, the legacy
+composite and the optimiser's rows) keeps EXACTLY its earlier value: they are inputs of trained Quant meta-models (ASSIST can HOLD a
+candidate - quant/service.py) that read only their own feature list (quant/metamodel.py predict); a changed value or a removed input
+there could lift a HOLD. New meta-models see the V2 columns after a retraining.
 """
 from __future__ import annotations
 
@@ -152,6 +164,17 @@ def _ts(s) -> float | None:
         return None
 
 
+def _etc_change_v2(cur: dict | None, prev: dict | None, prev_t: float | None, src: str) -> dict:
+    """1.46 (I0858): ETC change features against the snapshot of bar i-1 (same formula as research/etc.py snapshot(): window change
+    flag, fit change); None when either channel is missing (warming up)."""
+    ch, pc = (cur or {}).get("channel"), (prev or {}).get("channel")
+    out = {"etc_window_change_flag": None, "etc_fit_change": None, "prev_bar_t": prev_t, "prev_source": src}
+    if ch and pc:
+        out["etc_window_change_flag"] = 1.0 if pc["bars"] != ch["bars"] else 0.0
+        out["etc_fit_change"] = ch["fit"] - pc["fit"]
+    return out
+
+
 def torch_python() -> str | None:
     """Any model environment with torch 2.14.1 (SDformerFlow has no environment of its own)."""
     root = paths.ROOT_DIR
@@ -172,6 +195,7 @@ class Context:
         self.snaps: list[dict] = []                       # as-of snapshots (newest last, bounded)
         self.gen = 0                                      # 1.46: snapshots made (generation was len(snaps) + 1 - stuck at 3001 after the cap)
         self.etc_prev: dict | None = None
+        self.etc_prev_key: tuple | None = None            # 1.46 (I0858): (bar time, ETC schema hash) of etc_prev
         self.zones = G7.ZoneBook(inst)
         self.graph = {t: GR.TargetState(t) for t in GR.TARGETS}
         self.sdf: dict | None = None
@@ -273,13 +297,6 @@ class ResearchModulesService:
                 self.contexts[key] = c
             return self.contexts[key]
 
-    def register_context(self, key: str, inst: str, bars_fn, profile: str) -> None:
-        with self._lock:
-            if key not in self.contexts:
-                c = Context(key, inst, bars_fn, profile)
-                self._load_ctx(c)
-                self.contexts[key] = c
-
     def _ctx_file(self, c: Context) -> Path:
         import hashlib
         return self.base / f"ctx_{hashlib.sha256(c.key.encode()).hexdigest()[:12]}.json"
@@ -368,17 +385,29 @@ class ResearchModulesService:
         snap = {"t": m5[-1]["t"] + 300, "bar_t": m5[-1]["t"], "context": c.key, "generation": c.gen, "modules": {}}
         if self.module_on("exponential_trend_channel"):
             p = {k: s["etc"][k] for k in ("price", "window_set", "width")}
+            sh = ETC.schema_hash(p)
+            # legacy (1.46 value, inputs of trained models): the change features compare with the LAST COMPUTED snapshot
             e5 = ETC.snapshot(m5, len(m5) - 1, p, c.etc_prev)
-            c.etc_prev = e5
+            # V2 (I0858): the snapshot of bar i-1 with the same parameters - the cached one when it is exactly that, else recomputed
+            if len(m5) >= 2 and c.etc_prev is not None and c.etc_prev_key == (m5[-2]["t"], sh):
+                prev, src = c.etc_prev, "CACHED_I_MINUS_1"
+            elif len(m5) >= 2:
+                prev, src = ETC.snapshot(m5, len(m5) - 2, p), "RECOMPUTED_I_MINUS_1"
+            else:
+                prev, src = None, "NO_PREVIOUS_BAR"
+            c.etc_prev, c.etc_prev_key = e5, (m5[-1]["t"], sh)
             e1 = ETC.snapshot(h1, len(h1) - 1, p) if len(h1) > 25 else None
             snap["modules"]["exponential_trend_channel"] = {"result_type": "FEATURE_VECTOR", "M5": e5, "H1": e1, "parameter_version": s["etc"]["param_version"],
-                                                            "feature_schema_id": ETC.schema_hash(p)}
+                                                            "feature_schema_id": sh,
+                                                            "change_v2": _etc_change_v2(e5, prev, m5[-2]["t"] if len(m5) >= 2 else None, src)}
         if self.module_on("g7_smc_radar"):
             dxy = self._bridge_bars("DXY_H1", 200) if c.profile == "FOREX_MT5" else None
-            r = G7.radar(m5[-60:], m15[-60:], h1[-80:], dxy, s["g7"])
+            r = G7.radar_v1(m5[-60:], m15[-60:], h1[-80:], dxy, s["g7"])          # legacy V1 (1.46 value, inputs of trained models)
+            r2 = G7.radar(m5[-60:], m15[-60:], h1[-80:], dxy, s["g7"])            # V2 (I0803 / I0804): published separately
             for tf, bs in (("M5", m5[-10:]), ("M15", m15[-10:])):
                 c.zones.observe(tf, bs)
-            snap["modules"]["g7_smc_radar"] = {"result_type": "STRUCTURE_CONTEXT", **r, "zones_active": len([z for z in c.zones.asof(snap["t"]) if z["state"] in ("ACTIVE", "TOUCHED")])}
+            snap["modules"]["g7_smc_radar"] = {"result_type": "STRUCTURE_CONTEXT", **r, "zones_active": len([z for z in c.zones.asof(snap["t"]) if z["state"] in ("ACTIVE", "TOUCHED")]),
+                                               "v2": r2}
         if self.module_on("cellular_feature_graph"):
             ex = GR.extract(m5)
             if ex is not None:
@@ -398,10 +427,19 @@ class ResearchModulesService:
             c.last_h1 = h1[-1]["t"]
             self._sdformer(c, h1)
         if c.sdf and c.sdf.get("result"):
-            snap["modules"]["sdformerflow"] = {"result_type": "DIRECTION_SCORE_RAW", **c.sdf["result"]}
+            # legacy (1.46 value, inputs of trained models): published whenever a result exists. V2 (I0805): `fresh_v2` = the module is
+            # on, the state is PREDICTION_ACTIVE and the result is the inference of the newest closed H1 bar - only then the sdf_v2_*
+            # columns (an old result after an error / restart / switch-off is not "current")
+            res = c.sdf["result"]
+            fresh = bool(self.module_on("sdformerflow") and c.sdf.get("state") == "PREDICTION_ACTIVE" and h1 and res.get("bar_t") is not None
+                         and float(res["bar_t"]) == float(h1[-1]["t"]))
+            snap["modules"]["sdformerflow"] = {"result_type": "DIRECTION_SCORE_RAW", **res, "fresh_v2": fresh}
         comp = self._composite(snap, s)
         if comp is not None:
             snap["composite"] = comp
+        comp2 = self._composite_v2(snap, s)
+        if comp2 is not None:
+            snap["composite_v2"] = comp2
         c.snaps.append(snap)
         c.snaps = c.snaps[-3000:]
         return {"state": "UPDATED", "modules": list(snap["modules"])}
@@ -418,6 +456,29 @@ class ResearchModulesService:
         return {"p_event_raw": 1 / (1 + math.exp(-max(-30, min(30, z)))), "event": "BPC10_UP (kierunek ruchu w 10 świecach M5)",
                 "weights_version": s["composite"]["version"], "weights_status": s["composite"]["status"], "inputs": dict(zip(COMPOSITE_NAMES, x)),
                 "calibration_status": "UNCALIBRATED", "correlation_group": "RESEARCH_COMPOSITE (graf + ETC + G7 – jedna grupa pochodzenia)"}
+
+    def _composite_v2(self, snap: dict, s: dict) -> dict | None:
+        """1.46 (I0806): the composite with the same weights, but an input with a NON-ZERO weight that is missing is never 0.0 - then
+        p_event_raw = None, state PARTIAL_INPUTS (with the mask); G7 = the V2 radar score. A missing input with weight 0 adds nothing.
+        None when no research module produced anything this cycle (like the legacy composite without the graph)."""
+        mods = snap["modules"]
+        if not any(m in mods for m in ("cellular_feature_graph", "exponential_trend_channel", "g7_smc_radar")):
+            return None
+        w = [float(x) for x in s["composite"]["weights"]]
+        g = ((mods.get("cellular_feature_graph") or {}).get("targets") or {}).get("BPC10", {}).get("raw_score")
+        e = (((mods.get("exponential_trend_channel") or {}).get("M5") or {}).get("features") or {}).get("etc_position_z_closed")
+        r7 = ((mods.get("g7_smc_radar") or {}).get("v2") or {}).get("rule_confluence_score")
+        x = [1.0, g, e, (r7 / 100.0) if r7 is not None else None]
+        mask = {n: v is None for n, v in zip(COMPOSITE_NAMES, x)}
+        missing = [n for n, v, wi in zip(COMPOSITE_NAMES, x, w) if v is None and wi != 0.0]
+        out = {"event": "BPC10_UP (kierunek ruchu w 10 świecach M5)", "weights_version": s["composite"]["version"],
+               "weights_status": s["composite"]["status"], "inputs": dict(zip(COMPOSITE_NAMES, x)), "mask": mask, "g7_semantics": G7.VERSION,
+               "calibration_status": "UNCALIBRATED", "correlation_group": "RESEARCH_COMPOSITE (graf + ETC + G7 – jedna grupa pochodzenia)"}
+        if missing:
+            return {**out, "p_event_raw": None, "state": "PARTIAL_INPUTS", "missing_weighted": missing,
+                    "reason": f"brak wejść z niezerową wagą: {', '.join(missing)} – kompozyt nie jest liczony (brak ≠ 0)"}
+        z = sum(wi * xi for wi, xi in zip(w, x) if xi is not None)
+        return {**out, "p_event_raw": 1 / (1 + math.exp(-max(-30, min(30, z)))), "state": "READY"}
 
     # ------------------------------------------------------------------ SDformerFlow
     def _sdf_dir(self) -> Path:
@@ -717,13 +778,26 @@ class ResearchModulesService:
         if sn is None:
             return {}
         f = {}
-        e = ((sn["modules"].get("exponential_trend_channel") or {}).get("M5") or {}).get("features") or {}
+        # legacy names keep their 1.46 values (inputs of trained Quant meta-models); V2 semantics only under the *_v2 / *_v2_* names
+        em = sn["modules"].get("exponential_trend_channel") or {}
+        e = (em.get("M5") or {}).get("features") or {}
         f.update({k: v for k, v in e.items() if v is not None})
+        for k in ("etc_window_change_flag", "etc_fit_change"):
+            v = (em.get("change_v2") or {}).get(k)
+            if v is not None:
+                f[f"{k}_v2"] = v
         g = sn["modules"].get("g7_smc_radar") or {}
         if g:
             f["g7_rule_confluence"] = g["rule_confluence_score"] / 100.0
             f["g7_net_fvg"] = float(g["components"]["net_fvg"])
             f["g7_ob_h1"] = float(g["components"]["ob_h1"])
+            g2 = g.get("v2") or {}
+            if g2.get("rule_confluence_score") is not None:
+                f["g7_v2_rule_confluence"] = g2["rule_confluence_score"] / 100.0
+            for k in ("net_fvg", "ob_h1"):
+                v = (g2.get("components") or {}).get(k)
+                if v is not None:
+                    f[f"g7_v2_{k}"] = float(v)
         gr = (sn["modules"].get("cellular_feature_graph") or {}).get("targets") or {}
         for t_, r in gr.items():
             f[f"graph_{t_.lower()}_raw"] = r["raw_score"]
@@ -732,8 +806,14 @@ class ResearchModulesService:
             f["sdf_direction_raw"] = sd["direction_score_raw"]
             for i, v in enumerate(sd.get("embedding8") or []):
                 f[f"sdf_emb{i}"] = v
+            if sd.get("fresh_v2"):
+                f["sdf_v2_direction_raw"] = sd["direction_score_raw"]
+                for i, v in enumerate(sd.get("embedding8") or []):
+                    f[f"sdf_v2_emb{i}"] = v
         if sn.get("composite"):
             f["research_composite_p_raw"] = sn["composite"]["p_event_raw"]
+        if (sn.get("composite_v2") or {}).get("p_event_raw") is not None:
+            f["research_composite_v2_p_raw"] = sn["composite_v2"]["p_event_raw"]
         return f
 
     def predictions(self, inst: str) -> list[dict]:
@@ -754,17 +834,23 @@ class ResearchModulesService:
             out.append(C.make(**common, timeframe="M5", model_name=f"research:graph50:{t}", task_type="SCORE", task=f"GRAPH50_{t}", horizon_bars=GR.TARGETS[t],
                               unit="ratio", state="READY", result={"raw_score": r["raw_score"]}, data_time=_iso(sn["t"]), available_at=_iso(sn["t"]),
                               extra={"canonical_id": f"research:graph50:{t}", "family": "research:graph50", "correlation_group": "RESEARCH_GRAPH"}))
+        # 1.46 (wave 2): the records keep their 1.46 state / raw_score / data_time (Quant builds fc:<record> features of trained meta-models
+        # from them and checks their age); the V2 semantics are added as INFORMATION keys only (g7_v2, result_fresh / result_data_time)
         g = ((sn or {}).get("modules", {}).get("g7_smc_radar") or {})
         if g:
+            g2 = g.get("v2") or {}
             out.append(C.make(**{**common, "calibration": {"method": None, "status": "NOT_APPLICABLE"}}, timeframe="M5", model_name="research:g7_smc_radar",
                               task_type="SCORE", task="G7_RULE_CONFLUENCE", horizon_bars=None, unit="score_0_100", state="READY",
                               result={"raw_score": g["rule_confluence_score"], "coverage": g["coverage"]}, data_time=_iso(sn["t"]), available_at=_iso(sn["t"]),
-                              extra={"canonical_id": "research:g7_smc_radar", "family": "research:g7", "correlation_group": "STRUCTURE_FVG_OB"}))
+                              extra={"canonical_id": "research:g7_smc_radar", "family": "research:g7", "correlation_group": "STRUCTURE_FVG_OB",
+                                     "g7_v2": {k: g2.get(k) for k in ("implementation_id", "state", "rule_confluence_score", "coverage", "reason")} if g2 else None}))
         sd = ((sn or {}).get("modules", {}).get("sdformerflow") or {})
         if sd.get("direction_score_raw") is not None:
             out.append(C.make(**common, timeframe="H1", model_name="research:sdformerflow", task_type="SCORE", task="SDF_STFS_DIRECTION_H6", horizon_bars=6,
                               unit="ratio", state="READY", result={"raw_score": sd["direction_score_raw"]}, data_time=_iso(sn["t"]), available_at=_iso(sn["t"]),
-                              extra={"canonical_id": "research:sdformerflow", "family": "research:sdformerflow", "correlation_group": "RESEARCH_SDFORMER"}))
+                              extra={"canonical_id": "research:sdformerflow", "family": "research:sdformerflow", "correlation_group": "RESEARCH_SDFORMER",
+                                     "result_fresh": bool(sd.get("fresh_v2")),
+                                     "result_data_time": _iso(float(sd["bar_t"]) + 3600) if sd.get("bar_t") is not None else None}))
         return out
 
     # ------------------------------------------------------------------ status
@@ -806,9 +892,12 @@ class ResearchModulesService:
             return {}
         if m == "exponential_trend_channel":
             e = res.get("M5") or {}
-            return {"state": e.get("state"), "channel": e.get("channel"), "parameter_version": res.get("parameter_version"), "schema": res.get("feature_schema_id")}
+            return {"state": e.get("state"), "channel": e.get("channel"), "parameter_version": res.get("parameter_version"), "schema": res.get("feature_schema_id"),
+                    "change_v2": res.get("change_v2")}
         if m == "g7_smc_radar":
-            return {k: res.get(k) for k in ("rule_confluence_score", "components", "coverage", "reason", "conflict", "zones_active", "asymmetric_dxy_term")}
+            # 1.46 (I0803 / I0804): the main fields are the legacy V1 output (inputs of trained models), `v2` = the source-exact radar
+            return {**{k: res.get(k) for k in ("rule_confluence_score", "components", "coverage", "reason", "conflict", "zones_active", "asymmetric_dxy_term")},
+                    "implementation_id": res.get("implementation_id"), "v2": res.get("v2")}
         if m == "cellular_feature_graph":
             return {"targets": res.get("targets"), "cells": res.get("cells"), "masked": res.get("masked"), "initialization": res.get("initialization")}
         if m == "sdformerflow":

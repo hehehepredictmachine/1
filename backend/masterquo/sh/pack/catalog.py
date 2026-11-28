@@ -12,6 +12,7 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
+import math
 import os
 import time
 from pathlib import Path
@@ -131,8 +132,10 @@ def _vhash(obj) -> str:
     return hashlib.sha256(json.dumps(obj, sort_keys=True, default=str).encode()).hexdigest()[:16]
 
 
-def validation_status(vid: str) -> dict:
-    """Real validation state of a variant: only a report written by the pack replay on REAL_USER_DATA can change NOT_VALIDATED."""
+def validation_status(vid: str, config_hash: str | None = None) -> dict:
+    """Real validation state of a variant: only a report written by the pack replay on REAL_USER_DATA can change NOT_VALIDATED.
+    w2 (I0817): with `config_hash` (the variant's CURRENT configuration) a report made for another configuration - or a report without a
+    hash (before 1.46) - is NOT_VALIDATED 'raport dla innej konfiguracji'. Without it: as before. Information only (AUTO_LIVE warns, 1.39)."""
     p = paths.data_dir() / "sh" / "pack_validation" / f"{vid}.json"
     if not p.exists():
         return {"status": "NOT_VALIDATED", "reason": "brak raportu walidacji na danych MT5 użytkownika (replay pakietu)"}
@@ -140,8 +143,13 @@ def validation_status(vid: str) -> dict:
         r = json.loads(p.read_text(encoding="utf-8"))
     except (OSError, ValueError) as exc:
         return {"status": "NOT_VALIDATED", "reason": f"raport nieczytelny ({type(exc).__name__})"}
-    return {"status": r.get("verdict") or "INSUFFICIENT_EVIDENCE", "reason": r.get("verdict_reason"), "report_id": r.get("report_id"),
-            "data_kind": r.get("data_kind"), "created_at": r.get("created_at")}
+    out = {"status": r.get("verdict") or "INSUFFICIENT_EVIDENCE", "reason": r.get("verdict_reason"), "report_id": r.get("report_id"),
+           "data_kind": r.get("data_kind"), "created_at": r.get("created_at")}
+    if config_hash is not None and r.get("config_hash") != config_hash:
+        out.update(status="NOT_VALIDATED", reason=f"raport walidacji {r.get('report_id')} dla innej konfiguracji wariantu "
+                                                   f"({r.get('config_hash') or 'bez hasha – sprzed 1.46'} ≠ {config_hash}) – powtórz replay pakietu",
+                   report_verdict=r.get("verdict"), report_config_hash=r.get("config_hash"))
+    return out
 
 
 def load(override: dict | None = None) -> dict:
@@ -198,7 +206,7 @@ def public(cfg: dict | None = None) -> dict:
         items.append({**{k: v[k] for k in ("strategy_id", "name", "family", "cluster", "setup_group_id", "implemented_tfs", "signal_tfs", "context_tfs",
                                            "management_policy_id", "description", "sources", "reuse", "enabled", "params", "position_max_minutes",
                                            "hedge", "strategy_version", "config_hash")},
-                      "implementation": "IMPLEMENTED", "validation": validation_status(vid),
+                      "implementation": "IMPLEMENTED", "validation": validation_status(vid, config_hash=v["config_hash"]),
                       "targets": {"tp1_min_pips": v["rules"]["tp1_min_pips"], "rr_min": v["rules"]["rr_min"], "shares": v["rules"]["shares"]}})
     return {"pack_version": cfg["pack_version"], "hash": cfg["hash"], "count": len(items), "families": {"SCALPING": len(SC_IDS), "HEDGING": len(HG_IDS)},
             "pip": cfg["instruments"], "common": cfg["common"], "family_rules": cfg["families"], "items": items, "errors": cfg["errors"],
@@ -206,15 +214,103 @@ def public(cfg: dict | None = None) -> dict:
 
 
 ALLOWED_OVERRIDE = {"variants", "common", "families"}
+# w2 (I0818): types / ranges checked BEFORE an override is saved (a saved bad value stopped all 20 variants and the hedge policy management).
+# load() / detect() are unchanged: an override saved earlier keeps working exactly as before (ignoring it would resume variants).
+_POS = ("position_max_minutes",)
+_HEDGE_POS = ("max_hedge_minutes", "adverse_min_r", "mfe_min_r", "giveback_r", "body_atr", "move_atr", "scenario_unwind_gap_r", "sigma_ratio_on",
+              "sigma_ratio_off")
+_HEDGE_INT = ("confirm_closes", "off_bars")
+_FAM_POS = ("tp1_min_pips", "tp1_r_mult", "tp2_r_mult", "rr_min", "ttl_max_minutes", "basket_loss_limit_x_risk", "hedge_cost_cap_fraction_of_r")
+_FAM_INT = ("ttl_bars",)
+_COMMON_NONNEG = ("b_tick_mult", "b_atr_mult", "max_entry_departure_atr", "reach_factor", "commission_scenario_price_rt", "stress_gap_price",
+                  "stress_extra_slippage_price")
+_COMMON_INT = ("pivot_left", "pivot_right", "retest_max_bars")
+
+
+def _num(x) -> bool:
+    return isinstance(x, (int, float)) and not isinstance(x, bool) and math.isfinite(float(x))
+
+
+def _validate_override(ov: dict) -> list[str]:
+    """Errors of a raw override (types) - checked before load(), which would fail on them with TypeError (HTTP 500)."""
+    err = []
+    if not isinstance(ov, dict):
+        return ["nadpisanie musi być obiektem"]
+    for sec in ("variants", "common", "families"):
+        if sec in ov and not isinstance(ov[sec], dict):
+            err.append(f"{sec}: oczekiwany obiekt")
+    for vid, vc in (ov.get("variants") or {}).items() if isinstance(ov.get("variants"), dict) else ():
+        if not isinstance(vc, dict):
+            err.append(f"{vid}: oczekiwany obiekt")
+            continue
+        if "enabled" in vc and not isinstance(vc["enabled"], bool):
+            err.append(f"{vid}.enabled: oczekiwane true/false")
+        if "signal_tfs" in vc and not (isinstance(vc["signal_tfs"], list) and all(isinstance(t, str) for t in vc["signal_tfs"])):
+            err.append(f"{vid}.signal_tfs: oczekiwana lista TF")
+        if "params" in vc:
+            if not isinstance(vc["params"], dict):
+                err.append(f"{vid}.params: oczekiwany obiekt")
+            else:
+                for k, x in vc["params"].items():
+                    if isinstance(x, str) or x is None:
+                        continue
+                    if not _num(x) or float(x) < 0:
+                        err.append(f"{vid}.params.{k}={x!r}: oczekiwana liczba skończona ≥ 0 (albo tekst)")
+        for k in _POS:
+            if k in vc and not (_num(vc[k]) and float(vc[k]) > 0):
+                err.append(f"{vid}.{k}={vc[k]!r}: oczekiwana liczba > 0")
+        if "hedge" in vc:
+            h = vc["hedge"]
+            if not isinstance(h, dict):
+                err.append(f"{vid}.hedge: oczekiwany obiekt")
+            else:
+                for k in _HEDGE_POS + ("ratio", "ratio_max", "ratio_min"):
+                    if k in h and not (_num(h[k]) and float(h[k]) > 0):
+                        err.append(f"{vid}.hedge.{k}={h[k]!r}: oczekiwana liczba > 0")
+                for k in _HEDGE_INT:
+                    if k in h and not (_num(h[k]) and float(h[k]) == int(h[k]) and int(h[k]) >= 1):
+                        err.append(f"{vid}.hedge.{k}={h[k]!r}: oczekiwana liczba całkowita ≥ 1")
+    for fam, fc in (ov.get("families") or {}).items() if isinstance(ov.get("families"), dict) else ():
+        if not isinstance(fc, dict):
+            err.append(f"{fam}: oczekiwany obiekt")
+            continue
+        for k in _FAM_POS:
+            if k in fc and not (_num(fc[k]) and float(fc[k]) > 0):
+                err.append(f"{fam}.{k}={fc[k]!r}: oczekiwana liczba > 0")
+        for k in _FAM_INT:
+            if k in fc and not (_num(fc[k]) and float(fc[k]) == int(fc[k]) and int(fc[k]) >= 1):
+                err.append(f"{fam}.{k}={fc[k]!r}: oczekiwana liczba całkowita ≥ 1")
+        if "shares" in fc and not (isinstance(fc["shares"], list) and len(fc["shares"]) == 2 and all(_num(x) and 0 < float(x) < 1 for x in fc["shares"])):
+            err.append(f"{fam}.shares: oczekiwane dwa udziały w (0, 1)")
+        if "max_ratio" in fc and not (_num(fc["max_ratio"]) and 0 < float(fc["max_ratio"]) <= 0.5):
+            err.append(f"{fam}.max_ratio={fc['max_ratio']!r}: oczekiwane (0, 0,5] – bez martingale")
+        if "max_activations" in fc and not (_num(fc["max_activations"]) and float(fc["max_activations"]) == int(fc["max_activations"])
+                                            and int(fc["max_activations"]) >= 0):
+            err.append(f"{fam}.max_activations: oczekiwana liczba całkowita ≥ 0")
+        if "hedge" in fc and not isinstance(fc["hedge"], bool):
+            err.append(f"{fam}.hedge: oczekiwane true/false")
+    cm = ov.get("common") if isinstance(ov.get("common"), dict) else {}
+    for k in _COMMON_NONNEG:
+        if k in cm and not (_num(cm[k]) and float(cm[k]) >= 0):
+            err.append(f"common.{k}={cm[k]!r}: oczekiwana liczba skończona ≥ 0")
+    for k in _COMMON_INT:
+        if k in cm and not (_num(cm[k]) and float(cm[k]) == int(cm[k]) and int(cm[k]) >= 1):
+            err.append(f"common.{k}={cm[k]!r}: oczekiwana liczba całkowita ≥ 1")
+    return err
 
 
 def save_override(patch: dict, who: str = "panel") -> dict:
+    if not isinstance(patch, dict):
+        raise TypeError("nadpisanie musi być obiektem")
     bad = [k for k in patch if k not in ALLOWED_OVERRIDE]
     if bad:
         raise ValueError("NIEDOZWOLONE_POLA:" + ",".join(bad))
     p = _override_path()
     cur = json.loads(p.read_text(encoding="utf-8")) if p.exists() else {"version": 0, "override": {}, "history": []}
     new_ov = _merge(cur.get("override") or {}, patch)
+    errs = _validate_override(new_ov)
+    if errs:
+        raise ValueError("; ".join(errs)[:900])
     eff = load(new_ov)
     if eff["errors"]:
         raise ValueError("; ".join(eff["errors"]))

@@ -2,7 +2,6 @@
 import asyncio
 import http.cookiejar
 import json
-from pathlib import Path
 import os
 import subprocess
 import sys

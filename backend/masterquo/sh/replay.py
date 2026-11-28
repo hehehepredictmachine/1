@@ -113,11 +113,17 @@ class Market:
 
 
 # ---------------------------------------------------------------------------- setup scan
-def scan(market: Market, spec: SymbolSpec, profiles: dict, *, start: int = 0, end: int | None = None, progress=None):
-    """Yield (i, {strategy: setup}, snapshot) for every closed M1 bar. ONE snapshot per bar shared by all strategies (as live)."""
+def scan(market: Market, spec: SymbolSpec, profiles: dict, *, start: int = 0, end: int | None = None, progress=None, risk: dict | None = None):
+    """Yield (i, {strategy: setup}, snapshot) for every closed M1 bar. ONE snapshot per bar shared by all strategies (as live).
+    `risk`: the SH risk configuration (default: sh/config.load()['risk']) - 1.46: its data-age limits are passed to the snapshot exactly as
+    the live cycle does (sh/service.cycle); before, the replay got the looser built-in defaults of context.snapshot."""
     cache: dict = {}
     end = len(market.m1) - 1 if end is None else end
     max_sp = min(((p.get("_instrument") or {}).get("max_spread_usd") for p in profiles.values()), key=lambda x: x or 0)
+    if risk is None:
+        from . import config as C
+        risk = C.load()["risk"]
+    snap_cfg = {"max_bar_age_s": risk["max_bar_age_s"], "max_quote_age_s": risk["max_quote_age_s"], "max_spread_usd": max_sp}
     for i in range(start, end):
         t_close = market.close_t["M1"][i]
         if progress and i % 500 == 0:
@@ -127,7 +133,7 @@ def scan(market: Market, spec: SymbolSpec, profiles: dict, *, start: int = 0, en
             continue
         sp = market.spread(i)
         q = {"bid": market.m1[i]["c"], "ask": market.m1[i]["c"] + sp, "time": t_close}
-        snap = CX.snapshot(w, q, tick=spec.tick_size, now=t_close + 0.5, cfg={"max_spread_usd": max_sp}, cache=cache)
+        snap = CX.snapshot(w, q, tick=spec.tick_size, now=t_close + 0.5, cfg=snap_cfg, cache=cache)
         yield i, {s: SU.evaluate(s, "REPLAY", snap, spec, p, now=t_close, m1=w["M1"][-20:]) for s, p in profiles.items()}, snap
 
 
@@ -387,12 +393,12 @@ def folds(trades: list[dict], k: int = 4, key: str = "net_r") -> list[dict]:
 
 # ---------------------------------------------------------------------------- full strategy replay
 def run(market: Market, spec: SymbolSpec, profiles: dict, *, slip: float, commission_side: float | None,
-        start: int = 0, end: int | None = None, progress=None, baseline_every: int = 60) -> dict:
+        start: int = 0, end: int | None = None, progress=None, baseline_every: int = 60, risk: dict | None = None) -> dict:
     """All strategies over one scan; one plan at a time PER STRATEGY (as live). Returns per strategy: trades (variants for
     HEDGING), event-model samples, status counts, top rejection reasons, baseline."""
     out = {s: {"counts": {}, "reasons": {}, "trades": [], "variants": {"NO_HEDGE": [], "REDUCE": [], "HEDGE": []}, "samples": [], "busy": -1,
                "sl": []} for s in profiles}
-    for i, sus, snap in scan(market, spec, profiles, start=start, end=end, progress=progress):
+    for i, sus, snap in scan(market, spec, profiles, start=start, end=end, progress=progress, risk=risk):
         for strat, su in sus.items():
             R, prof = out[strat], profiles[strat]
             R["counts"][su["status"]] = R["counts"].get(su["status"], 0) + 1

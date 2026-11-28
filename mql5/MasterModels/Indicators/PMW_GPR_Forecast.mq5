@@ -5,6 +5,11 @@
 //| forecast = base*exp(m); +-1/2 sigma = base*exp(m +- k*sqrt(obs)).|
 //| Gaussian coverage is an assumption to calibrate (EA CSV), not a   |
 //| guarantee. Refit only on a new closed bar; failed fit -> EMPTY.   |
+//| Start / fixed hyper-parameters = GPRConfig defaults (ell 4,       |
+//| signal 0.1, noise 0.01 - 1.46 arch I0491). Cadence differs from   |
+//| the bot on purpose: Python live (mm/service) re-tunes the grid on |
+//| EVERY call, this indicator every InpRetuneEvery closed bars, so   |
+//| native and bot values are comparable only on re-tune bars.        |
 //+------------------------------------------------------------------+
 #property strict
 #property indicator_chart_window
@@ -33,7 +38,7 @@ input bool   InpAutoTune = true;
 input int    InpRetuneEvery = 24;
 input double InpEll = 4.0;
 input double InpSignalVar = 0.1;
-input double InpNoiseVar = 0.5;
+input double InpNoiseVar = 0.01;       // = mm/gpr.GPRConfig.noise_var (was 0.5)
 input int    InpBackfill = 30;          // closed bars recomputed on load (each is a full refit)
 
 double BF[], BU1[], BL1[], BU2[], BL2[];

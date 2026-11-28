@@ -3,8 +3,9 @@
 gold_candles (forecast/ForecastService, SHADOW): one prediction per horizon (5/15/30 min) - P(DOWN/FLAT/UP) of the close relative to
 the neutral band, timeframe M5; states mapped from the service status (NO_MODEL -> NOT_TRAINED, CONTRACT_MISMATCH / MODEL_FROM_FUTURE
 -> INCOMPATIBLE, DISABLED / NO_CANDLE_ENV / SYMBOL_SPEC -> DISABLED, STALE_DATA / NO_DATA / WARMUP / FORECAST_UNAVAILABLE -> ERROR).
-Only a SHADOW status with probabilities is READY. The service's own calibration is not asserted here (status UNCALIBRATED unless the
-report says otherwise). Kronos (kronos/predictions.py; 1.42.8: Kronos-small): REGRESSION of the close after H bars in price units, SHADOW. Other models (SH tp-model, scalp, legacy ML, lab, PMW-MM) publish task-specific payloads through their own
+Only a SHADOW status with probabilities can be READY, and per horizon (D21): a horizon over the market break (worker session_check
+BLOCKED_SESSION_BREAK) is BLOCKED_DATA, a horizon REJECTED in validation (registry horizon_status) is DISABLED. READY horizons are
+CALIBRATED_DEV: gold_candles always applies its multinomial calibrator fitted on the calibration period. Kronos (kronos/predictions.py; 1.42.8: Kronos-small): REGRESSION of the close after H bars in price units, SHADOW. Other models (SH tp-model, scalp, legacy ML, lab, PMW-MM) publish task-specific payloads through their own
 panels; their state is in the catalog (catalog.py) - they are not re-labelled as something they are not.
 """
 from __future__ import annotations
@@ -14,6 +15,28 @@ from . import contract as C
 FORECAST_STATE = {"SHADOW": "READY", "NO_MODEL": "NOT_TRAINED", "CONTRACT_MISMATCH": "INCOMPATIBLE", "MODEL_FROM_FUTURE": "INCOMPATIBLE",
                   "DISABLED": "DISABLED", "NO_CANDLE_ENV": "DISABLED", "SYMBOL_SPEC": "DISABLED", "UNSUPPORTED_ASSET": "DISABLED",
                   "STALE_DATA": "ERROR", "NO_DATA": "ERROR", "WARMUP": "ERROR", "FORECAST_UNAVAILABLE": "ERROR", "STARTING": "ERROR"}
+
+
+# D21 (1.46): every horizon of a SHADOW forecast was READY, also a horizon REJECTED in validation and one over the market break; READY
+# horizons were labelled UNCALIBRATED although gold_candles.model.forecast always applies the calibrator of plan_train (multinomial
+# logistic regression on the log-probabilities, fitted on the calibration period only).
+CALIBRATION_METHOD = "multinomial (regresja logistyczna na log-prawdopodobieństwach, okres kalibracji)"
+REFUSED_VERDICTS = ("REJECTED", "INSUFFICIENT_DATA")
+
+
+def _verdict(v) -> str | None:
+    return v.get("status") if isinstance(v, dict) else v
+
+
+def horizon_state(h: dict, verdict) -> tuple[str, str | None]:
+    """State of one horizon: the worker's session check (BLOCKED_SESSION_BREAK - the horizon spans the market break) -> BLOCKED_DATA;
+    the registry verdict of the horizon REJECTED / INSUFFICIENT_DATA -> DISABLED; otherwise READY (no verdict in an old entry = as before)."""
+    if h.get("session_check") == "BLOCKED_SESSION_BREAK":
+        return "BLOCKED_DATA", h.get("blocked_reason") or "horyzont obejmuje przerwę rynku – prognoza niedopuszczalna"
+    v = _verdict(verdict)
+    if v in REFUSED_VERDICTS:
+        return "DISABLED", f"horyzont odrzucony w walidacji ({v}) – prognoza nie jest publikowana"
+    return "READY", None
 
 
 def forecast_predictions(rt, inst: str) -> list[dict]:
@@ -37,15 +60,18 @@ def forecast_predictions(rt, inst: str) -> list[dict]:
                        state=state if state != "READY" else "ERROR",
                        unavailable_reason=st.get("status_pl") or st.get("reason") or status if state != "READY" else "brak prognoz w raporcie")]
     out = []
+    verdicts = model.get("horizon_status") if isinstance(model.get("horizon_status"), dict) else {}     # registry: {"1"|"3"|"6": status}
     for h in probs.values():
         p = h.get("probabilities") or {}
         mins = int(h.get("horizon_minutes") or 5)
+        bars = max(1, mins // 5)
         tot = sum(float(p.get(k, 0)) for k in ("DOWN", "FLAT", "UP")) or 1.0
         res = {k: float(p.get(k, 0)) / tot for k in ("DOWN", "FLAT", "UP")}
+        hstate, why = horizon_state(h, verdicts.get(str(bars)))
         out.append(C.make(instrument=inst, symbol=rep.get("symbol"), timeframe="M5", model_name="gold_candles", model_version=model.get("run_id"),
-                          task_type="CLASS_PROBABILITIES", task=f"CANDLE_CLOSE_DIRECTION_H{max(1, mins // 5)}_M5", horizon_bars=max(1, mins // 5),
-                          unit="probability", state="READY", result=res, data_time=fc.get("feature_time_utc"),
-                          calibration={"method": model.get("calibration"), "status": "CALIBRATED_DEV" if model.get("calibration") else "UNCALIBRATED"},
+                          task_type="CLASS_PROBABILITIES", task=f"CANDLE_CLOSE_DIRECTION_H{bars}_M5", horizon_bars=bars,
+                          unit="probability", state=hstate, result=res, data_time=fc.get("feature_time_utc"), unavailable_reason=why,
+                          calibration={"method": model.get("calibration") or CALIBRATION_METHOD, "status": "CALIBRATED_DEV"},
                           extra={"model_key": f"gold_candles_{mins}m", "role": "SHADOW (obserwacja)"}))
     return out
 

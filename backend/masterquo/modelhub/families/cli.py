@@ -5,7 +5,13 @@
   activate  --instrument XAUUSD --family F --run R   integrity + inference-sample check, then use SHADOW
   use       --instrument XAUUSD --family F --use OFF|SHADOW|ASSIST
   rollback  --instrument XAUUSD --family F
-Exit codes: 0 ok, 2 bad arguments, 3 nothing trained / blocked."""
+  import-corpus --file C.jsonl|C.csv [--data-kind REAL_USER_DATA|SYNTHETIC_TEST|UNKNOWN_SOURCE]
+            labelled NLP_SENTIMENT corpus (append only, dedup by text; the data kind is recorded on every record - default
+            UNKNOWN_SOURCE, never assumed REAL); trains / activates nothing
+At the role ASSIST activate / rollback accept only a target that passes the ASSIST gate (APPROVED, REAL data) - otherwise ASSIST_GATE
+(set the role SHADOW first).
+Exit codes: 0 ok, 2 bad arguments (unknown --family, activate without --run, use without a valid --use, import-corpus without an
+existing .jsonl / .csv --file within the size limit), 3 nothing trained / blocked / refused."""
 from __future__ import annotations
 
 import argparse
@@ -15,13 +21,21 @@ import sys
 
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(prog="masterquo families")
-    ap.add_argument("cmd", choices=["list", "train", "train-all", "activate", "use", "rollback"])
-    ap.add_argument("--instrument", required=True, type=str.upper, choices=["XAUUSD", "BTC"])
+    ap.add_argument("cmd", choices=["list", "train", "train-all", "activate", "use", "rollback", "import-corpus"])
+    # 1.46 arch (I0469): --instrument is required by every command except import-corpus (checked below - same exit code 2 as before)
+    ap.add_argument("--instrument", type=str.upper, choices=["XAUUSD", "BTC"])
     ap.add_argument("--family")
     ap.add_argument("--profile", default="smoke", choices=["smoke", "research", "full"])
     ap.add_argument("--run")
     ap.add_argument("--use", type=str.upper)
+    ap.add_argument("--file", help="import-corpus: corpus file (.jsonl / .csv)")
+    ap.add_argument("--data-kind", type=str.upper, choices=["REAL_USER_DATA", "SYNTHETIC_TEST", "UNKNOWN_SOURCE"], default="UNKNOWN_SOURCE",
+                    help="import-corpus: data kind of the texts (default UNKNOWN_SOURCE - never assumed REAL)")
     a = ap.parse_args(argv)
+    if a.cmd == "import-corpus":
+        return _import_corpus(ap, a)
+    if not a.instrument:
+        ap.error("the following arguments are required: --instrument")
     from ...config import ConfigStore
     from . import registry
     from . import run as RUN
@@ -59,14 +73,54 @@ def main(argv=None) -> int:
         print(json.dumps({"done": done, "blocked": [k for k, v in out.items() if v["state"] == "BLOCKED"],
                           "failed": [k for k, v in out.items() if v["state"] == "FAILED"]}, ensure_ascii=False))
         return 0 if done else 3
-    if a.cmd == "activate":
-        r = svc.activate(a.family, a.instrument, a.run)
-    elif a.cmd == "use":
-        r = svc.set_use(a.family, a.instrument, a.use)
-    else:
-        r = svc.rollback(a.family, a.instrument)
+    from . import base as B
+    # bad arguments -> 2 before anything runs (activate without --run ended in a TypeError traceback, use without / with a wrong --use
+    # in REFUSED USE_INVALID:None with 3)
+    if a.family not in registry():
+        print("FAMILY_UNKNOWN – --family wymagane: " + ", ".join(registry()), file=sys.stderr)
+        return 2
+    if a.cmd == "activate" and not a.run:
+        print("--run wymagane (identyfikator artefaktu rodziny)", file=sys.stderr)
+        return 2
+    if a.cmd == "use" and a.use not in B.USE:
+        print(f"--use wymagane: {'|'.join(B.USE)} (podano {a.use})", file=sys.stderr)
+        return 2
+    try:
+        if a.cmd == "activate":
+            r = svc.activate(a.family, a.instrument, a.run)
+        elif a.cmd == "use":
+            r = svc.set_use(a.family, a.instrument, a.use)
+        else:
+            r = svc.rollback(a.family, a.instrument)
+    except KeyError as exc:
+        code = str(exc.args[0]) if exc.args else ""
+        if code not in ("FAMILY_UNKNOWN", "FAMILY_OR_INSTRUMENT_INVALID"):
+            raise                                                # an internal KeyError is a bug, not "unknown family"
+        print(code + " – --family wymagane: " + ", ".join(registry()), file=sys.stderr)
+        return 2
+    except ValueError as exc:
+        # 1.46 D5: a refusal (ASSIST gate on activate / rollback, set_use) is an answer, not a traceback
+        r = {"ok": False, "status": "ASSIST_GATE" if isinstance(exc, B.AssistGate) else "REFUSED", "reason": str(exc)}
     print(json.dumps(r, ensure_ascii=False, default=str, indent=1))
     return 0 if r.get("ok") else 3
+
+
+def _import_corpus(ap, a) -> int:
+    """1.46 arch (I0469): the only user path to the NLP corpus (before: a JSONL dropped by hand into the data folder). Import only: no
+    training, no activation, no role change, the family state and decision.required_models are not touched."""
+    from pathlib import Path
+
+    from . import nlp
+    if not a.file:
+        ap.error("import-corpus: --file wymagane (plik .jsonl / .csv)")
+    try:
+        nlp.check_import(Path(a.file))
+    except ValueError as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+    r = nlp.import_file(Path(a.file), a.data_kind)
+    print(json.dumps({"ok": True, "data_kind": a.data_kind, **r}, ensure_ascii=False))
+    return 0
 
 
 if __name__ == "__main__":

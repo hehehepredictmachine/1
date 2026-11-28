@@ -5,6 +5,11 @@ Hard vetoes (any -> no grant): missing critical data (NOT_EVALUABLE), SFB not el
 NO_TRADE maps to PATIENCE loot instead), any Risk / STOP breach, strategy RETIRED / RESEARCH_ONLY / UNVALIDATED for live loot, missing canonical
 setup attribution. PnL, account size, leverage and notional are never positive features. One canonical reward per (event, policy version);
 partial exits are grouped to one position-level award. Items are cosmetic / educational: no cash value, no trading effect. Default OFF.
+
+Default OFF (1.46, audit chunk_05#11): the grant switch lives in the game's own settings (game.sqlite meta, key GRANT_SETTING; not in
+config.json) and is OFF until the player turns it on (PUT /api/v1/tlg/loot/settings). While it is OFF, grant() writes nothing unless
+the chosen item is marked enabled_by_default=YES in the catalogue (none is today) -> reason GRANT_DISABLED (the API answers 409).
+evaluate() keeps working (assessment only, no write).
 """
 from __future__ import annotations
 
@@ -18,6 +23,7 @@ DATA = Path(__file__).parent / "data"
 WEIGHTS = {"setup_quality": 0.25, "risk_discipline": 0.30, "execution_adherence": 0.20, "journal_learning": 0.10, "evidence_quality": 0.15}
 TIERS = ((95, "LEGENDARY"), (90, "EPIC"), (80, "RARE"), (70, "UNCOMMON"), (60, "COMMON"))
 SOURCE_MODES = ("SIMULATOR", "MT5_READ_ONLY", "MANUAL_JOURNAL")
+GRANT_SETTING = "risk_loot.grant_enabled"
 
 
 def catalog() -> list[dict]:
@@ -37,9 +43,32 @@ def tier(score: float) -> str | None:
     return None
 
 
-def evaluate(ev: dict) -> dict:
+def grant_enabled(game) -> bool:
+    """The player's switch (game settings); a missing / unreadable value = OFF (the catalogue default)."""
+    try:
+        r = game._one("SELECT v FROM meta WHERE k = ?", (GRANT_SETTING,))
+    except Exception:  # noqa: BLE001 - an unreadable setting is the default (OFF), never an implicit ON
+        return False
+    return bool(r) and r.get("v") == "1"
+
+
+def set_grant_enabled(game, on: bool) -> dict:
+    if not isinstance(on, bool):
+        raise TypeError("grant_enabled: true / false")
+    game.db.execute("INSERT OR REPLACE INTO meta(k, v) VALUES(?, ?)", (GRANT_SETTING, "1" if on else "0"))
+    return settings(game)
+
+
+def settings(game) -> dict:
+    return {"grant_enabled": grant_enabled(game), "default": False, "setting": GRANT_SETTING,
+            "enabled_by_default_items": [i["item_id"] for i in catalog() if i.get("enabled_by_default") == "YES"],
+            "note": "nagrody kosmetyczne (bez wartości pieniężnej i wpływu na handel); domyślnie wyłączone"}
+
+
+def evaluate(ev: dict, *, enabled_only: bool = False) -> dict:
     """ev: {event_id, position_id?, source_mode, setup_family, strategy_status, sfb_status, trap_no_trade, no_trade_respected, risk_breach,
-    attribution, scores{...0-100}, independent_evidence?}. Unknown -> veto, never zero-filled."""
+    attribution, scores{...0-100}, independent_evidence?}. Unknown -> veto, never zero-filled. enabled_only: pick only among the items
+    marked enabled_by_default=YES (the catalogue for a grant while the player's switch is OFF)."""
     vetoes = []
     if ev.get("source_mode") not in SOURCE_MODES:
         vetoes.append("UNKNOWN_SOURCE_MODE")
@@ -90,7 +119,8 @@ def evaluate(ev: dict) -> dict:
         t = "EPIC"
     if t == "EPIC" and (sc.get("evidence_quality") or 0) < 80:
         t = "RARE"
-    items = [i for i in catalog() if i["loot_family"] == mp["loot_family"] and ev["source_mode"] in i["source_mode"].split(";")]
+    items = [i for i in catalog() if i["loot_family"] == mp["loot_family"] and ev["source_mode"] in i["source_mode"].split(";")
+             and (not enabled_only or i.get("enabled_by_default") == "YES")]
     order = ["COMMON", "UNCOMMON", "RARE", "EPIC", "LEGENDARY"]
     pick = None
     if t:
@@ -107,8 +137,12 @@ def grant_key(ev: dict) -> str:
 
 
 def grant(game, ev: dict) -> dict:
-    """Writes the cosmetic item into the TraderLifeGame inventory through the game's append-only ledger (idempotent)."""
-    r = evaluate(ev)
+    """Writes the cosmetic item into the TraderLifeGame inventory through the game's append-only ledger (idempotent).
+    Switch OFF (default): only an item marked enabled_by_default=YES may be written; otherwise nothing -> reason GRANT_DISABLED."""
+    on = grant_enabled(game)
+    r = evaluate(ev, enabled_only=not on)
+    if not on and r["eligible"] and not r.get("item"):
+        return {**r, "granted": False, "grant_enabled": False, "reason": "GRANT_DISABLED"}
     if not r["eligible"] or not r.get("item"):
         return {**r, "granted": False}
     key = grant_key(ev)

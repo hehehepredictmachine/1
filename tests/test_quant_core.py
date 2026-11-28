@@ -9,7 +9,6 @@ import json
 import math
 import subprocess
 import sys
-import threading
 import time
 import unittest
 from datetime import datetime, timezone
@@ -638,8 +637,10 @@ class TestInventoryCli(unittest.TestCase):
         by = {e["id"]: e for e in inv["entries"]}
         self.assertIn("SEQ_GRU_EVENT", by["mm:event_engine_dir3"]["aliases"])
         self.assertEqual(by["ext:catboost"]["code_state"], "NOT_IMPLEMENTED")
-        for ns in ("mm:sdom", "mm:quant_momentum", "mm:renko"):
-            self.assertEqual(by[ns]["code_state"], "NO_SPEC")
+        # 1.46 arch (I0548 / I0549 / I0550): every NO_SPEC row of the registries, not only the first three
+        for ns in ("mm:sdom", "mm:quant_momentum", "mm:renko", "mm:head_shoulders", "mm:data_grabber", "mm:chart_sync", "extind:PAL02M"):
+            self.assertEqual(by[ns]["code_state"], "NO_SPEC", ns)
+            self.assertEqual(by[ns]["runtime_state"], "UNAVAILABLE", ns)
         self.assertEqual(by["group:lab"]["code_state"], "GROUP")
         self.assertEqual(c["operational"]["ready_with_live_output"], 0)      # offline: never claimed
 

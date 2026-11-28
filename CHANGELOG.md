@@ -24,7 +24,37 @@ identyczny z Etapem 0), `backend/vendor/` bez zmian, kontrakty publiczne bez zmi
   testy: `test_train_all` (/20), `test_families_u4` (ścieżka .venv_deep).
 * Testy architektury (`tests/test_arch146_architecture.py`): jeden wiersz na producenta, stare rejestry są widokami rejestru kanonicznego,
   adapter albo uzasadnienie dla każdego producenta, dokładnie jeden wpis smoke, brak cykli importów, `backend/vendor` bez zmian.
+* Koszyki: w `scores` sygnału koszyka FOREX (pola z Quant) identyfikator zdarzenia Quant ma nazwę `quant_event_id`. Pole `p_event`
+  (ta sama wartość – tekst, nie prawdopodobieństwo) zostaje jako przestarzały alias na tę jedną wersję; zapisane wiersze ledgera
+  koszyków bez zmian.
+* **D20/D21 – prognozy złota (gold_candles) i scalp**: ręczny `activate` i `rollback` odrzucają run z oceną walidacji REJECTED /
+  INSUFFICIENT_DATA / bez oceny (`registry_cli` – kod 1 z komunikatem na stderr, `scalp_registry` – kod 2); `list` pokazuje ocenę i znacznik
+  `[niezwalidowany – tylko ręcznie]` (SHADOW_UNVALIDATED – auto-aktywacja go nie wybiera), `validate` zapisuje w `revalidation.json` także
+  `admissible`. Adapter prognoz złota publikuje horyzont odrzucony w walidacji jako DISABLED, a horyzont obejmujący przerwę rynku jako
+  BLOCKED_DATA (wcześniej READY); horyzonty READY mają kalibrację CALIBRATED_DEV.
+  **Wymagany krok operacyjny – retrening MetaModelu Quant (D21):** cechy `fc:forecast:gold_candles:*` takich horyzontów są teraz maskowane,
+  a MetaModel wytrenowany wcześniej widział w nich wartości. Schemat cech celowo NIE jest podbijany (model INCOMPATIBLE wyłączyłby ASSIST
+  i wszystkie HOLD-y Quant) – aktywny model działa dalej, a `quant status` / `quant list` / `/api/v1/quant/status` (`metamodel.retrain_required`)
+  pokazują „wymaga retreningu/rewalidacji (D21)”. Retrening: `python -m masterquo quant train --instrument XAUUSD` (najlepiej po zebraniu
+  w ledgerze Quant wierszy zapisanych po tej zmianie), potem `quant list` i `quant activate --instrument XAUUSD --task <H> --version <V>`
+  dla wersji VALIDATED_SHADOW; ostrzeżenie znika dla modelu wytrenowanego po zmianie.
 * Do decyzji właściciela (nie wdrożone): `docs/arch146/ETAP2_PROJEKT.md` §7, D1–D23.
+* **Quant – wersjonowana semantyka cech `PMW-QUANT-FEAT-3`** (D4, D8, D9): nowe wiersze ledgera i nowe MetaModele mają poprawione
+  znaczenie cech (Kalman `*_CANDIDATE` = 0, DXY STALE = maska, kandydat SH koordynatora z reżimem migawki SH). Istniejące artefakty
+  FEAT-1 dostają wejście jak przed 1.46 (bit w bit) i nie są unieważniane.
+  * Skutek po aktualizacji: wiersze sprzed 1.46 zostają w ledgerze (kolumna `feature_version` dodana w miejscu, pusta = FEAT-1), ale nie
+    trenują nowych modeli. Trening odpowiada INSUFFICIENT_EVIDENCE, dopóki nie dojrzeje co najmniej DEV 300 + CAL 100 + TEST 100 wierszy
+    FEAT-3 (zwykle tygodnie); do tego czasu działa dotychczasowy artefakt FEAT-1. Licznik: pole `training_evidence` w
+    `GET /api/v1/quant/status` i w `python -m masterquo quant status`.
+  * Aktywacja pierwszego modelu FEAT-3 (zawsze jawna: `POST /api/v1/quant/models/activate` albo `quant activate`) zmienia w Quant ASSIST
+    zbiór HOLD w obie strony – to inny model na innych cechach. Odpowiedź aktywacji podaje `feature_semantics`. Sam reżim w kandydacie SH
+    tylko zaostrza: model FEAT-3 jest oceniany z reżimem i bez niego, HOLD, gdy wstrzymuje którakolwiek ocena.
+  * TabICL bierze z ledgera tylko wiersze FEAT-3 (confidence służy do rankingu i prezentacji, jest poza werdyktem).
+  * Powrót do starszej wersji: `docs/quant/ROLLBACK.md` (najpierw rollback aktywnego MetaModelu FEAT-3, bez treningu na ledgerze z
+    wierszami FEAT-3).
+* Do decyzji właściciela (nie wdrożone): `docs/arch146/ETAP2_PROJEKT.md` §7, D1–D23. Próbna poprawka D22 (rekord Event GRU liczony z
+  jednostek wyrównanych do końca) została wycofana: luzowała blokadę MODEL_REQUIRED_STALE i bez retreningu zmieniała wejście MetaModelu
+  FEAT-1 oraz rodziny SEQ_GRU_EVENT. Wymaga nowej wersji artefaktu Event GRU włączanej jawnie.
 
 ## 1.46.0 – Apollo23: audyt całego kodu, naprawy z testami regresji, eksportery danych
 

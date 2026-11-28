@@ -8,7 +8,6 @@ from . import sources as S
 from .core import Collected, ExportError, write_export
 
 MARKETS = ("CRYPTO", "INDICES", "FOMO_STOCK_PERPS")
-MT5_TFS = ("M1", "M3", "M5", "M15", "M30", "H1", "H4", "H8", "D1")
 SHADOW_TF = ("M5", "M15", "M30", "H1", "H4", "D1")
 
 

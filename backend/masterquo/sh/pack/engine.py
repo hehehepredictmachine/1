@@ -61,6 +61,8 @@ class PackEngine:
             mpp = spec.money_per_price(1.0)
         except Exception:  # noqa: BLE001 - unknown tick value: costs stay a scenario, sizing is refused later by the risk engine
             mpp = None
+        last: dict = {}
+        evaluated: set = set()
         for vid in CAT.IDS:
             v = cfg["variants"][vid]
             for tf in v["signal_tfs"]:
@@ -71,8 +73,14 @@ class PackEngine:
                                      f"brak jawnej definicji pipsa dla {inst} – wykonanie nowych profili niedostępne")
                 else:
                     su = self._one(X, v, tf, inst, spec, ic, quote, now, pipdef, cfg, mpp, account_currency)
-                self.last[(vid, tf)] = su
+                    evaluated.add((vid, tf))
+                last[(vid, tf)] = su
                 out.append(su)
+        # 1.46: the panel showed evaluations of variants / TFs removed from the configuration forever, and a READY candidate of a disabled
+        # variant (or of a removed TF) stayed in `active` - re-enabled within its TTL it came back. Only what was evaluated now is kept.
+        self.last = last
+        for k in [k for k in self.active if (k[0], k[1]) not in evaluated]:
+            del self.active[k]
         self._group_peers(out)
         self.timings.append(round((time.perf_counter() - t0) * 1000, 2))
         return out
@@ -99,7 +107,8 @@ class PackEngine:
                 "pack": {"contract": PLAN_CONTRACT, "strategy_id": v["strategy_id"], "name": v["name"], "family": v["family"], "cluster": v["cluster"],
                          "setup_group_id": v["setup_group_id"], "signal_tf": tf, "context_tfs": v["context_tfs"],
                          "management_policy_id": v["management_policy_id"], "strategy_version": v["strategy_version"], "config_hash": v["config_hash"],
-                         "validation": CAT.validation_status(v["strategy_id"]), "reason_code": code, "analytical_state": status, **kw}}
+                         "validation": CAT.validation_status(v["strategy_id"], config_hash=v["config_hash"]), "reason_code": code,
+                         "analytical_state": status, **kw}}
 
     def _one(self, X, v, tf, inst, spec, ic, quote, now, pipdef, cfg, mpp, ccy) -> dict:
         vid = v["strategy_id"]
@@ -107,12 +116,15 @@ class PackEngine:
         setups = {s: d for s, d in dets.items() if d.get("status") == "SETUP"}
         # keep / re-check READY candidates of earlier bars
         kept = None
+        stale: dict = {}                 # side -> READY candidate invalidated because the variant configuration changed
         for side in ("BUY", "SELL"):
             k = (vid, tf, side)
             if k in self.active:
-                st = self._recheck(self.active[k], X, quote, now)
+                st = self._recheck(self.active[k], X, quote, now, v)
                 if st["status"] != "READY":
                     self.active.pop(k, None)
+                    if (st.get("pack") or {}).get("reason_code") == "CONFIG_CHANGED":
+                        stale[side] = st
                     if side not in setups:
                         kept = kept or st
                 else:
@@ -124,6 +136,9 @@ class PackEngine:
             if kept is not None and kept.get("side") == side and kept["status"] == "READY" and \
                     kept["pack"].get("trigger_bar_open") == F.iso(X.tf(tf, side == "SELL").t[det["trigger_i"]]):
                 return kept                                               # same trigger bar: the frozen plan, not a re-solve at a new quote
+            old = stale.get(side)
+            if old is not None and old["pack"].get("trigger_bar_open") == F.iso(X.tf(tf, side == "SELL").t[det["trigger_i"]]):
+                return old                    # 1.46: the new configuration applies from the next trigger bar - no re-plan of the same setup
             cand = self._plan(X, v, tf, side, det, inst, spec, ic, quote, now, pipdef, cfg, mpp, ccy)
             if cand["status"] == "READY":
                 self.active[(vid, tf, side)] = cand
@@ -136,11 +151,16 @@ class PackEngine:
         return self._shell(v, tf, inst, spec, now, st, best.get("reason_code") or "NO_SETUP", best.get("reason") or "warunki niespełnione",
                            checklist=best.get("checklist") or [], data_state=best.get("status"))
 
-    def _recheck(self, su: dict, X: F.Context, quote, now) -> dict:
+    def _recheck(self, su: dict, X: F.Context, quote, now, variant: dict | None = None) -> dict:
         p = su["pack"]
         if now > float(su.get("valid_until") or 0):
             return {**su, "status": "EXPIRED", "status_reason": "TTL minął przed wykonaniem", "pack": {**p, "analytical_state": "EXPIRED",
                                                                                                         "reason_code": "TTL"}}
+        if variant is not None and su.get("config_hash") != variant["config_hash"]:
+            # 1.46: profile() reads the CURRENT configuration - a READY of an older one would be executed with shares / time / hedge of the
+            # new configuration at the geometry of the old one
+            return {**su, "status": "INVALIDATED", "status_reason": "konfiguracja wariantu zmieniona po wyznaczeniu kandydata",
+                    "pack": {**p, "analytical_state": "INVALIDATED", "reason_code": "CONFIG_CHANGED"}}
         v = X.tf(p["signal_tf"], su["side"] == "SELL")
         inv = p["invalidation_pre_fill_view"]
         after = range(v.since(F.ts(p["trigger_bar_open"]) + 1.0), v.n)
@@ -169,6 +189,13 @@ class PackEngine:
         hi, _lo = X.prev_day_range(mir)
         if hi is not None and hi > E:
             cands.append((hi, "maksimum poprzedniej doby"))
+        elif hi is None:
+            # 1.46 arch (I0744, only stricter): in the Monday session the previous trading day is the empty weekend window - the high of
+            # the last trading day WITH bars is an additional obstacle (min() of the candidates can only get closer: TP2 behind it ->
+            # NO_TRADE TARGET_UNREACHABLE, a target is never moved and no setup is created by this)
+            lhi, _llo, _day = X.last_traded_day_range(mir)
+            if lhi is not None and lhi > E:
+                cands.append((lhi, "maksimum ostatniej doby z notowaniami (poprzednia doba bez świec – weekend/święto)"))
         if not cands:
             return None, None
         return min(cands)
@@ -221,10 +248,15 @@ class PackEngine:
         if hedging:
             m5 = X.tf("M5", mir)
             b5 = m5.b(m5.n - 1, spec.tick_size, cm)
+            if b5 is None:
+                # 1.46: `b5 or 0.0` gave a too small hedge loss bound -> a too high basket RR and a too small sizing cost
+                base.update(status="NO_TRADE", status_reason="brak bufora M5 (ATR) – ograniczenie straty hedge nieoszacowane")
+                p.update(analytical_state="NO_TRADE", reason_code="HEDGE_BUFFER_UNAVAILABLE")
+                return base
             hc = v["hedge"] or {}
             ratio = float(hc.get("ratio", hc.get("ratio_max", 0.5)))
             S_try = SV.snap_out(det["sl"], spec.tick_size, False)
-            hl, hl_how = P.hedge_loss_bound(vid, st, r=E - S_try, b5=b5 or 0.0, c=c, ratio=ratio, hcfg=hc, fam=rules)
+            hl, hl_how = P.hedge_loss_bound(vid, st, r=E - S_try, b5=b5, c=c, ratio=ratio, hcfg=hc, fam=rules)
         natural = det.get("natural_targets")
         tspace, tsrc = (None, None) if natural else self._obstacle(X, view, [t for t in v["context_tfs"] if t != tf], mir, E)
         reach = (a * math.sqrt(v["position_max_minutes"] * 60.0 / view.tf_s) * float(cm.get("reach_factor", 1.0))) if a else None
@@ -253,7 +285,10 @@ class PackEngine:
                        "legacy_tp_model": "sh_tp_model (TP2 = 3 USD, trzy części) NIEZGODNY z tym zdarzeniem – nie ocenia nowych planów"}
         p["event_spec"] = self.event_spec(v, tf, rules, econ, cm)
         if hedging:
-            p["hedge"] = {"policy_id": v["management_policy_id"], **P.texts(vid), "ratio": ratio, "max_ratio": rules.get("max_ratio", 0.5),
+            # 1.46: activation parameters of the variant frozen into the plan (the live policy used the built-in values while the replay used
+            # the configured ones) - only where the configured value is at least as strict as the built-in one (policies.frozen_activation)
+            p["hedge"] = {**P.frozen_activation(v["hedge"] or {}),
+                          "policy_id": v["management_policy_id"], **P.texts(vid), "ratio": ratio, "max_ratio": rules.get("max_ratio", 0.5),
                           "max_activations": 1, "max_hedge_minutes": (v["hedge"] or {}).get("max_hedge_minutes"),
                           "base_max_minutes": v["position_max_minutes"], "b_m5": b5,
                           "activation_level_if_scalar": view.out(P.activation_level_view(vid, st, b5 or 0.0)) if b5 is not None else None,

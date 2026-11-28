@@ -16,6 +16,11 @@ EV
   binary plan (one target, no partials / BE / timeout):  EV = p * G - (1 - p) * L ;  p* = L / (G + L)   (G, L > 0, net, in R)
   disjoint complete scenarios:                            EV = sum_k P_k * E[net R | k]   (probabilities must sum to 1 within 1e-6)
 P(TP2 before SL) alone is not a payoff distribution of a partial-exit plan: such an EV is refused (EV_NEEDS_SCENARIOS).
+
+Production use (1.46 arch, I0053 / I0115): the live paths use ONLY `binary_ev` (quant/service.assess, Quant EV of a binary plan) - the
+names in PRODUCTION_API (checked by tests/test_arch146_w2_quant_core.py, an AST scan of backend/masterquo). InstrumentSpec, CostModel,
+r_value, scenario_ev, plan_is_binary and ev_for_plan are a research / test library: not used by any execution, sizing or gate path. The
+ONE live instrument specification is sh/units.SymbolSpec (the cost module consolidation is Etap 4 - nothing here is removed).
 """
 from __future__ import annotations
 
@@ -23,6 +28,7 @@ import math
 from dataclasses import asdict, dataclass, field
 
 VERSION = "PMW-QUANT-UNITS-1"
+PRODUCTION_API = ("binary_ev",)        # names of this module used outside it in backend/masterquo (the rest: research / tests only)
 
 
 class UnitsError(ValueError):

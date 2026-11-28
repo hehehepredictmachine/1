@@ -40,6 +40,8 @@ RISK_PL = {"SPREAD_LIMIT": "spread powyżej limitu", "STOPS_LEVEL_VIOLATION": "S
            "COST_MODEL_UNKNOWN_COMMISSION": "nieznana prowizja (ustaw w Koszty)", "SLIPPAGE_STRESS_NOT_CONFIGURED": "nieustawiony stres poślizgu",
            "LIVE_PRICE_OUTSIDE_PLAN_GEOMETRY": "cena poza geometrią planu", "BROKER_MARGIN_CALC_UNAVAILABLE": "brak kalkulacji marginu brokera",
            "OPEN_POSITION_WITHOUT_SL_RISK_UNBOUNDED": "otwarta pozycja bez SL", "PENDING_ORDER_WITHOUT_SL_RISK_UNBOUNDED": "zlecenie oczekujące bez SL",
+           "OPEN_POSITION_RISK_UNKNOWN": "nieznane ryzyko otwartej pozycji (kalkulator brokera dla symbolu pozycji)",
+           "PENDING_ORDER_RISK_UNKNOWN": "nieznane ryzyko / depozyt zlecenia oczekującego (kalkulator brokera)",
            "NETTING_ACCOUNT_EXISTING_POSITION_ON_SYMBOL": "rachunek netting z pozycją na symbolu", "DRAWDOWN_BREACH": "przekroczone obsunięcie",
            "COOLDOWN_AFTER_LOSS": "przerwa po stracie", "SYMBOL_TRADE_MODE_NOT_FULL": "symbol nie pozwala na pełny handel",
            "SPREAD_UNKNOWN_PREVIEW": "brak notowania – podgląd liczony bez spreadu"}

@@ -8,7 +8,6 @@ import shutil
 import tempfile
 import time
 import unittest
-import urllib.request
 from pathlib import Path
 
 import _env  # noqa: F401

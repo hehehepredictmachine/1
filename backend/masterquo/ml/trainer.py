@@ -36,7 +36,8 @@ def run(snapshot_path: str, cfg: dict, out_dir: str, prior_test_end: str | None,
             progress(phase)
     t0 = time.time()
     rows = load_snapshot(snapshot_path)
-    rows = [dict(r, **{"f": fe.from_json(json.loads(r["features_json"]))}) for r in rows]
+    # 1.46: rows of <= 1.2.0 carry the zone block of semantics SEM-1 -> unknown (NaN) for a 1.3.0 model (features.from_json)
+    rows = [dict(r, **{"f": fe.from_json(json.loads(r["features_json"]), r.get("feature_schema_version"))}) for r in rows]
     for r in rows:
         # 1.46: up to MQ-FEAT-1.1.0 dxy_missing was the CONSTANT 1.0 (not the availability of DXY); mixed with 1.2.0 rows it became an
         # "old data" marker and the 1.2.0 model saw another meaning at prediction. Unknown for those rows -> NaN (never a guessed value).

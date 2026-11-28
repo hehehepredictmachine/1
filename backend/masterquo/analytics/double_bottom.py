@@ -1,4 +1,4 @@
-"""Double Bottom structural validator (DB-1.0.0) + causal scanner.
+"""Double Bottom structural validator (DB-1.0.1) + causal scanner.
 
 Own implementation of an explicit specification. The functional idea follows the MQL5 article series (Part 84 structural
 validation, Part 85 review of one validated sample, Part 86 library-wide validation); NO code of those articles is copied
@@ -15,10 +15,13 @@ Rules (parameters in DEFAULT, all recorded in the result and its config_hash):
   pivots: a low at i is a pivot if it is the minimum of [i-left, i+right]; it becomes KNOWN only at the close of bar i+right
   pair:   separation between bottoms in [min_separation, max_separation] bars
   neckline = highest high strictly between the bottoms; depth = neckline - min(bottom1, bottom2)
-  depth >= min_depth_pct % of price (mode SOURCE_COMPAT) and, in mode EXTENDED (DB-1.1.0-EXT), also >= min_depth_atr * ATR14
+  depth >= min_depth_pct % of price (mode SOURCE_COMPAT) and, in mode EXTENDED (DB-1.1.1-EXT), also >= min_depth_atr * ATR14
   similarity |b1 - b2| <= max_bottom_diff_frac * depth
   symmetry: bars(b1 -> neck) / bars(neck -> b2) within [1/max_asymmetry, max_asymmetry]
   prior decline: the highest high in `prior_bars` before b1 is >= b1 + prior_move_frac * depth
+  no undercut: no low strictly between the bottoms is below the lower of the two bottoms (UNDERCUT_BETWEEN_BOTTOMS) - a lower low
+          between them is a different structure, not a double bottom (added in DB-1.0.1 / DB-1.1.1-EXT / DB-1.2.1-BUF; up to
+          DB-1.0.0 / DB-1.1.0-EXT / DB-1.2.0-BUF the rule was only a comment)
   pair choice (deterministic): most recent second bottom, then the deepest structure, then the earliest first bottom
 pattern_id = hash(symbol, tf, time of b1, time of b2, rules version) - stable for de-duplication of overlays and alerts.
 Modes: `offline_full_sample` (validate a stored sample with all its bars) and `causal_as_of` (only bars closed at t; pivots
@@ -34,9 +37,11 @@ from ..timeutil import parse_iso
 from . import contract
 from .ta import TF_SEC, atr14
 
-VERSION = "DB-1.0.0"
-VERSION_EXT = "DB-1.1.0-EXT"
-VERSION_BUF = "DB-1.2.0-BUF"          # PMW-UPD-07 R07: explicit breakout / failure buffers (x ATR14) and pair choice; old versions unchanged
+# 1.46 (audit chunk_02#2): + rule UNDERCUT_BETWEEN_BOTTOMS in every mode - new rule versions (pattern_id / config hash / library jobs
+# of the old versions stay as they were; a job created with an older rules version is not resumed with the new rules)
+VERSION = "DB-1.0.1"
+VERSION_EXT = "DB-1.1.1-EXT"
+VERSION_BUF = "DB-1.2.1-BUF"          # PMW-UPD-07 R07: explicit breakout / failure buffers (x ATR14) and pair choice; old versions unchanged
 DEFAULT = {"mode": "SOURCE_COMPAT", "pivot_left": 3, "pivot_right": 3, "min_separation": 5, "max_separation": 60, "min_depth_pct": 0.05,
            "min_depth_atr": 1.0, "max_bottom_diff_frac": 0.25, "max_asymmetry": 3.0, "prior_bars": 20, "prior_move_frac": 0.5}
 STATUSES = ("INVALID", "CANDIDATE", "CONFIRMED", "FAILED")
@@ -143,7 +148,10 @@ def validate(bars: list[dict], cfg: dict | None = None, *, symbol: str | None = 
             if prior_high is None or prior_high < lo[i1] + cfg["prior_move_frac"] * depth:
                 rej("NO_PRIOR_DECLINE")
                 continue
-            # rule: the second bottom must not be undercut decisively between the bottoms (only lows between pivots)
+            # rule: no low between the bottoms below the lower bottom (lows inside the pivot windows cannot be: a pivot is their minimum)
+            if i2 - i1 > 1 and min(lo[i1 + 1:i2]) < low:
+                rej("UNDERCUT_BETWEEN_BOTTOMS")
+                continue
             cands.append({"i1": i1, "i2": i2, "ineck": ineck, "neck": neck, "low": low, "depth": depth, "diff": diff, "asym": asym, "sep": sep,
                           "prior_high": prior_high})
     if not cands:

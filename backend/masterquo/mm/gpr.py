@@ -249,10 +249,14 @@ class GPModel:
 
 
 def walk_forward(t, c, cfg: GPRConfig, start: int, stop: int, step: int = 1, ledger=None, symbol="XAUUSD", tf="M5", tf_s=300,
-                 model_id="gpr_logret", artifact_id=None, cancel=None) -> dict:
+                 model_id="gpr_logret", artifact_id=None, cancel=None, *, run_mode: str = "SHADOW", quality: str | None = None,
+                 payload_extra: dict | None = None) -> dict:
     """Rolling out-of-sample forecasts for T in [start, stop) (fit on data available at T only). Every forecast is recorded (no gate
     sampling); the realised target is attached only when bar T+h exists in the data. Baselines on the same samples: zero, trailing
-    mean of the fit window's targets, OLS of y on x on the fit window."""
+    mean of the fit window's targets, OLS of y on x on the fit window.
+
+    Ledger rows (1.46, I0034): run_mode marks what the row is (job_gpr: WALK_FORWARD / WALK_FORWARD_SYNTHETIC, never the live SHADOW);
+    quality = the DATA quality like the live rows (the GP health goes to payload['health']); quality None keeps the GP health there."""
     c = np.asarray(c, float)
     m = GPModel(cfg)
     rows, fails, since = [], {}, cfg.retune_every
@@ -281,10 +285,13 @@ def walk_forward(t, c, cfg: GPRConfig, start: int, stop: int, step: int = 1, led
             row["real"] = math.log(c[T + cfg.horizon] / c[T])
         rows.append(row)
         if ledger is not None:
+            pl = {k: row[k] for k in ("pred", "sd", "lat_var", "obs_var", "z")}
+            if quality is not None:
+                pl.update(payload_extra or {}, health=p["status"])
             ledger.log(pred_id=f"{model_id}:{symbol}:{tf}:{int(t[T])}:h{cfg.horizon}", model_id=model_id, artifact_id=artifact_id, feature_schema="GPR_LAG1_LOGRET",
                        symbol=symbol, timeframe=tf, source_ts=float(t[T]), available_at=float(t[T]) + tf_s,
                        matures_at=float(t[T]) + tf_s * (cfg.horizon + 1), horizon=f"{cfg.horizon}bars", kind="GAUSSIAN_PREDICTIVE",
-                       payload={k: row[k] for k in ("pred", "sd", "lat_var", "obs_var", "z")}, quality=p["status"])
+                       payload=pl, quality=p["status"] if quality is None else quality, run_mode=run_mode)
     return {"rows": rows, "failures": fails, "last_search": m.last_search, "model": m}
 
 

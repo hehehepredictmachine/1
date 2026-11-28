@@ -163,6 +163,9 @@ class ContextTaskTests(unittest.TestCase):
         self.assertEqual(rep["edge_status"], "NO_VALIDATED_EDGE")
         self.assertIn("_FIXTURE", rep["run_id"])
         self.assertEqual(set(rep["ablations"]) if rep["ablations"] else set(CT.ABLATION), set(CT.ABLATION))
+        # 1.46 (I0310): the report states what the task does - holdout never opened, no calibration, candidates only for LOGREG
+        self.assertEqual((rep["holdout_status"], rep["calibration"], rep["xgb"]), ("NOT_OPENED_F17", "NONE", "FOLDS_ONLY_NO_CANDIDATE"))
+        self.assertLessEqual(set(rep["candidates"]), {"LOGREG"})
         for c in rep["candidates"].values():
             meta, m = CT.load_candidate(Path(rep["run_dir"]) / "models" / "LOGREG")
             self.assertEqual(meta["role"], "TEST_ONLY")

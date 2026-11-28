@@ -45,6 +45,11 @@ NAME_RX = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.\-]{0,63}$")
 # bridge path MT5_LIVE_BRIDGE (real terminal) or SYNTHETIC_TEST (demo simulator); 1.45.0 compared only with 'REAL' / 'SYNTHETIC'.
 _REAL_KINDS = {"REAL", "REAL_USER_DATA", "MT5_LIVE_BRIDGE"}
 _SYNTH_KINDS = {"SYNTHETIC", "SYNTHETIC_TEST", "SYNTHETIC_DEMO", "SIMULATED"}
+# 1.46 (I0400 / I0468): receivers of a family result that have a reader in the code - SH_CONTEXT (sh/service family_context, ASSIST hold),
+# DECISION (decision/coordinator roles), QUANT (quant snapshot features), PANEL (/api/v1/families), MODELHUB (modelhub.adapters.all_predictions
+# -> /api/v1/models, Quant), MM_BOARD (MM evidence board)
+CONNECTED_RECEIVERS = ("SH_CONTEXT", "DECISION", "QUANT", "PANEL", "MODELHUB", "MM_BOARD")
+PLANNED_NOTE = "niepodłączone w 1.46 – brak odbiorcy w kodzie (opis planu, nie ścieżka wyniku)"
 
 
 def kind_class(data_kind) -> str | None:
@@ -59,6 +64,11 @@ class Unavailable(Exception):
     def __init__(self, state: str, reason: str):
         super().__init__(reason)
         self.state, self.reason = state, reason
+
+
+class AssistGate(ValueError):
+    """1.46 D5: a change of the active artifact refused because the family has the role ASSIST and the target does not pass
+    Store.assist_ok. A ValueError, so the API (_fam) answers 409 as for set_use; nothing is written."""
 
 
 def missing_deps(mods: tuple[str, ...]) -> list[str]:
@@ -265,8 +275,21 @@ class Store:
     def _save_state(self, family: str, inst: str, st: dict) -> None:
         _atomic_json(self._state_path(family, inst), st)
 
+    def assist_guard(self, family: str, inst: str, rid: str | None, what: str, st: dict | None = None) -> None:
+        """1.46 D5: the ASSIST gate also on a change of the active artifact (it was checked only in set_use - activate / rollback left
+        ASSIST on an artifact without APPROVED or not on REAL data, or on no artifact). At the role ASSIST the target `rid` must pass
+        assist_ok, else AssistGate and no state write. Tightening only: the role is never lowered here and a state saved earlier is left
+        as it is (nothing lifts the holds of the approved artifact); the user sets SHADOW first."""
+        st = self.state(family, inst) if st is None else st
+        if st.get("use") != "ASSIST":
+            return
+        ok, why = self.assist_ok(family, inst, rid)
+        if not ok:
+            raise AssistGate(f"ASSIST_GATE: {what} odrzucone przy roli ASSIST – {why}. Najpierw ustaw rolę SHADOW (albo OFF).")
+
     def set_active(self, family: str, inst: str, rid: str | None, why: str) -> dict:
         st = self.state(family, inst)
+        self.assist_guard(family, inst, rid, f"aktywowanie artefaktu {rid}" if rid else "dezaktywowanie artefaktu", st)
         st["history"] = (st.get("history") or [])[-50:] + [{"at": time.time(), "action": "ACTIVATE" if rid else "DEACTIVATE", "run_id": rid,
                                                              "previous": st.get("active"), "reason": why}]
         st["active"] = rid
@@ -288,6 +311,7 @@ class Store:
         st = self.state(family, inst)
         acts = [h for h in st.get("history") or [] if h["action"] == "ACTIVATE"]
         prev = acts[-1]["previous"] if acts and acts[-1]["run_id"] == st.get("active") else None
+        self.assist_guard(family, inst, prev, f"cofnięcie do artefaktu {prev}" if prev else "cofnięcie do braku artefaktu", st)
         st["history"].append({"at": time.time(), "action": "ROLLBACK", "run_id": prev, "previous": st.get("active")})
         st["active"] = prev
         self._save_state(family, inst, st)
@@ -324,7 +348,11 @@ class Family:
     RUNTIME = "MAIN"                 # MAIN = bot process (outside the MT5 thread) | DEEP = .venv_deep worker process
     TF = "M5"
     HORIZONS = (1,)
+    # 1.46 (I0400 / I0468): RECEIVERS = only receivers with a reader in the code (prefix in CONNECTED_RECEIVERS); a declared but unconnected
+    # one (agent context, risk, strategy, portfolio - nothing in agent/ risk/ strategies/ engine/ baskets/ reads a family result) is listed
+    # in PLANNED_RECEIVERS and shown apart (capabilities 'planned_receivers'), never as a receiver of the record / model card
     RECEIVERS: tuple[str, ...] = ()
+    PLANNED_RECEIVERS: tuple[str, ...] = ()
     DATA = {"kind": "BARS", "tf": "M5", "min_bars": 500}
     FIT_LABEL = "trening"
     NEEDS_POINT = False              # 1.46: True = fit converts the bar spread (points) to price - the symbol's point size must be known
@@ -332,6 +360,7 @@ class Family:
     def capabilities(self) -> dict:
         return {"id": self.ID, "name": self.NAME, "kind": self.KIND, "task_type": self.TASK_TYPE, "unit": self.UNIT, "task": self.TASK,
                 "runtime": self.RUNTIME, "deps": list(self.DEPS), "tf": self.TF, "horizons": list(self.HORIZONS), "receivers": list(self.RECEIVERS),
+                "planned_receivers": list(self.PLANNED_RECEIVERS), "planned_receivers_note": PLANNED_NOTE if self.PLANNED_RECEIVERS else None,
                 "fit_label": self.FIT_LABEL, "data": self.DATA}
 
     def data_requirements(self) -> dict:

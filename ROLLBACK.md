@@ -11,9 +11,14 @@
 4. Kod: tag git `pre-1.40-restore-point` wskazuje wydanie 1.39.0.
 
 ## 0d. Wersja 1.39.0 → 1.38.0 (LIVE od startu, GARCH, menu Galaxy, WTC 2.1)
-1. **Tylko wyłączenie LIVE (bez cofania wersji)**: przycisk STOP, potem w `data/config.json` → `"execution": {"start_mode": "SIGNALS",
-   "live_autobind": false}` (albo `"start_mode": null` = ostatni zapisany tryb) i restart. Bramek walidacji nie da się przywrócić
-   konfiguracją – do tego potrzebna jest wersja 1.38.
+1. **Tylko wyłączenie LIVE (bez cofania wersji)**: w panelu zmień tryb wykonania na **SIGNALS** albo **PAPER** („Zastosuj tryb
+   wykonania”, `POST /api/v1/mode`) – zmiana jest zapisywana w `execution.mode` i przetrwa restart. Przy zamkniętym bocie to samo daje
+   `data/config.json` → `"execution": {"mode": "SIGNALS", "bound_account": null}`. **Uwaga (arch146 D1):** `execution.start_mode` NIE
+   jest stosowany – bot startuje w ostatnio zapisanym trybie `execution.mode` (domyślnie PAPER), więc zmiana `start_mode` albo
+   `live_autobind` **nie wyłącza** zapisanego AUTO_LIVE, a sam **STOP nie przetrwa restartu** (po ponownym uruchomieniu nowe wejścia są
+   znów dozwolone). Dawny przepis „STOP + `start_mode: "SIGNALS"`, `live_autobind: false` + restart” jest nieaktualny: po restarcie bot
+   wraca do zapisanego AUTO_LIVE z wyłączonym STOP. Bramek walidacji nie da się przywrócić konfiguracją – do tego potrzebna jest
+   wersja 1.38.
 2. **GARCH**: panel Strategie → Pakiet 20 → „PMW_HG09 – zmienność” → „odchylenie 60 × M5” (albo `POST /api/v1/sh/strategies/config`
    z `volatility_method: "STD_LOGRET_60_M5"`). 1.38 nie zna wartości `VOL_GARCH` – przed powrotem przełącz z powrotem, inaczej katalog 1.38
    odrzuci nadpisanie (`data/sh/pack_override.json`).
@@ -56,7 +61,8 @@ Pełna instrukcja: `docs/AKTUALIZACJA_1_33_PL.md`. W skrócie:
 Wykrywanie wraca do dotychczasowego M07/M10A (jak w wersji 1.1). Tryb pracy, limity i historia zostają.
 * w monitorze: ⚙ Ustawienia → **AUTO / ACTIVE** → Profil wykrywania = `ORIGINAL` → Zapisz, albo
 * zatrzymaj program (`04_STOP_MASTERQUO.bat`) i uruchom `08_PROFIL_ORIGINAL.bat` (ponowne włączenie: `08_PROFIL_ORIGINAL.bat ACTIVE`).
-Kopia ustawień obu profili: `config/profiles/ACTIVE.json`, `config/profiles/ORIGINAL.json` (fragmenty sekcji `active`).
+Przełączenie zmienia wyłącznie `active.profile` w `data/config.json` (pozostałe ustawienia sekcji `active` zostają; wartości domyślne
+są w kodzie – `ActiveConfig` w `backend/masterquo/config.py`). Ścisłe reguły MasterQUO 1.0 profil ORIGINAL NIE ustawia – patrz punkt 2.
 
 ## 2. Łagodne bramki 1.1 → ścisłe reguły MasterQUO 1.0
 Ustawienia → Strategia M07 → Kierunek struktury `STRICT_H4_H1`; Ryzyko → RR 1,5 / 2,0 i „RR pomiędzy progami” wyłączone;
@@ -127,3 +133,11 @@ Ustawienia → Wygląd → OFF (statyczne kadry). Wgrane GIF-y: usuń pliki z `d
 ## 1.42.8 → 1.42.7 (Kronos-small → Kronos-base)
 Wagi Kronos-base zostają w folderze wag (`NeoQuasar__Kronos-base@2b55…`). Po powrocie do 1.42.7 uruchom `33_KRONOS_INSTALUJ.bat` z folderu 1.42.7 –
 instalator 1.42.7 pobierze i sprawdzi parę Kronos-base (ok. 420 MB) i zapisze jej manifest.
+
+## 1.46 (gałąź architektury) → 1.46.0: Quant, wersje cech
+Szczegóły: `docs/quant/ROLLBACK.md`, sekcja „1.46 – wersje cech Quant”. W skrócie:
+* Przed powrotem: jeśli aktywny jest MetaModel `PMW-QUANT-FEAT-3`, przywróć poprzedni artefakt
+  (`python -m masterquo quant rollback --instrument XAUUSD --task <task_hash>`) albo przełącz Quant na SHADOW. Starsza wersja odrzuca
+  artefakt FEAT-3, a Quant ASSIST bez modelu nie wstrzymuje wejść.
+* Ledger `<dane>\quant\ledger.sqlite` ma nową kolumnę `feature_version` (addytywną). Starsza wersja jej nie filtruje: po powrocie nie
+  trenuj Quant na ledgerze z wierszami `PMW-QUANT-FEAT-3` (kopia pliku i zapytanie SQL do ich odfiltrowania – w `docs/quant/ROLLBACK.md`).

@@ -1,11 +1,13 @@
 """Registry of the implemented strategies (S01-S12) and the scanner that runs them on one MarketView.
-Lists of strategies elsewhere (config validators, API, UI) are derived from STRATEGIES - adding a file is not enough."""
+Lists of strategies elsewhere (API, UI) are derived from STRATEGIES - adding a file is not enough; config validators read the
+import-free strategies/ids.py (1.46 arch, I0083)."""
 from __future__ import annotations
 
 import copy
 import hashlib
 
 from . import base
+from .ids import DEFAULT_NO_TRADE  # noqa: F401 - 1.46 arch (I0083): one definition in the import-free leaf strategies/ids.py
 from .s01_trend_pullback import TrendPullback
 from .s02_adaptive_trend import AdaptiveTrend
 from .s03_channel_breakout import ChannelBreakout
@@ -19,13 +21,12 @@ from .s10_exhaustion_structure_reversal import ExhaustionStructureReversal
 from .s11_ema_pullback import EmaPullback
 from .s12_walls_range import WallsRangeFamily
 
-REGISTRY_VERSION = "MQ-REGISTRY-1.0.0"
 STRATEGIES: dict[str, base.Strategy] = {s.id: s for s in (
     TrendPullback(), AdaptiveTrend(), ChannelBreakout(), VolatilityCompressionBreakout(), SessionRangeBreakout(),
     BreakoutRetest(), FailedBreakoutReclaim(), RangeEdgeReversion(), StatisticalMeanReversion(), ExhaustionStructureReversal(),
     EmaPullback(), WallsRangeFamily())}
-# strategies that may be scanned/shown but are not allowed to trade until the user enables them (unvalidated challengers)
-DEFAULT_NO_TRADE = {"S11", "S12"}
+# 1.46 arch (I0083): the ids (ids.STRATEGY_IDS, read by config.py) and the scan-only defaults DEFAULT_NO_TRADE live in strategies/ids.py;
+# tuple(STRATEGIES) == ids.STRATEGY_IDS is checked by a test (a new strategy is added in both places)
 
 
 def params_for(sid: str, overrides: dict | None) -> dict:

@@ -75,7 +75,8 @@ void OnStart()
       if(!PmwSha256Hex(body, hex, data)) Check(false, "SHA256 unavailable");
       else
         {
-         uchar tail[]; string ts = "#sha256=" + hex + "\n"; StringToCharArray(ts, tail, 0, StringLen(ts), CP_UTF8);
+         uchar tail[]; string ts = "#sha256=" + hex + "\n";
+         int nt = StringToCharArray(ts, tail, 0, WHOLE_ARRAY, CP_UTF8); if(nt > 0 && tail[nt - 1] == 0) ArrayResize(tail, nt - 1);   // 1.46 arch (I0521)
          Check(PmwAtomicWrite("PMW\\PWM_CONTEXT_EXPORT.tmp", "PMW\\PWM_CONTEXT_EXPORT.txt", data, tail), "export written atomically");
         }
      }

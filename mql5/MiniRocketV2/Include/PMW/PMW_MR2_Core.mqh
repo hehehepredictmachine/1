@@ -83,6 +83,10 @@ public:
    void              Reset() { m_configured = false; m_fitted = false; ArrayFree(m_bias); ArrayFree(m_fitIdx); }
 
    //--- layout (same rule as Python layout(); the exported model carries its layout, Load never re-guesses it)
+   //--- 1.46 arch (I0483): exponents as np.logspace/np.linspace - e_i = i * step, step = maxExp / (tmax - 1), the last one = maxExp,
+   //--- a single dilation (tmax == 1) is 2^0 = 1 (was 2^maxExp). MathLog/MathPow need not round like math.log2 / numpy power, so a
+   //--- non-default L can still differ: SelfTest and Fit take DILS/CNTS/QUAN from the Python file (SetLayout) and use this only as
+   //--- a fallback for an old file without them (and in Benchmark).
    int               Configure(const int L, const int requested, const int maxDil)
      {
       Reset();
@@ -93,12 +97,13 @@ public:
       int tmax = MathMin(fpk, maxDil);
       double mult = (double)fpk / tmax;
       double maxExp = (L > 9) ? MathLog((L - 1) / 8.0) / MathLog(2.0) : 0.0;
+      double step = (tmax > 1) ? maxExp / (tmax - 1) : 0.0;
       int raw[];
       ArrayResize(raw, tmax);
       for(int i = 0; i < tmax; i++)
         {
-         double e = (tmax > 1) ? maxExp * i / (tmax - 1) : 0.0;
-         if(i == tmax - 1) e = maxExp;
+         double e = i * step;
+         if(tmax > 1 && i == tmax - 1) e = maxExp;
          raw[i] = (int)MathPow(2.0, e);
         }
       ArrayResize(m_dil, 0);
@@ -192,7 +197,9 @@ public:
       int lo = (int)MathFloor(pos);
       int hi = MathMin(lo + 1, n - 1);
       double fr = pos - lo;
-      double a = (double)sorted[lo], b = (double)sorted[hi], dba = b - a;
+      // 1.46 arch (I0484): numpy._lerp takes diff_b_a = b - a on the float32 operands (float32 subtraction), then works in float64
+      float d32 = sorted[hi] - sorted[lo];
+      double a = (double)sorted[lo], b = (double)sorted[hi], dba = (double)d32;
       // numpy 'linear' lerp (same branch rule as numpy._lerp): a + d*t, or b - d*(1-t) for t >= 0.5
       return (fr >= 0.5) ? b - dba * (1.0 - fr) : a + dba * fr;
      }

@@ -105,7 +105,7 @@ class TestDXYFeature(unittest.TestCase):
     def test_real_availability(self):
         from masterquo.ml import features as fe
         asof = datetime(2026, 1, 6, 12, 0, tzinfo=timezone.utc)
-        self.assertEqual(fe.FEATURE_SCHEMA_VERSION, "MQ-FEAT-1.2.0")
+        self.assertEqual(fe.FEATURE_SCHEMA_VERSION, "MQ-FEAT-1.3.0")          # 1.46: 1.3.0 = zone semantics SEM-2 (dxy unchanged)
         self.assertEqual(fe.dxy_missing(self.view({}), asof), 1.0)
         self.assertEqual(fe.dxy_missing(self.view({"dxy": {"status": "OK", "last_available_at": "2026-01-06T11:00:05Z"}}), asof), 0.0)
         old = (asof - timedelta(hours=5)).isoformat()

@@ -3,8 +3,8 @@
 // Ten plik nie importuje Reacta w adapterach – testy w Node: tests/js/charts_adapters.test.mjs.
 import { useEffect, useRef, useState, type MutableRefObject } from "react";
 import { apiGet } from "../../../../api";
-import { barCloseStep, basketMetaVM, basketSignalVM, candlesVM, cardProbsVM, chartStatus, iprofVM, kronosVM, legacyMetaVM, legacySignalVM, sameInstrument, shMetaVM, shSignalVM,
-  statesVM, zonesMsgVM, zonesVM, type BarCloses, type Meta, type Sig } from "./chartsAdapters";
+import { barCloseStep, basketMetaVM, basketSignalVM, candlesVM, cardProbsVM, chartStatus, iprofVM, kronosVM, legacyMetaVM, legacySignalVM, planProbsVM, sameInstrument,
+  shMetaVM, shSignalVM, statesVM, zonesMsgVM, zonesVM, type BarCloses, type Meta, type Sig } from "./chartsAdapters";
 export * from "./chartsAdapters";
 
 /** Hook danych ekranu CHARTS (K2): świece + profil wskaźników silnika, tiki na żywo ze store, Kronos. Tylko GET; ponowne pobranie po
@@ -12,14 +12,15 @@ export * from "./chartsAdapters";
 const g = (u: string) => apiGet<any>(u).catch(() => null);
 let metaCache: Meta | null = null;
 
-/** Warstwy bota dla instrumentu (K3, tylko GET): meta strategii (raz), stany koszyków, sygnały koszyków / S01–S12 / SH, szanse w karcie.
+/** Warstwy bota dla instrumentu (K3, tylko GET): meta strategii (raz), stany koszyków, sygnały koszyków / S01–S12 / SH. Szanse w karcie
+ *  liczone per wybrany plan (planSel poniżej; 1.46 I0328 – lista /models/predictions instrumentu nie ma zadań planu).
  *  Szczegóły sygnału S01–S12 (cele, powody, czas świecy) są w rekordzie listy /bot-signals (detail, take_profits – SignalStore._public). */
 async function botLayers(asset: string, engineSymbol?: string, assetSymbol?: string | null) {
-  const [cat, auto, shc, bk, bs, ls, ss, pred] = await Promise.all([
+  const [cat, auto, shc, bk, bs, ls, ss] = await Promise.all([
     metaCache ? null : g("/api/v1/baskets/catalog"), metaCache ? null : g("/api/v1/strategy/auto"), metaCache ? null : g("/api/v1/sh/config"),
     g("/api/v1/baskets"), g("/api/v1/baskets/signals?limit=300"),
     asset === "XAUUSD" ? g(`/api/v1/bot-signals?limit=100&rejected=false${engineSymbol ? "&symbol=" + encodeURIComponent(engineSymbol) : ""}`) : null,
-    asset === "XAUUSD" ? g("/api/v1/sh/signals?limit=200") : null, g(`/api/v1/models/predictions?instrument=${asset}`)]);
+    asset === "XAUUSD" ? g("/api/v1/sh/signals?limit=200") : null]);
   if (!metaCache && cat && auto && shc) metaCache = { ...basketMetaVM(cat), LEGACY: legacyMetaVM(auto), SH: shMetaVM(shc) };
   // 1.46: the list record already carries detail + take_profits (the same _public as GET /bot-signals/{id}) - the per-signal GET (up to 40 per
   // refresh) and the module-level cache that grew for the whole life of the window are gone; signals without a fetched detail are no longer hidden
@@ -29,7 +30,7 @@ async function botLayers(asset: string, engineSymbol?: string, assetSymbol?: str
     ...rows.map((x) => legacySignalVM(x)),
     ...(ss?.items || []).filter((x: any) => sameInstrument(x.instrument, asset, assetSymbol)).map(shSignalVM),
   ].filter((x): x is Sig => !!x && Number.isFinite(x.t)).sort((a, b) => a.t - b.t);
-  return { meta: metaCache || undefined, signals, states: statesVM(bk, asset, assetSymbol), probs: cardProbsVM(pred) };
+  return { meta: metaCache || undefined, signals, states: statesVM(bk, asset, assetSymbol), probs: cardProbsVM() };
 }
 
 /** 1.46: licznik zamknięć świec TF z barTick (barCloseStep) – zależność efektów zamiast chwilowego closed/seq (gubionego przy batchowaniu). */
@@ -58,18 +59,29 @@ export function symbolSpecVM(info: any): { tick: number | null; digits: number |
 /** 1.46: /market-zones/bars (świece BTC) przyjmuje tylko TF stref (400 INVALID_TF dla H1 i wyżej) – to nie jest rozłączenie terminala. */
 const tfUnsupported = (e: any) => e?.status === 400 && /INVALID_TF/.test(String(e?.message || ""));
 
+/** 1.46 (I0328): szanse wybranego planu – SH: zapis sygnału (GET /api/v1/sh/signals/{signal_id}, tylko odczyt); S01–S12 i koszyki bez zapytania
+ *  (GET /api/v1/ml/predict zapisuje predykcję do próby driftu ML – panel go nie woła). Wynik do renderera: setPlanProbs(klucz planu, szanse). */
+export function planProbsFor(plan: { key: string; src: string; ref?: string | null } | null, get: (u: string) => Promise<any> = g): Promise<Record<string, any>> {
+  if (!plan || plan.src !== "SH" || !plan.ref) return Promise.resolve(planProbsVM(plan as any));
+  return get(`/api/v1/sh/signals/${encodeURIComponent(plan.ref)}`).then((d) => planProbsVM(plan as any, d), () => planProbsVM(plan as any, null));
+}
+
 export function useChartsData(api: MutableRefObject<any>, active: boolean, s: any) {
   const tfDone = useRef(false);
   const btcSym = useRef<string | null>(null);
   const [sel, setSel] = useState<{ asset: string; tf: string; kr: string; n: number }>({ asset: "XAUUSD", tf: "M15", kr: "M5", n: 0 });
   const [krN, setKrN] = useState(0);
+  const planSel = (p: any) => { if (p?.key) planProbsFor(p).then((pr) => api.current?.setPlanProbs?.(p.key, pr)); };
   useEffect(() => {
     if (!active) return;
     const a = api.current;
     if (!a) return;
     const cur = a.sel();
     setSel((x) => ({ ...x, ...cur }));
-    const off = a.onSelect((e: any) => { if (e.what === "kronos") { setSel((x) => ({ ...x, kr: e.kr })); setKrN((n) => n + 1); } else setSel((x) => ({ ...x, asset: e.asset, tf: e.tf, kr: e.kr, n: x.n + 1 })); });
+    const off = a.onSelect((e: any) => {
+      if (e.what === "plan") { planSel(e.plan); return; }                  // 1.46 (I0328): wybór planu nie przeładowuje świec
+      if (e.what === "kronos") { setSel((x) => ({ ...x, kr: e.kr })); setKrN((n) => n + 1); } else setSel((x) => ({ ...x, asset: e.asset, tf: e.tf, kr: e.kr, n: x.n + 1 }));
+    });
     return () => { if (typeof off === "function") off(); };     // 1.46: one listener per entry into CHARTS (they accumulated before)
   }, [active]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {

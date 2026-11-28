@@ -9,18 +9,17 @@ from ..db.database import dumps
 from .hedge_fsm import Basket, HedgeConfig, Leg2
 from .lifecycle import Leg, Position
 
-SIGNAL_STATUSES = ("READY", "WAIT", "NO_TRADE", "EXPIRED", "INVALIDATED")
-
 
 # ---------------------------------------------------------------------------- state machine (de)serialization
 def pos_dump(p: Position) -> dict:
-    d = {k: v for k, v in p.__dict__.items() if k not in ("legs", "seen_events", "issued")}
+    d = {k: v for k, v in p.__dict__.items() if k not in ("legs", "seen_events", "issued", "_sh_retry")}
     d["legs"] = [vars(x) for x in p.legs]
     d["seen_events"], d["issued"] = sorted(p.seen_events), sorted(p.issued)
     return d
 
 
 def pos_load(d: dict) -> Position:
+    """The stored remaining is passed as is - also 0.0 of a closed position (Position fills only a missing value with the volume)."""
     d = dict(d)
     legs = [Leg(**x) for x in d.pop("legs")]
     seen, issued = set(d.pop("seen_events", [])), set(d.pop("issued", []))
@@ -30,27 +29,36 @@ def pos_load(d: dict) -> Position:
 
 
 def basket_dump(b: Basket) -> dict:
+    # exit_retries / exit_round / last_exit_try (close retries): extra keys - an older basket_load reads named keys only (rollback-safe)
     return {"basket_id": b.basket_id, "primary": pos_dump(b.primary), "cfg": vars(b.cfg), "money_per_price_per_lot": b.money_per_price_per_lot,
             "opened_at": b.opened_at, "state": b.state, "hedge": vars(b.hedge) if b.hedge else None, "activations": b.activations,
             "hedge_realized_money": b.hedge_realized_money, "seen": sorted(b.seen), "issued": sorted(b.issued), "transitions": b.transitions,
-            "policy": b.policy}
+            "policy": b.policy, "exit_retries": b.exit_retries, "exit_round": b.exit_round, "last_exit_try": b.last_exit_try}
 
 
 def basket_load(d: dict) -> Basket:
     b = Basket(basket_id=d["basket_id"], primary=pos_load(d["primary"]), cfg=HedgeConfig(**d["cfg"]),
                money_per_price_per_lot=d["money_per_price_per_lot"], opened_at=d["opened_at"], state=d["state"],
                hedge=Leg2(**d["hedge"]) if d.get("hedge") else None, activations=d["activations"],
-               hedge_realized_money=d["hedge_realized_money"], transitions=d.get("transitions") or [], policy=d.get("policy") or {})
+               hedge_realized_money=d["hedge_realized_money"], transitions=d.get("transitions") or [], policy=d.get("policy") or {},
+               exit_retries=int(d.get("exit_retries") or 0), exit_round=int(d.get("exit_round") or 0),
+               last_exit_try=float(d.get("last_exit_try") or 0.0))
     b.seen, b.issued = set(d.get("seen") or []), set(d.get("issued") or [])
     return b
 
 
 def fsm_dump(obj) -> dict:
-    return {"type": "BASKET", "data": basket_dump(obj)} if isinstance(obj, Basket) else {"type": "POSITION", "data": pos_dump(obj)}
+    out = {"type": "BASKET", "data": basket_dump(obj)} if isinstance(obj, Basket) else {"type": "POSITION", "data": pos_dump(obj)}
+    retry = getattr(obj, "_sh_retry", None)
+    if retry:
+        out["retry"] = retry            # w2 (I0739): NOT_SENT actions to send again - outside "data" (older versions ignore the key)
+    return out
 
 
 def fsm_load(d: dict):
-    return basket_load(d["data"]) if d["type"] == "BASKET" else pos_load(d["data"])
+    obj = basket_load(d["data"]) if d["type"] == "BASKET" else pos_load(d["data"])
+    obj._sh_retry = list(d.get("retry") or [])
+    return obj
 
 
 # ---------------------------------------------------------------------------- store
@@ -114,6 +122,15 @@ class SHStore:
             q += " AND symbol=?"
             args.append(symbol)
         return self.db.query(q + " ORDER BY created_at DESC LIMIT ?", (*args, limit))
+
+    def recent_signals_with_plan(self, since: float) -> list[dict]:
+        """w2 (I0825): signals since `since` that produced a plan, in ANY status (a READY that expired after its TTL still counts for the
+        duplicate window) - one query, the columns of recent_signals()."""
+        return self.db.query(
+            "SELECT s.signal_id, s.strategy, COALESCE(s.strategy_id, CASE s.strategy WHEN 'SCALPING' THEN 'LEGACY_SCALPING' WHEN 'HEDGING' THEN "
+            "'LEGACY_HEDGING' ELSE s.strategy END) AS strategy_id, s.signal_tf, s.instrument, s.symbol, s.side, s.status, s.status_reason, "
+            "s.created_at, s.valid_until FROM sh_signals s WHERE s.created_at >= ? AND EXISTS (SELECT 1 FROM sh_plans p WHERE p.signal_id = s.signal_id) "
+            "ORDER BY s.created_at DESC", (since,))
 
     def signals_with_levels(self, rows: list[dict]) -> list[dict]:
         """CHARTS K3: list rows + stored levels and the outcome of the plan made from the signal (state, TP legs done, close time, R).
@@ -202,24 +219,36 @@ class SHStore:
         return {r["strategy"]: r["t"] for r in self.db.query(
             "SELECT strategy, MAX(closed_at) AS t FROM sh_plans WHERE symbol=? AND closed_at IS NOT NULL GROUP BY strategy", (symbol,))}
 
-    def realized_since(self, since: float) -> float:
+    def realized_since(self, since: float, exec_mode: str | None = None, account_key: str | None = None) -> float:
+        """Net result of the plans closed since `since`; w2 (I0746): optional filters by execution mode / account (default: all, as before)."""
+        q, args = "SELECT result FROM sh_plans WHERE closed_at >= ? AND result IS NOT NULL", [since]
+        if exec_mode:
+            q += " AND exec_mode=?"
+            args.append(exec_mode)
+        if account_key:
+            q += " AND account_key=?"
+            args.append(account_key)
         tot = 0.0
-        for r in self.db.query("SELECT result FROM sh_plans WHERE closed_at >= ? AND result IS NOT NULL", (since,)):
+        for r in self.db.query(q, args):
             tot += float((json.loads(r["result"]) or {}).get("net_money") or 0.0)
         return tot
 
     # actions (idempotency) ----------------------------------------------------------------------------------------------
     def claim_action(self, action: dict, now: float | None = None) -> dict:
         """Claim an action id before touching the terminal. Returns {claimed: True} for a new id (or a retry of a REJECTED one),
-        otherwise the stored row: DONE -> the stored result is reused, SENT/UNKNOWN -> never resent (reconciliation decides)."""
+        otherwise the stored row: DONE -> the stored result is reused, SENT/UNKNOWN -> never resent. w2 (I0111) what really settles them:
+        the volume of a close by reconcile (volume drop / closing deal), an entry by adoption (recover / adopt_pending); a close / modify left
+        UNKNOWN is not retried - it is only shown (SHService._watch: state 'unknown_actions' + log ACTIONS_UNKNOWN).
+        w2 (I0739): a NOT_SENT management action (certainly not sent) may be claimed again like a REJECTED one - never an OPEN_* entry."""
         now = time.time() if now is None else now
         with self.db.tx() as c:
-            r = c.execute("SELECT status, attempts, result FROM sh_actions WHERE action_id=?", (action["action_id"],)).fetchone()
+            r = c.execute("SELECT status, attempts, result, kind FROM sh_actions WHERE action_id=?", (action["action_id"],)).fetchone()
             if r is None:
                 c.execute("INSERT INTO sh_actions(action_id, plan_id, kind, status, request, created_at, updated_at) VALUES (?,?,?,?,?,?,?)",
                           (action["action_id"], action.get("plan_id") or action.get("basket_id"), action["kind"], "SENT", dumps(action), now, now))
                 return {"claimed": True, "attempt": 1}
-            if r["status"] == "REJECTED":
+            resend = r["status"] == "REJECTED" or (r["status"] == "NOT_SENT" and not str(r["kind"] or action.get("kind") or "OPEN_").startswith("OPEN_"))
+            if resend:
                 c.execute("UPDATE sh_actions SET status='SENT', attempts=attempts+1, updated_at=? WHERE action_id=?", (now, action["action_id"]))
                 return {"claimed": True, "attempt": r["attempts"] + 1}
             return {"claimed": False, "status": r["status"], "result": json.loads(r["result"]) if r["result"] else None}
@@ -231,7 +260,12 @@ class SHStore:
     def actions(self, plan_id: str) -> list[dict]:
         return self.db.query("SELECT * FROM sh_actions WHERE plan_id=? ORDER BY created_at", (plan_id,))
 
-    def unknown_actions(self) -> list[dict]:
+    def unknown_actions(self, open_only: bool = False) -> list[dict]:
+        """Actions whose outcome is unknown (SENT / UNKNOWN). w2 (I0111): open_only = only of plans still open (one JOIN, no full scan
+        of the history) - read by the SH status, never resent or resolved."""
+        if open_only:
+            return self.db.query("SELECT a.* FROM sh_actions a JOIN sh_plans p ON p.plan_id = a.plan_id WHERE a.status IN ('SENT','UNKNOWN') "
+                                 "AND p.state NOT IN ('CLOSED','ERROR_CLOSED','REJECTED') ORDER BY a.created_at")
         return self.db.query("SELECT * FROM sh_actions WHERE status IN ('SENT','UNKNOWN')")
 
     # ownership -----------------------------------------------------------------------------------------------------------

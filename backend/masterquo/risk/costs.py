@@ -9,6 +9,7 @@ from __future__ import annotations
 import statistics
 
 DEAL_ENTRY_IN, DEAL_ENTRY_OUT, DEAL_ENTRY_INOUT = 0, 1, 2
+DEAL_ENTRY_OUT_BY = 3                     # closed by an opposite position (Close By) - realized P/L of both legs
 DEAL_TYPE_BUY, DEAL_TYPE_SELL = 0, 1
 
 
@@ -17,7 +18,12 @@ def commission_from_history(deals: list[dict], symbol: str, min_samples: int = 3
 
     Tariffs differ: per side, round-turn charged at open, or charged at close. When both opening (IN) and closing (OUT)
     deals are available the round-turn = median(IN) + median(OUT) and per side = round-turn / 2 - a plain median over all
-    deals would show 0 for an open-only or close-only tariff. Otherwise the median over all deals is used (flagged)."""
+    deals would show 0 for an open-only or close-only tariff.
+
+    w2 (I0735): the deal `fee` is a cost too (commission + fee per lot). Without at least `min_samples` IN AND OUT deals the
+    tariff is unresolved: per side = the LARGER of the two sides' medians (an open-only / close-only tariff is then counted on
+    both sides - conservative; never below the former median over all deals). When that is 0 the history proves nothing
+    (e.g. 3 openings of a close-only tariff): per side None with source DEAL_HISTORY_UNRESOLVED_ZERO instead of a "known" 0.0."""
     per, ins, outs = [], [], []
     for d in deals:
         if d.get("symbol") != symbol or d.get("type") not in (DEAL_TYPE_BUY, DEAL_TYPE_SELL):
@@ -25,7 +31,7 @@ def commission_from_history(deals: list[dict], symbol: str, min_samples: int = 3
         vol = d.get("volume") or 0
         if vol <= 0 or d.get("entry") not in (DEAL_ENTRY_IN, DEAL_ENTRY_OUT, DEAL_ENTRY_INOUT):
             continue
-        v = abs(float(d.get("commission") or 0.0)) / vol
+        v = (abs(float(d.get("commission") or 0.0)) + abs(float(d.get("fee") or 0.0))) / vol
         per.append(v)
         (ins if d.get("entry") == DEAL_ENTRY_IN else outs).append(v)
     if len(ins) >= min_samples and len(outs) >= min_samples:
@@ -37,8 +43,16 @@ def commission_from_history(deals: list[dict], symbol: str, min_samples: int = 3
     if len(per) < min_samples:
         return {"per_lot_per_side": None, "samples": len(per), "source": "DEAL_HISTORY_INSUFFICIENT",
                 "note": "Za mało transakcji na symbolu w historii; ustaw prowizję ręcznie w ustawieniach."}
-    return {"per_lot_per_side": round(statistics.median(per), 4), "samples": len(per), "source": "DEAL_HISTORY_MEDIAN",
-            "note": "Mediana z historii transakcji rachunku (pobierana per deal; za mało otwarć/zamknięć do ustalenia taryfy). Taryfa może się zmienić."}
+    side_max = max(statistics.median(ins) if ins else 0.0, statistics.median(outs) if outs else 0.0)
+    value = max(side_max, statistics.median(per))                 # never below the former median over all deals
+    if value <= 0:
+        return {"per_lot_per_side": None, "samples": len(per), "source": "DEAL_HISTORY_UNRESOLVED_ZERO", "tariff": "UNRESOLVED",
+                "note": "Za mało otwarć i zamknięć do ustalenia taryfy, a obserwowana prowizja to 0 – zero nie jest przyjmowane jako "
+                        "znana prowizja; ustaw prowizję ręcznie w ustawieniach."}
+    return {"per_lot_per_side": round(value, 4), "round_turn_per_lot": round(2 * value, 4), "samples": len(per),
+            "source": "DEAL_HISTORY_PARTIAL_CONSERVATIVE", "tariff": "UNRESOLVED",
+            "note": "Za mało otwarć/zamknięć do ustalenia taryfy: większa z median stron liczona po obu stronach (konserwatywnie). "
+                    "Taryfa może się zmienić."}
 
 
 def resolve_commission(cost_cfg, deals: list[dict], symbol: str) -> dict:
@@ -47,7 +61,9 @@ def resolve_commission(cost_cfg, deals: list[dict], symbol: str) -> dict:
     if cost_cfg.commission_mode == "FROM_DEAL_HISTORY":
         r = commission_from_history(deals, symbol)
         if r["per_lot_per_side"] is None and cost_cfg.commission_per_lot_per_side is not None:
-            return {"per_lot_per_side": float(cost_cfg.commission_per_lot_per_side), "samples": r["samples"],
-                    "source": "CONFIGURED_FALLBACK"}
+            # w2 (I0735): an unresolved zero (was a "known" 0.0 DEAL_HISTORY_MEDIAN) falls back to the configured value under its own
+            # source name - unknown to the Manual Pad map (commission UNKNOWN there, exactly as DEAL_HISTORY_MEDIAN was)
+            src = "CONFIGURED_FALLBACK_UNRESOLVED_HISTORY" if r.get("source") == "DEAL_HISTORY_UNRESOLVED_ZERO" else "CONFIGURED_FALLBACK"
+            return {"per_lot_per_side": float(cost_cfg.commission_per_lot_per_side), "samples": r["samples"], "source": src}
         return r
     return {"per_lot_per_side": None, "samples": None, "source": "UNKNOWN"}

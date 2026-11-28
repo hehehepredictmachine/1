@@ -33,12 +33,15 @@ STATUS_PL = {"DISABLED": "wyłączone w konfiguracji", "NO_CANDLE_ENV": "brak ś
              "FORECAST_UNAVAILABLE": "analityka niedostępna (błąd procesu) – ochrona pozycji działa bez zmian", "SHADOW": "prognoza obserwacyjna SHADOW",
              "NO_DATA": "brak zamkniętych świec M5/M30 z MT5"}
 CLASSES = ("DOWN", "FLAT", "UP")
+# 1.46 (I0638): the Double Retest machine has a fixed 5 USD grid (double_retest.G) defined for gold; for another instrument the levels L,
+# zones and L+5 / L+10 targets mean nothing (BTC grid_step 500 is a working hypothesis) - the grid is NOT scaled (no guessed parameters)
+DR_INSTRUMENTS = ("XAUUSD",)
 
 
 def candle_python(cfg) -> str | None:
-    cands = [os.environ.get("MQ_CANDLES_PYTHON"), cfg.forecast.python_path,
-             str(paths.ROOT_DIR / ".venv_candles" / "Scripts" / "python.exe"), str(paths.ROOT_DIR / ".venv_candles" / "bin" / "python")]
-    return next((c for c in cands if c and Path(c).exists()), None)
+    # 1.46 arch (I0117): MQ_CANDLES_PYTHON -> forecast.python_path -> .venv_candles (exists), as before
+    from .. import runtimes
+    return runtimes.find_python("candles", cfg.forecast.python_path, check=Path.exists)
 
 
 class ForecastService:
@@ -91,6 +94,8 @@ class ForecastService:
             return False
         env = dict(os.environ, PYTHONPATH=str(paths.ROOT_DIR / "backend"), MASTERQUO_DATA_DIR=str(paths.data_dir()), PYTHONIOENCODING="utf-8",
                    MQ_INSTRUMENT=self.inst)
+        from ..licensing import edition as _ed
+        _ed.warn_model_test_hooks(self.log, "FORECAST", env)               # arch 1.46 I0116: information only (env unchanged)
         flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
         self.proc = subprocess.Popen([py, "-m", "gold_candles_runtime.worker"], cwd=str(paths.ROOT_DIR / "backend"), env=env, text=True,
                                      encoding="utf-8", stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, bufsize=1,
@@ -100,6 +105,30 @@ class ForecastService:
                                 "instrument": hello.get("instrument")}
         self.log.info("FORECAST", "WORKER_STARTED", f"Analityka świec SHADOW: proces {self.proc.pid} ({py}).")
         return True
+
+    def worker_unavailable(self) -> dict | None:
+        """1.46 (I0615): why the analytics worker cannot answer right now (None = it runs). Diagnostic only - nothing is started here, so
+        the availability of the scalp A/B models (and of the inputs of the Quant MetaModel) is exactly as before."""
+        if self.proc is not None and self.proc.poll() is None:
+            return None
+        try:
+            enabled = bool(self.cfg_store.get().forecast.enabled)
+        except Exception:  # noqa: BLE001 - no configuration: report the worker state only
+            enabled = True
+        st = self.state.get("status")
+        if not enabled:
+            return {"code": "FORECAST_DISABLED_NO_WORKER",
+                    "reason": "prognozy świec wyłączone (forecast.enabled=false) – proces analityki .venv_candles, z którego korzysta model scalp, "
+                              "nie jest uruchamiany"}
+        if st == "NO_CANDLE_ENV":
+            return {"code": "NO_CANDLE_ENV", "reason": f"proces analityki: {STATUS_PL['NO_CANDLE_ENV']}"}
+        wait = self.retry_at - time.monotonic()
+        if wait > 0:
+            return {"code": "WORKER_RESTART", "reason": f"proces analityki zatrzymany ({st}) – ponowne uruchomienie za {wait:.0f} s",
+                    "retry_in_s": round(wait, 1)}
+        if st in ("NO_DATA", "UNSUPPORTED_ASSET", "SYMBOL_SPEC"):
+            return {"code": st, "reason": f"proces analityki nie uruchomiony: {STATUS_PL.get(st, st)}"}
+        return {"code": "STARTING", "reason": "proces analityki jeszcze nie uruchomiony – startuje po pierwszej nowej zamkniętej świecy M5"}
 
     def _ask(self, req: dict, timeout: float) -> dict:
         with self._lock:
@@ -196,6 +225,10 @@ class ForecastService:
                                                                     "nie jest przeliczany na brakujących danych"}
             setup = dict(prev, **note) if isinstance(prev, dict) else {"version": double_retest.VERSION, "states": {}, "EXECUTION_STATE": "BLOCKED",
                                                                        "can_submit_order": False, **note}
+        elif self.inst not in DR_INSTRUMENTS:
+            setup = {"version": double_retest.VERSION, "states": {}, "EXECUTION_STATE": "BLOCKED", "can_submit_order": False,
+                     "status": "UNSUPPORTED_INSTRUMENT", "instrument": self.inst,
+                     "reason": f"siatka {double_retest.G:g} USD zdefiniowana dla {'/'.join(DR_INSTRUMENTS)} – Double Retest nie działa dla {self.inst}"}
         else:
             setup = self.machine.update(m5, m30, {f["time_open_utc"]: f["names"] for f in ft}, tick)
             for fn in list(self.listeners):
@@ -206,7 +239,7 @@ class ForecastService:
         self._set(status, ans.get("reason") or ans.get("error"), report=ans.get("report"), model=ans.get("model"), setup_v2=setup,
                   latency_ms={"worker": ans.get("latency_ms"), "round_trip": rt_ms}, worker_peak_rss_mb=ans.get("peak_rss_mb"),
                   bars={"m5_last_open_utc": m5[-1]["open_utc"], "m30_last_open_utc": m30[-1]["open_utc"], "m5": len(m5), "m30": len(m30)},
-                  shadow=self.shadow_summary(), instrument=self.inst)
+                  shadow=self.shadow_summary((ans.get("model") or {}).get("run_id")), instrument=self.inst)
         if status == "SHADOW":
             self.record(ans)
 
@@ -251,27 +284,50 @@ class ForecastService:
             self.db.execute("UPDATE forecast_shadow SET outcome_close=?, outcome_class=?, outcome_status=?, scored_at=? WHERE id=?",
                             (close, cls, st, iso(utcnow()), r["id"]))
 
-    def shadow_summary(self) -> dict:
+    def _summary_run_id(self) -> str | None:
+        """Model whose live forecasts are summarised: the model of the last worker answer, then the registry's active run, then the run of
+        the most recent stored forecast of this instrument."""
+        rid = (self.state.get("model") or {}).get("run_id")
+        if not rid:
+            try:
+                rid = (self.registry() or {}).get("active")
+            except Exception:  # noqa: BLE001 - a broken registry only loses the hint
+                rid = None
+        if not rid:
+            r = self.db.one("SELECT run_id FROM forecast_shadow WHERE instrument=? ORDER BY id DESC LIMIT 1", (self.inst,))
+            rid = r["run_id"] if r else None
+        return rid
+
+    def shadow_summary(self, run_id: str | None = None) -> dict:
+        """1.46 (I0633/I0635/I0636): live SHADOW scores of ONE model (run_id) - Brier / log loss of different models were averaged together
+        after a model change; the q10-q90 coverage is counted over the rows that HAVE both quantiles (rows without them were 'not covered')."""
+        rid = run_id or self._summary_run_id()
         out = {}
         for h in (5, 15, 30):
-            rows = self.db.query("SELECT * FROM forecast_shadow WHERE horizon_minutes=? AND instrument=? AND outcome_status='SCORED' ORDER BY id DESC LIMIT 2000",
-                                 (h, self.inst))
-            pend = self.db.one("SELECT COUNT(*) AS n FROM forecast_shadow WHERE horizon_minutes=? AND instrument=? AND outcome_status='PENDING'", (h, self.inst))["n"]
+            rows = self.db.query("SELECT * FROM forecast_shadow WHERE horizon_minutes=? AND instrument=? AND run_id IS ? AND outcome_status='SCORED' "
+                                 "ORDER BY id DESC LIMIT 2000", (h, self.inst, rid))
+            pend = self.db.one("SELECT COUNT(*) AS n FROM forecast_shadow WHERE horizon_minutes=? AND instrument=? AND run_id IS ? AND outcome_status='PENDING'",
+                               (h, self.inst, rid))["n"]
+            other = self.db.one("SELECT COUNT(*) AS n FROM forecast_shadow WHERE horizon_minutes=? AND instrument=? AND run_id IS NOT ? "
+                                "AND outcome_status='SCORED'", (h, self.inst, rid))["n"]
             if not rows:
-                out[str(h)] = {"scored": 0, "pending": pend}
+                out[str(h)] = {"run_id": rid, "scored": 0, "pending": pend, "scored_other_runs": other}
                 continue
             br = ll = cov = 0.0
+            n_q = 0
             for r in rows:
                 p = [r["p_down"], r["p_flat"], r["p_up"]]
                 y = CLASSES.index(r["outcome_class"])
                 br += sum((p[i] - (1.0 if i == y else 0.0)) ** 2 for i in range(3))
                 ll += -math.log(max(p[y], 1e-12))
-                if r["q10"] is not None:
+                if r["q10"] is not None and r["q90"] is not None:
+                    n_q += 1
                     cov += 1.0 if r["q10"] <= r["outcome_close"] <= r["q90"] else 0.0
             n = len(rows)
-            out[str(h)] = {"scored": n, "pending": pend, "brier": round(br / n, 4), "log_loss": round(ll / n, 4), "q10_q90_coverage": round(cov / n, 3),
-                           "days": len({r["feature_time_utc"][:10] for r in rows}),
-                           "note": "ocena SHADOW na żywo – nakładające się prognozy nie są niezależnymi transakcjami"}
+            out[str(h)] = {"run_id": rid, "scored": n, "pending": pend, "scored_other_runs": other, "brier": round(br / n, 4),
+                           "log_loss": round(ll / n, 4), "q10_q90_coverage": round(cov / n_q, 3) if n_q else None, "quantile_rows": n_q,
+                           "horizon_status": rows[0].get("horizon_status"), "days": len({r["feature_time_utc"][:10] for r in rows}),
+                           "note": "ocena SHADOW na żywo jednego modelu (run_id) – nakładające się prognozy nie są niezależnymi transakcjami"}
         return out
 
     def recent(self, limit: int = 100) -> list[dict]:
