@@ -25,6 +25,8 @@ import math
 import numbers
 from dataclasses import asdict, dataclass, field
 
+from .. import costs as C
+
 VERSION = "PMW-QUANT-EVENT-1"
 LABEL_VERSION = "QEV1"
 AMBIGUITY = ("SL_FIRST", "TP_FIRST", "BOUNDS")
@@ -253,7 +255,11 @@ def spec_from_candidate(c: dict, *, be_after: str | None = None, ambiguity: str 
     ev = event_id or (f"TP{min(2, len(tg))}_BEFORE_STOP" if tg else "TP1_BEFORE_STOP")
     cost = ec.get("cost_price")
     known = ec.get("commission_known")
+    # Etap 4 (PMW-COSTS-1): label cost through the cost resolver, declared policy QUANT_LABEL - the candidate's cost_price as given
+    # (spread INHERITED: ACTIVE / scalp without, SH with the spread); an explicitly unknown commission = no net label (None), the
+    # BE offset uses the cost even then
+    cp = C.profile(C.QUANT_LABEL, str(c.get("instrument") or c.get("symbol")))
     return EventSpec(instrument=str(c.get("instrument") or c.get("symbol")), strategy=f"{eng}/{c.get('strategy_id')}", direction=str(c["direction"]),
                      entry=float(c["entry_price"]), sl=float(c["stop_loss"]), targets=tg, horizon_s=float(c["horizon_s"]),
-                     entry_rule=str(c.get("entry_type") or "MARKET"), be_after=be, be_offset_price=float(cost or 0.0) if be else 0.0,
-                     cost_price=(float(cost) if cost is not None and known is not False else None), ambiguity=ambiguity, event_id=ev)
+                     entry_rule=str(c.get("entry_type") or "MARKET"), be_after=be, be_offset_price=C.be_offset(cp, cost) if be else 0.0,
+                     cost_price=C.label_cost(cp, cost, known), ambiguity=ambiguity, event_id=ev)

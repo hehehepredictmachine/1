@@ -532,5 +532,56 @@ class TestEvaluation(unittest.TestCase):
             td.close()
 
 
+# ====================================================================================================================== QUANT LABELS
+def _old_label(cost, known, be):
+    """quant/events.spec_from_candidate at cf5d941 (verbatim): be_offset_price and cost_price of the EventSpec."""
+    return (float(cost or 0.0) if be else 0.0), (float(cost) if cost is not None and known is not False else None)
+
+
+def _candidate(rng):
+    eng = rng.choice(["ACTIVE", "SH_SCALPING", "SH_HEDGING", "SCALP_SHADOW"])
+    side = rng.choice(["LONG", "SHORT"])
+    sgn = 1 if side == "LONG" else -1
+    e = round(rng.uniform(100, 3000), 2)
+    tg = [{"price": e + sgn * rng.uniform(0.5, 9), "weight": 0.5}, {"price": e + sgn * rng.uniform(9, 20), "weight": 0.5}][:rng.choice([1, 2, 2])]
+    if len(tg) == 1 and rng.random() < 0.8:
+        tg[0]["weight"] = 1.0
+    ec = {}
+    if rng.random() > 0.1:
+        ec["cost_price"] = rng.choice([None, 0, 0.0, 0.3, rng.uniform(0, 3), "0.25"])
+    if rng.random() > 0.1:
+        ec["commission_known"] = rng.choice([None, True, False])
+    return {"engine": eng, "strategy_id": "S01", "instrument": rng.choice(["XAUUSD", None]), "symbol": "XAUUSD-", "direction": side,
+            "entry_price": e, "stop_loss": e - sgn * rng.uniform(0.5, 10), "targets": tg, "horizon_s": 3600.0,
+            "entry_type": rng.choice([None, "MARKET", "LIMIT_EDGE"]), "execution_context": ec}
+
+
+class TestQuantLabels(unittest.TestCase):
+    def test_resolver_equals_old_formula(self):
+        from masterquo import costs as C
+        rng = random.Random(SEED + 40)
+        p = C.profile(C.QUANT_LABEL, "XAUUSD")
+        for i in range(N):
+            cost = rng.choice([None, 0, 0.0, -0.0, 0.3, rng.uniform(0, 3), "0.25"])
+            known, be = rng.choice([None, True, False]), rng.choice([None, "TP2"])
+            new = (C.be_offset(p, cost) if be else 0.0), C.label_cost(p, cost, known)
+            self.assertEqual(_bits(new), _bits(_old_label(cost, known, be)), i)
+
+    def test_whole_spec_from_candidate_old_vs_new(self):
+        from dataclasses import asdict
+        old = _old_module("backend/masterquo/quant/events.py", "masterquo.quant._e4_old_events")
+        from masterquo.quant import events as new
+        rng = random.Random(SEED + 41)
+        labels = set()
+        for i in range(N):
+            c = _candidate(rng)
+            kw = {"be_after": rng.choice([None, None, "TP1", "TP2"]), "ambiguity": rng.choice(["SL_FIRST", "BOUNDS"])}
+            a = _outcome(lambda m=old, c=c, kw=kw: asdict(m.spec_from_candidate(c, **kw)))
+            b = _outcome(lambda m=new, c=c, kw=kw: asdict(m.spec_from_candidate(c, **kw)))
+            self.assertEqual(b, a, i)
+            labels.add("EXC" if isinstance(a, tuple) else a["cost_price"] is None)
+        self.assertLessEqual({True, False}, labels)                   # net labels with and without a known cost (EXC = same refusal)
+
+
 if __name__ == "__main__":
     unittest.main()
