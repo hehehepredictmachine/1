@@ -45,6 +45,11 @@ NAME_RX = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.\-]{0,63}$")
 # bridge path MT5_LIVE_BRIDGE (real terminal) or SYNTHETIC_TEST (demo simulator); 1.45.0 compared only with 'REAL' / 'SYNTHETIC'.
 _REAL_KINDS = {"REAL", "REAL_USER_DATA", "MT5_LIVE_BRIDGE"}
 _SYNTH_KINDS = {"SYNTHETIC", "SYNTHETIC_TEST", "SYNTHETIC_DEMO", "SIMULATED"}
+# 1.46 (I0400 / I0468): receivers of a family result that have a reader in the code - SH_CONTEXT (sh/service family_context, ASSIST hold),
+# DECISION (decision/coordinator roles), QUANT (quant snapshot features), PANEL (/api/v1/families), MODELHUB (modelhub.adapters.all_predictions
+# -> /api/v1/models, Quant), MM_BOARD (MM evidence board)
+CONNECTED_RECEIVERS = ("SH_CONTEXT", "DECISION", "QUANT", "PANEL", "MODELHUB", "MM_BOARD")
+PLANNED_NOTE = "niepodłączone w 1.46 – brak odbiorcy w kodzie (opis planu, nie ścieżka wyniku)"
 
 
 def kind_class(data_kind) -> str | None:
@@ -343,7 +348,11 @@ class Family:
     RUNTIME = "MAIN"                 # MAIN = bot process (outside the MT5 thread) | DEEP = .venv_deep worker process
     TF = "M5"
     HORIZONS = (1,)
+    # 1.46 (I0400 / I0468): RECEIVERS = only receivers with a reader in the code (prefix in CONNECTED_RECEIVERS); a declared but unconnected
+    # one (agent context, risk, strategy, portfolio - nothing in agent/ risk/ strategies/ engine/ baskets/ reads a family result) is listed
+    # in PLANNED_RECEIVERS and shown apart (capabilities 'planned_receivers'), never as a receiver of the record / model card
     RECEIVERS: tuple[str, ...] = ()
+    PLANNED_RECEIVERS: tuple[str, ...] = ()
     DATA = {"kind": "BARS", "tf": "M5", "min_bars": 500}
     FIT_LABEL = "trening"
     NEEDS_POINT = False              # 1.46: True = fit converts the bar spread (points) to price - the symbol's point size must be known
@@ -351,6 +360,7 @@ class Family:
     def capabilities(self) -> dict:
         return {"id": self.ID, "name": self.NAME, "kind": self.KIND, "task_type": self.TASK_TYPE, "unit": self.UNIT, "task": self.TASK,
                 "runtime": self.RUNTIME, "deps": list(self.DEPS), "tf": self.TF, "horizons": list(self.HORIZONS), "receivers": list(self.RECEIVERS),
+                "planned_receivers": list(self.PLANNED_RECEIVERS), "planned_receivers_note": PLANNED_NOTE if self.PLANNED_RECEIVERS else None,
                 "fit_label": self.FIT_LABEL, "data": self.DATA}
 
     def data_requirements(self) -> dict:

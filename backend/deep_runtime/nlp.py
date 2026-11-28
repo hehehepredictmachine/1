@@ -1,6 +1,7 @@
-"""Optional local transformer sentiment (e.g. a financial checkpoint the user is licensed to use), loaded ONLY from a local
-directory (no download during import). Without the `transformers` package or the checkpoint the caller reports BLOCKED and the
-TF-IDF baseline in the bot keeps working."""
+"""Local transformer sentiment - NOT CONNECTED in 1.46 (experimental tool, I0223 / I0471): no module of the bot calls the worker op
+nlp_predict, families.nlp_transformer_path is not read, and `transformers` is not in requirements-deep-win.txt. NLP_SENTIMENT is
+the TF-IDF + logistic regression model of masterquo.modelhub.families.nlp. If called directly: a checkpoint is loaded ONLY from a
+local directory (no download), a missing one -> CHECKPOINT_NOT_FOUND."""
 from __future__ import annotations
 
 from pathlib import Path

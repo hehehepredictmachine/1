@@ -7,9 +7,12 @@ Receivers (documented path source -> features -> model -> contract -> receiver -
     rules (one task / horizon / unit per group, no averaging of z-scores with probabilities).
   * SH setup (sh/service.cycle) - `family_context` for every evaluation (observation). In ASSIST only direction families
     (CLASS_PROBABILITIES) may HOLD a READY setup (READY -> WAIT) when P(opposite side) >= assist_hold_threshold; they never create or
-    enlarge an entry. VOL_GARCH in ASSIST adds a volatility scenario to the risk view (sigma move over H bars); limits stay as configured.
-    Any other result type has no ASSIST receiver - set_use refuses the role (ASSIST_NO_RECEIVER, 1.46 arch I0395 / I0472).
-  * panel / agent - catalog, status, last predictions.
+    enlarge an entry. VOL_GARCH in ASSIST only fills `family_context.vol` (sigma move over H bars - information; no risk receiver reads
+    it in 1.46, limits / sizing / stops never use it). Any other result type has no ASSIST receiver - set_use refuses the role
+    (ASSIST_NO_RECEIVER, 1.46 arch I0395 / I0472).
+  * decision coordinator (decision/coordinator) - roles of the records (OBSERVE / ASSIST / REQUIRED) on the ACTIVE path and the SH record.
+  * panel - catalog, status, last predictions (/api/v1/families). The agent does not read family predictions; declared but unconnected
+    receivers (AGENT / RISK / STRATEGY / PORTFOLIO) are Family.PLANNED_RECEIVERS, never Family.RECEIVERS (1.46, I0400 / I0468).
 """
 from __future__ import annotations
 
@@ -232,6 +235,15 @@ class FamilyService:
             raise KeyError("FAMILY_UNKNOWN")
         if profile not in ("smoke", "research", "full"):
             raise ValueError("PROFILE_INVALID")
+        from . import run as RUN
+        why_d = RUN.delegated(fid, inst, profile)
+        if why_d:
+            # 1.46 (I0475): a family trained elsewhere (trainhub TH_*, MM SEQ_GRU_EVENT) starts no process - the answer run.train would
+            # give, at once (as train_all reports it); SEQ_GRU_EVENT ended FAILED NotImplementedError
+            impl, why = self.fams[fid].implementation()
+            res = {"state": "DELEGATED", "reason": why_d} if impl == "AVAILABLE" else {"state": "BLOCKED", "reason": why}
+            B._atomic_json(self._job_file(fid, inst), {**res, "family": fid, "instrument": inst, "profile": profile, "updated_at": self.clock()})
+            return {"ok": False, "status": res["state"], "reason": res["reason"]}
         key = f"{fid}__{inst}"
         with self._lock:
             j = self.job(fid, inst)
@@ -391,6 +403,11 @@ class FamilyService:
             got = f._proba(art, np.asarray(smp["X"])).tolist()
         elif fid == "NLP_SENTIMENT":
             got = f.score(art, smp["texts"]).tolist()
+        elif fid == "PAIR_COINT" and smp.get("a_last") is not None and smp.get("b_last") is not None:
+            got = {"z_last": f._z(art, float(smp["a_last"]), float(smp["b_last"]))}         # 1.46 (I0422); older samples: load only
+        elif fid == "STATARB" and smp.get("prices_tail"):
+            P = np.asarray(smp["prices_tail"], dtype=float)                                  # 1.46 (I0427)
+            got = {"s_scores": [float(x) for x in f._scores(art, np.diff(np.log(P), axis=0))[0]]}
         elif fid in ("SEQ_LSTM", "SEQ_GRU"):
             from . import deep as D
             r = D.call("predict_seq", {"dir": str(d), "x_path": str(d / smp["x_file"])}, timeout=120)

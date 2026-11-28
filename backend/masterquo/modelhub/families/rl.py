@@ -1,6 +1,7 @@
 """RL_PPO family: PPO (Stable-Baselines3, .venv_deep) on the Gymnasium replay environment (rl_core). Output = PROPOSED target exposure
 (SHORT / FLAT / LONG) with the policy's action probabilities - an action probability is not a probability of profit. The proposal is
-read by the panel / risk context only; it never calls order_send and the existing risk engine and execution mode keep control."""
+read by the panel only (the risk context receiver is PLANNED, not connected in 1.46); it never calls order_send and the existing risk
+engine and execution mode keep control."""
 from __future__ import annotations
 
 import json
@@ -23,7 +24,8 @@ class PPO(B.Family):
     RUNTIME = "DEEP"
     TF = "M5"
     HORIZONS = ()
-    RECEIVERS = ("RISK:exposure_proposal (OBSERVE)", "PANEL:model_status")
+    RECEIVERS = ("PANEL:model_status",)
+    PLANNED_RECEIVERS = ("RISK:exposure_proposal (OBSERVE)",)
     DATA = {"kind": "BARS", "tf": "M5", "min_bars": 3000}
     NEEDS_POINT = True                                               # 1.46: the replay spread = median bar spread x point
 
@@ -60,8 +62,14 @@ class PPO(B.Family):
             # 1.46: the observation holds the exposure / unrealised P/L / bars in position; 1.45.0 sent `or 0.0` (no receiver ever passes the
             # position, so every proposal was computed for a fictitious FLAT state) - unknown is BLOCKED_DATA, never 0
             raise B.Unavailable("BLOCKED_DATA", "pozycja netto instrumentu nieznana – propozycja PPO wymaga stanu pozycji (brak danych ≠ płasko)")
+        entry, n_in = live.get("position_entry"), live.get("bars_in_position")
+        if float(pos) != 0.0 and not (B.finite(entry) and entry > 0 and isinstance(n_in, int) and not isinstance(n_in, bool) and n_in >= 0):
+            # 1.46 (I0465): the observation needs the entry price and the bars in position too - the worker set only the exposure (entry 0
+            # -> unrealised P/L at the price level, outside the training distribution); incomplete = BLOCKED_DATA, never a guessed state
+            raise B.Unavailable("BLOCKED_DATA", "stan pozycji niepełny (cena wejścia / liczba świec w pozycji) – obserwacja PPO wymaga pełnego stanu")
         r = D.call("predict_ppo", {"dir": art["dir"], "bars": [{k: b[k] for k in ("o", "h", "l", "c")} for b in bars],
-                                   "position": float(pos)}, timeout=120)
+                                   "position": float(pos), "position_entry": float(entry) if B.finite(entry) else None,
+                                   "bars_in_position": n_in if isinstance(n_in, int) and not isinstance(n_in, bool) else None}, timeout=120)
         if not r.get("ok"):
             raise B.Unavailable("ERROR", f"inferencja PPO: {r.get('error')}")
         pr = r["probs"]

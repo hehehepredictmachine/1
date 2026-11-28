@@ -50,6 +50,8 @@ class RF(Tabular):
 
 class XGB(Tabular):
     ID, TH_ID, NAME = "TH_XGB", "TH_XGB", "XGBoost (trainhub, eksport natywny JSON)"
+    # 1.46 (I0446): the capabilities / model card said "no additional libraries"; availability itself stays trainhub.learn.available()
+    DEPS = ("xgboost",)
 
 
 class SVM(Tabular):
