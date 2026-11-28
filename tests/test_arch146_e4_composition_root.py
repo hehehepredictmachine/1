@@ -202,6 +202,14 @@ def _base() -> dict:
 
 
 # ------------------------------------------------------------------------------------------------------------------------ 1. probe
+def _client_edition() -> bool:
+    """The frozen probe is the OWNER edition (522 routes, licence unlocked). In a CLIENT package (licensing/_edition.py marker, owner files
+    removed) or with PMW_EDITION=CLIENT the runtime is a different, licence-locked one - the comparison does not apply there."""
+    return os.environ.get("PMW_EDITION", "").strip().upper() == "CLIENT" \
+        or (_env.ROOT / "backend" / "masterquo" / "licensing" / "_edition.py").exists()
+
+
+@unittest.skipIf(_client_edition(), "edycja KLIENTA: migawka bazy dotyczy edycji właściciela (522 trasy, licencja odblokowana)")
 class TestRuntimeSnapshotVsBase(unittest.TestCase):
     """Runtime(demo=True) start w osobnym procesie: atrybuty, typy, kolejność, wątki - jak na bazie (poza nowym api_services)."""
 

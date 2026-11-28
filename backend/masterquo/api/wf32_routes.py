@@ -642,10 +642,12 @@ def register(app, rt) -> None:
 def _indicator_engine(rt):
     """Etap 4 (krok A): the TASK 007 indicator engine and its lock are built by the composition root (runtime.compose_api_services, one
     pair per create_app call - as register built them per call before) and read here from rt.api_services. register() called without
-    create_app (tests with a plain namespace, tools) builds its own pair exactly as before."""
-    from ..runtime import ApiServices
+    create_app (tests with a plain namespace, tools) builds its own pair as before; a runtime that already went through create_app shares
+    the pair of that app. masterquo.runtime is imported only when rt carries api_services (a plain namespace does not load it)."""
     api = getattr(rt, "api_services", None)
-    if isinstance(api, ApiServices):
-        return api.indicator_engine, api.indicator_lock
+    if api is not None:
+        from ..runtime import ApiServices
+        if isinstance(api, ApiServices):
+            return api.indicator_engine, api.indicator_lock
     from ..indicators import smoothing as SM
     return SM.IndicatorEngine(), threading.Lock()
