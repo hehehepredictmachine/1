@@ -324,6 +324,27 @@ class MarketBridge:
         self._set_state("RECONNECTING", reason or "RECONNECT_REQUESTED")
         self.next_retry = 0
 
+    def retry_now(self) -> None:
+        """1.46 arch (I0089): the next bridge cycle tries to connect at once (the former direct write `bridge.next_retry = 0` of the API,
+        e.g. after a new MT5 password). Only the retry timer is reset - connect() is never called from the caller's (API) thread."""
+        self.next_retry = 0
+
+    def deals_snapshot(self) -> tuple[list[dict], float | None]:
+        """1.46 arch (I0089/I0081): (copy of the deal list, start of the period it covers - stats.deals_coverage_from_utc) taken
+        ATOMICALLY under one self._lock (as the API did with `with b._lock`); nothing else that takes a lock is called under it."""
+        from ..stats import deals_coverage_from_utc
+        with self._lock:
+            return list(self.deals), deals_coverage_from_utc(self)
+
+    def loaded_deals_copy(self, account_key: str | None = None, *, check_account: bool = False) -> list[dict] | None:
+        """1.46 arch (I0089): copies of the deals under self._lock, or None when the history is NOT LOADED (no poll yet) or - with
+        check_account - when it was loaded for another account than `account_key` (the former `with b._lock` block of the Telegram
+        account center in api/wf32_routes.py)."""
+        with self._lock:
+            if getattr(self, "deals_loaded_at", None) is None or (check_account and account_key != self.account_key):
+                return None
+            return [dict(d) for d in (self.deals or [])]
+
     def request_deals_reload(self) -> None:
         """w2 (I0711): the deal history is read again in the next bridge cycle (only the history poll timer is reset - nothing is
         sent to the terminal besides the usual history_deals_get)."""
@@ -924,3 +945,14 @@ class MarketBridge:
         server_now = self.now() + timedelta(seconds=off)
         midnight = server_now.replace(hour=0, minute=0, second=0, microsecond=0)
         return midnight - timedelta(seconds=off)
+
+
+def loaded_deals_copy(bridge, account_key: str | None = None, *, check_account: bool = False) -> list[dict] | None:
+    """MarketBridge.loaded_deals_copy for any bridge object: the class method when the object has it, else the same read under
+    bridge._lock (test doubles / objects with only the attributes) - callers outside the bridge never touch its lock themselves."""
+    if callable(getattr(type(bridge), "loaded_deals_copy", None)):
+        return bridge.loaded_deals_copy(account_key, check_account=check_account)
+    with bridge._lock:
+        if getattr(bridge, "deals_loaded_at", None) is None or (check_account and account_key != bridge.account_key):
+            return None
+        return [dict(d) for d in (bridge.deals or [])]

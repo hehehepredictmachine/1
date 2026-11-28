@@ -101,8 +101,6 @@ const (
 	hwndTop                           = 0
 
 	iconResourceID = 1 // winres/winres.json: RT_GROUP_ICON "#1"
-	mutexName      = `Local\PepeMarketWizardDesktop`
-	showEventName  = `Local\PepeMarketWizardDesktop.show`
 	webview2URL    = "https://developer.microsoft.com/microsoft-edge/webview2/"
 )
 
@@ -342,6 +340,24 @@ func (a *winApp) bootLoop(waitFirst bool) {
 	}
 }
 
+// showStopped (1.46 arch, I0715): the start screen after the user's clean stop of the engine, with the start button („Spróbuj ponownie”
+// sends „retry”). Signals buffered before this moment are dropped, so only a click on THIS screen starts the engine again.
+func (a *winApp) showStopped(detail string) {
+	drainSignals(a.retry)
+	a.mu.Lock()
+	wasApp := a.phase == "app"
+	a.phase = "splash"
+	a.splash.Phase, a.splash.Error = "error", detail
+	a.splash.Message = "Bot zatrzymany na żądanie – kliknij, aby uruchomić go ponownie"
+	a.mu.Unlock()
+	if wasApp {
+		a.wv.Dispatch(func() { a.wv.SetHtml(splashHTML) }) // the page asks for the state itself when loaded
+	} else {
+		a.push()
+	}
+	a.showWindow()
+}
+
 func (a *winApp) showError(msg string) {
 	a.mu.Lock()
 	wasApp := a.phase == "app"
@@ -492,6 +508,21 @@ func (a *winApp) onEngineState(s EngineState, detail string) {
 	inApp, shown, quitting, awaiting := a.phase == "app", a.appShown, a.quitting, a.awaiting
 	a.mu.Unlock()
 	if quitting {
+		return
+	}
+	// 1.46 arch (I0715): the user's clean stop - „Bot zatrzymany na żądanie”; nothing starts the engine until a click made after this
+	// screen appeared (stale „retry” signals are dropped first). EngineStopped from the shell's own Stop() never gets here.
+	if st := stopScreenFor(s, s == EngineStopped && a.eng.CleanStopped(), inApp, awaiting, quitting); st.show {
+		a.showStopped(detail)
+		if st.abortJoin {
+			select {
+			case a.joinAbort <- struct{}{}:
+			default:
+			}
+		}
+		if st.loop {
+			go a.bootLoop(true) // waits for the click (never boots by itself)
+		}
 		return
 	}
 	if awaiting { // the launcher waits for WEJDŹ: it always tells the true state of the engine
@@ -683,9 +714,10 @@ func (a *winApp) trayMenu() {
 	inApp := a.phase == "app"
 	a.mu.Unlock()
 	owned := a.eng.Owned()
+	cleanStopped := a.eng.CleanStopped() // 1.46 arch (I0715): the user stopped the bot - the tray can start it again (click only)
 	add(mfString, cmdOpen, "Otwórz okno")
 	restartFlags := uintptr(mfString)
-	if !inApp || !owned {
+	if (!inApp || !owned) && !cleanStopped {
 		restartFlags |= mfGrayed
 	}
 	add(restartFlags, cmdRestart, "Uruchom ponownie silnik")
@@ -706,6 +738,16 @@ func (a *winApp) trayMenu() {
 	case cmdOpen:
 		a.showWindow()
 	case cmdRestart:
+		if cleanStopped && !a.eng.Owned() {
+			// 1.46 arch (I0715): after the user's clean stop the start goes through the start screen (bootLoop: boot, SYSTEM READY,
+			// panel reload) - the click is the signal; a direct Restart would run the bot behind the „zatrzymany” screen
+			select {
+			case a.retry <- struct{}{}:
+			default:
+			}
+			go a.bootLoop(true)
+			break
+		}
 		go func() {
 			if err := a.eng.Restart(a.ctx); err != nil {
 				a.showError(err.Error())
@@ -722,6 +764,7 @@ func (a *winApp) trayMenu() {
 // ---------------------------------------------------------------- single instance
 
 func singleInstance() (windows.Handle, bool) {
+	mutexName, showEventName := instanceNames() // 1.46 arch (I0846): Studio has its own names (the bot's are unchanged)
 	m, err := windows.CreateMutex(nil, false, windows.StringToUTF16Ptr(mutexName))
 	if errors.Is(err, windows.ERROR_ALREADY_EXISTS) {
 		if ev, e := windows.OpenEvent(windows.EVENT_MODIFY_STATE, false, windows.StringToUTF16Ptr(showEventName)); e == nil {
@@ -737,6 +780,7 @@ func singleInstance() (windows.Handle, bool) {
 }
 
 func (a *winApp) watchShowRequests() {
+	_, showEventName := instanceNames()
 	ev, err := windows.CreateEvent(nil, 0, 0, windows.StringToUTF16Ptr(showEventName))
 	if err != nil {
 		return

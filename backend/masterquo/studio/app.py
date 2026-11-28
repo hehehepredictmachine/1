@@ -6,7 +6,6 @@ import json
 import math
 import os
 import time
-import urllib.request
 from pathlib import Path
 
 from fastapi import Body, FastAPI, HTTPException, Query
@@ -49,11 +48,9 @@ def _imported(b, package: str) -> dict | None:
 
 
 def _bot_health(port: int) -> dict | None:
-    try:
-        with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/v1/health", timeout=2) as r:
-            return json.loads(r.read())
-    except Exception:  # noqa: BLE001
-        return None
+    """GET /api/v1/health of the bot (2 s); one implementation in masterquo.localapi (1.46 arch I0080)."""
+    from .. import localapi
+    return localapi.health(port, 2)
 
 
 LOCAL_HOSTS = ("127.0.0.1", "localhost")
@@ -146,7 +143,8 @@ def create_app(queue: Queue | None = None, *, start_worker: bool = True) -> Fast
         except Exception:  # noqa: BLE001
             mt5 = "NOT_INSTALLED (Windows + MetaTrader5)"
         envs = {e: (paths.ROOT_DIR / e).exists() for e in (".venv", ".venv_deep", ".venv_kronos", ".venv_candles")}
-        return {"bot": {"running": bool(bot), "health": bot, "port": s["bot_port"], "data_dir": str(S.bot_data_dir(s))},
+        return {"bot": {"running": bool(bot), "health": bot, "port": s["bot_port"], "port_source": s.get("bot_port_source"),   # I0125
+                        "data_dir": str(S.bot_data_dir(s))},
                 "mt5_package": mt5, "envs": envs, "studio_data_dir": str(S.data_dir()), "export_lock": q.lock.owner(),
                 "mode_hint": "BOT_CACHE" if bot else "MT5_DIRECT", "settings": s}
 
@@ -225,7 +223,7 @@ def create_app(queue: Queue | None = None, *, start_worker: bool = True) -> Fast
             raise HTTPException(409, "przekazać można tylko paczkę po pozytywnym teście loadera (stan PACKAGED)")
         s = S.load()
         if _bot_health(int(s["bot_port"])):
-            from ..train_all import Bot
+            from ..localapi import Bot
             b = Bot(int(s["bot_port"]))
             # 1.46: a failed bot session / connection / timeout was a 500; an import that succeeded while its answer timed out left the job
             # PACKAGED for good (a retry got 409 'already exists') - the bot's import record of this package now completes the transfer
@@ -264,10 +262,30 @@ def create_app(queue: Queue | None = None, *, start_worker: bool = True) -> Fast
     return app
 
 
+def _same_dir(a: Path, b: Path) -> bool:
+    try:
+        return a.resolve() == b.resolve()
+    except OSError:
+        return False
+
+
 def serve(port: int | None = None) -> int:
     import uvicorn
     s = S.load()
     p = int(port or s["port"])
-    print(f"[{DISPLAY_NAME}] http://127.0.0.1:{p}/  (dane: {S.data_dir()})", flush=True)
+    sd = S.data_dir()
+    # 1.46 (I0105): the bot's modules imported here (trainhub.registry, families.Store, ...) write to paths.data_dir() =
+    # MASTERQUO_DATA_DIR. create_app only set it with setdefault, so a manual `python -m masterquo studio` in a shell where it pointed
+    # at the BOT's data wrote Studio registries / logs into the bot's folder. The CLI entry now forces the Studio data dir; a Studio
+    # data dir that IS the bot's data dir is refused (Studio must never share the bot's registries).
+    if _same_dir(sd, S.bot_data_dir(s)):
+        print(f"[{DISPLAY_NAME}] BŁĄD: katalog danych Studio ({sd}) jest katalogiem danych bota – ustaw osobny MQ_STUDIO_DATA_DIR",
+              flush=True)
+        return 2
+    prev = os.environ.get("MASTERQUO_DATA_DIR")
+    if prev and not _same_dir(Path(prev), sd):
+        print(f"[{DISPLAY_NAME}] uwaga: MASTERQUO_DATA_DIR={prev} zastąpione katalogiem danych Studio {sd}", flush=True)
+    os.environ["MASTERQUO_DATA_DIR"] = str(sd)
+    print(f"[{DISPLAY_NAME}] http://127.0.0.1:{p}/  (dane: {sd})", flush=True)
     uvicorn.run(create_app(), host="127.0.0.1", port=p, log_level="warning")
     return 0

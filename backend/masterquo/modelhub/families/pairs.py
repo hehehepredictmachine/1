@@ -8,7 +8,8 @@ Leg conversion: beta is a ratio of LOG prices; the lots of leg B for 1 lot of A 
 rounded to the broker volume step - never "beta = number of lots".
 STATARB: basket of >= 3 configured series: PCA factors fitted on train returns, residual = return - factor projection, cumulative residual
 s-score per asset; weights = -s-score normalised to gross 1 with a net-exposure check. Without the universe -> NOT_CONFIGURED.
-Both are analytical: a proposed basket goes through the existing risk / gateway (all legs costed) - nothing is sent from here.
+Both are analytical: nothing is sent from here. A basket proposal through the risk / gateway (all legs costed) is PLANNED, not
+connected in 1.46 (PORTFOLIO receiver without a reader); live both are DISABLED (service.NO_LIVE_PATH).
 """
 from __future__ import annotations
 
@@ -40,6 +41,15 @@ def half_life(s: np.ndarray) -> float | None:
     return float(-math.log(2) / math.log(phi)) if 0 < phi < 1 else None
 
 
+def legs_missing_reason(data: dict) -> str | None:
+    """1.46 (I0424): the legs run.load_data could not read (no candles in the store / unreadable file) named in the BLOCKED reason."""
+    miss = data.get("legs_missing") or []
+    if not miss:
+        return None
+    return "; ".join(f"brak nogi {m['symbol']} w magazynie danych (data/marketdata/{m['symbol']}/{m.get('tf') or 'H1'}): {m.get('reason')}"
+                     for m in miss)
+
+
 def legs_volume(beta: float, price_a: float, price_b: float, contract_a: float, contract_b: float, lots_a: float = 1.0, step: float = 0.01) -> float:
     raw = abs(beta) * lots_a * price_a * contract_a / (price_b * contract_b)
     return round(round(raw / step) * step, 8)
@@ -55,13 +65,17 @@ class PairCoint(B.Family):
     TASK = "PAIR_SPREAD_Z"
     DEPS = ("statsmodels",)
     TF = "H1"
-    RECEIVERS = ("PANEL:pair_relation", "AGENT:context", "PORTFOLIO:basket_proposal (via risk/gateway)")
+    RECEIVERS = ("PANEL:pair_relation",)
+    PLANNED_RECEIVERS = ("AGENT:context", "PORTFOLIO:basket_proposal (via risk/gateway)")
     DATA = {"kind": "MULTI_SERIES", "tf": "H1", "min_bars": 500, "config": "families.pairs = [[symbolA, symbolB]]"}
     P_MAX = 0.05
 
     def validate_data(self, data):
         if not data.get("pair"):
             return False, "PAIR_NOT_CONFIGURED: brak skonfigurowanej pary (nie zakładam automatycznie XAUUSD–BTC)"
+        why = legs_missing_reason(data)
+        if why:
+            return False, why
         ts, a, b = align(*data["pair_bars"])
         if len(ts) < self.DATA["min_bars"]:
             return False, f"za mało wspólnych świec: {len(ts)}"
@@ -84,9 +98,20 @@ class PairCoint(B.Family):
         (tmp / "pair.json").write_text(json.dumps(art), encoding="utf-8")
         vm = {"p_value_train": float(p), "val_std_ratio": ratio, "sd_train": sd}
         val = self.promotion(vm, {"p_value_train": ("<", self.P_MAX), "val_std_ratio": ("<", 2.0), "sd_train": (">", 1e-9)})
+        # 1.46 (I0422): the sample carries its INPUTS (the last common prices of both legs) - activation recomputes z with the loaded
+        # artifact (service._sample_check); 1.45 / 1.46.0 stored only expected.z_last, so activation checked the load alone
+        sample = {"expected": {"z_last": (float(s[-1]) - mu) / sd if sd > 0 else None}, "tolerance": 1e-9}
+        if sd > 0:
+            sample.update(a_last=float(a[-1]), b_last=float(b[-1]), expected={"z_last": self._z(art, float(a[-1]), float(b[-1]))})
         return {"metrics": {**vm, "eg_stat": float(stat), "return_correlation_train": corr, "half_life_bars": hl,
                             "note": "korelacja ≠ kointegracja; p-value nie jest prawdopodobieństwem zysku"},
-                "validation": val, "sample": {"expected": {"z_last": (float(s[-1]) - mu) / sd if sd > 0 else None}, "tolerance": 1e-9}}
+                "validation": val, "sample": sample}
+
+    @staticmethod
+    def _z(art, a_last: float, b_last: float) -> float:
+        """z of the spread log A - alpha - beta log B for one pair of prices (predict and the activation sample - one formula)."""
+        s = math.log(a_last) - art["alpha"] - art["beta"] * math.log(b_last)
+        return (s - art["mu"]) / art["sd"]
 
     def load(self, d):
         return json.loads((d / "pair.json").read_text(encoding="utf-8"))
@@ -100,7 +125,7 @@ class PairCoint(B.Family):
         if art["sd"] <= 1e-12:
             raise B.Unavailable("BLOCKED_DATA", "zerowa wariancja spreadu")
         s = math.log(a[-1]) - art["alpha"] - art["beta"] * math.log(b[-1])
-        return {"z": (s - art["mu"]) / art["sd"], "spread": s, "hedge_ratio_log": art["beta"], "half_life_bars": art["half_life_bars"],
+        return {"z": self._z(art, float(a[-1]), float(b[-1])), "spread": s, "hedge_ratio_log": art["beta"], "half_life_bars": art["half_life_bars"],
                 "p_value_train": art["p_value_train"], "last_common_time": int(ts[-1])}
 
 
@@ -114,28 +139,47 @@ class StatArb(B.Family):
     TASK = "BASKET_RESIDUAL_S"
     DEPS = ("sklearn",)
     TF = "H1"
-    RECEIVERS = ("PANEL:basket", "PORTFOLIO:basket_proposal (via risk/gateway)")
+    RECEIVERS = ("PANEL:basket",)
+    PLANNED_RECEIVERS = ("PORTFOLIO:basket_proposal (via risk/gateway)",)
     DATA = {"kind": "MULTI_SERIES", "tf": "H1", "min_bars": 500, "min_assets": 3, "config": "families.basket = [s1, s2, s3, ...]"}
 
     def validate_data(self, data):
         uni = data.get("basket") or []
         if len(uni) < 3:
             return False, f"NOT_CONFIGURED: koszyk wymaga >= 3 skonfigurowanych serii (jest {len(uni)}) – lista instrumentów nie jest rozszerzana automatycznie"
-        return True, None
+        why = legs_missing_reason(data)
+        return (False, why) if why else (True, None)
 
     @staticmethod
-    def matrix(series: list[list[dict]]):
+    def prices(series: list[list[dict]]):
         common = set(x["t"] for x in series[0])
         for s in series[1:]:
             common &= set(x["t"] for x in s)
         ts = np.asarray(sorted(common))
         maps = [dict((x["t"], x["c"]) for x in s) for s in series]    # 1.46: one map per series (was rebuilt for every t: O(n^2))
         P = np.column_stack([np.asarray([m[t] for t in ts], dtype=float) for m in maps])
+        return ts, P
+
+    @classmethod
+    def matrix(cls, series: list[list[dict]]):
+        ts, P = cls.prices(series)
         return ts, np.diff(np.log(P), axis=0)
+
+    @staticmethod
+    def _scores(art, R: np.ndarray):
+        """s-scores and weights from the newest art['window'] return rows (residuals are row-wise - predict and the activation sample)."""
+        Z = (R - np.asarray(art["mu"])) / np.asarray(art["sd"])
+        C, m = np.asarray(art["components"]), np.asarray(art["mean_"])
+        res = Z - ((Z - m) @ C.T @ C + m)
+        cum = np.cumsum(res[-art["window"]:], axis=0)
+        s = (cum[-1] - cum.mean(0)) / (cum.std(0) + 1e-12)
+        w = -s / (np.abs(s).sum() or 1.0)
+        return s, w
 
     def fit(self, data, cfg, tmp, budget):
         from sklearn.decomposition import PCA
-        ts, R = self.matrix(data["basket_bars"])
+        ts, P = self.prices(data["basket_bars"])
+        R = np.diff(np.log(P), axis=0)
         n = len(R)
         tr, va = int(n * 0.6), int(n * 0.8)
         mu, sd = R[:tr].mean(0), R[:tr].std(0) + 1e-12
@@ -152,7 +196,14 @@ class StatArb(B.Family):
                "window": win}
         (tmp / "statarb.json").write_text(json.dumps(art), encoding="utf-8")
         vm = {"val_residual_std_ratio": ratio, "explained_var": float(pca.explained_variance_ratio_.sum())}
-        return {"metrics": vm, "validation": self.promotion(vm, {"val_residual_std_ratio": ("<", 2.0)}), "sample": {"expected": None, "tolerance": 0.0}}
+        # 1.46 (I0427): a deterministic inference sample - the newest window + 1 common prices and the s-scores predict computes from them
+        # (1.45 / 1.46.0: expected None, activation checked the load alone)
+        tail = P[-(win + 1):]
+        sample = {"expected": None, "tolerance": 0.0}
+        if len(tail) == win + 1:
+            sample = {"prices_tail": tail.tolist(), "expected": {"s_scores": [float(x) for x in self._scores(art, np.diff(np.log(tail), axis=0))[0]]},
+                      "tolerance": 1e-9}
+        return {"metrics": vm, "validation": self.promotion(vm, {"val_residual_std_ratio": ("<", 2.0)}), "sample": sample}
 
     def load(self, d):
         return json.loads((d / "statarb.json").read_text(encoding="utf-8"))
@@ -163,11 +214,6 @@ class StatArb(B.Family):
         ts, R = self.matrix(live["basket_bars"])
         if len(R) < art["window"]:
             raise B.Unavailable("BLOCKED_DATA", "za mało wspólnych świec koszyka")
-        Z = (R - np.asarray(art["mu"])) / np.asarray(art["sd"])
-        C, m = np.asarray(art["components"]), np.asarray(art["mean_"])
-        res = Z - ((Z - m) @ C.T @ C + m)
-        cum = np.cumsum(res[-art["window"]:], axis=0)
-        s = (cum[-1] - cum.mean(0)) / (cum.std(0) + 1e-12)
-        w = -s / (np.abs(s).sum() or 1.0)
+        s, w = self._scores(art, R)
         return {"s_scores": [float(x) for x in s], "weights": [float(x) for x in w], "gross": float(np.abs(w).sum()), "net": float(w.sum()),
                 "assets": art["basket"], "neutrality": "wagi w jednostkach ryzyka (zwroty standaryzowane) – neutralność nominalna wymaga przeliczenia nóg"}

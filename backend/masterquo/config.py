@@ -1,7 +1,7 @@
 """Application configuration (no secrets).
 
-`config/masterquo.defaults.json` ships with the package; the user's editable copy lives in
-`data/config.json`. Secrets (Anthropic key, Telegram token) are stored separately (secrets.py).
+The defaults are the pydantic models below (``AppConfig()`` is the only source - no defaults file is shipped or read); the user's
+editable copy lives in ``data/config.json`` (written from ``AppConfig()`` on the first start). Secrets (Anthropic key, Telegram token) are stored separately (secrets.py).
 
 Rules enforced here:
 * the exact broker symbol is kept verbatim (e.g. ``XAUUSD-``); it is never normalised;
@@ -14,10 +14,11 @@ Rules enforced here:
 from __future__ import annotations
 
 import json
+import logging
 import re
 import threading
 from pathlib import Path
-from typing import Literal
+from typing import Literal, get_args
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -211,7 +212,7 @@ class TelegramConfig(_Strict):
 
 class ServerConfig(_Strict):
     host: Literal["127.0.0.1"] = "127.0.0.1"  # loopback only, by design
-    port: int = Field(8765, ge=1024, le=65535)
+    port: int = Field(paths.DEFAULT_PORT, ge=1024, le=65535)
     open_browser: bool = True
 
 
@@ -246,7 +247,7 @@ class ExecutionConfig(_Strict):
     @field_validator("primary_path")
     @classmethod
     def _primary_keys(cls, v: dict) -> dict:
-        bad = [k for k in v if k not in ("XAUUSD", "BTC")]
+        bad = [k for k in v if k not in ALLOWED_ASSETS]
         if bad:
             raise ValueError("ASSET_NOT_ALLOWED:" + ",".join(bad))
         return v
@@ -287,7 +288,11 @@ class MLConfig(_Strict):
     xgb_device: Literal["cpu", "cuda"] = "cpu"
     train_timeout_minutes: int = Field(30, ge=1, le=600)
     random_state: int = 42
-    assist_rank_weight: float = Field(10.0, ge=0, le=50)   # ASSIST: rank += weight x (calibrated p - base rate) x 10
+    # ASSIST: rank += weight x (calibrated p - base rate) x 10. 1.46 arch (I0327, neutral variant): the scale is only described / warned
+    # about - capping it can lift a LONG/SHORT conflict or change a hysteresis switch (a new entry), so the formula stays unchanged
+    assist_rank_weight: float = Field(10.0, ge=0, le=50, description=(
+        "ASSIST: ranking setupu += waga × (p skalibrowane − base rate) × 10 – przy wadze 10 do ±50 pkt (premia etapu maks. 8 pkt, margines "
+        "konfliktu LONG/SHORT 5 pkt), więc ML może przestawić wybór setupu; skala i ostrzeżenie: status ML, pole assist_rank_scale"))
     drift_psi_warn: float = Field(0.2, gt=0)
     drift_psi_degraded: float = Field(0.35, gt=0)
     degrade_brier_increase: float = Field(0.05, ge=0)      # mature-label Brier above validation Brier by more -> DEGRADED
@@ -530,7 +535,9 @@ class LiquidityConfig(_Strict):
 
 
 CanonicalAsset = Literal["XAUUSD", "BTC"]
-ALLOWED_ASSETS: tuple[str, ...] = ("XAUUSD", "BTC")
+# 1.46 arch (I0087): THE list of trading instruments - defined in code (the Literal above), never derived at runtime from a data file
+# (config/instruments_v1.json is also read by training; a test keeps both equal). Every validator uses this tuple, not a literal copy.
+ALLOWED_ASSETS: tuple[str, ...] = get_args(CanonicalAsset)
 
 
 class AssetMapping(_Strict):
@@ -646,7 +653,8 @@ class IndicatorsConfig(_Strict):
     book_period_s: float = Field(1.0, ge=0.2, le=60)
     book_levels: int = Field(5, ge=1, le=50)
     book_max_gap_s: float = Field(5.0, ge=0.5, le=600)
-    book_record: bool = Field(True, description="archive book snapshots for replay (data/indicators/book.sqlite)")
+    book_record: bool = Field(True, description="archive book snapshots for replay "
+                                                   "(data/indicators/indicators.sqlite, table book_snapshots)")
     book_keep_days: int = Field(14, ge=1, le=365)
 
 
@@ -656,13 +664,16 @@ class FamiliesConfig(_Strict):
     pairs: list[list[str]] = Field(default_factory=list, description="[[instrumentA, instrumentB]] from the marketdata store")
     basket: list[str] = Field(default_factory=list, description=">= 3 instruments for STATARB")
     assist_hold_threshold: float = Field(0.60, gt=0.34, lt=1.0, description="ASSIST direction model can hold READY -> WAIT when P(opposite) >= this")
-    nlp_transformer_path: str | None = Field(None, description="local transformer checkpoint directory (licensed by the user); never downloaded")
+    nlp_transformer_path: str | None = Field(None, description="reserved - not used in 1.46 (no transformer inference path in the bot; NLP_SENTIMENT is TF-IDF + logistic regression); kept for config.json compatibility, never downloaded")
 
 
 class DecisionConfig(_Strict):
     """1.33 decision architecture (PMW-ARC-1): one coordinator, model roles, shared risk reservation, execution intents."""
     enabled: bool = True
-    required_models: list[str] = Field(default_factory=list, description="family ids in role REQUIRED (missing/stale/contrary -> no new entry)")
+    required_models: list[str] = Field(default_factory=list, description="ids in role REQUIRED (missing/stale/contrary -> no new entry): exactly "
+                                       "the id the coordinator sees - a family WITHOUT 'family:' (TS_ARIMA), trainhub:TH_*, tsfm:<model>, rule:* / "
+                                       "analysis:* / mm:* / lab:* (Quant ASSIST), quant:metamodel; list: quant/ids.required_ids(). A NEW unknown id "
+                                       "is refused at save (UNKNOWN_REQUIRED_MODEL), a saved one is kept and reported")
     required_max_age_s: float = Field(900.0, ge=10, le=86400, description="REQUIRED forecast older than this -> MODEL_REQUIRED_STALE")
     assist_on_active: bool = Field(True, description="ASSIST families may also hold the main (ACTIVE) path: ALLOWED -> BLOCKED with reason")
     reservation_ttl_s: float = Field(180.0, ge=10, le=3600, description="an un-settled reservation (crash) is released after this; UNKNOWN never")
@@ -722,7 +733,11 @@ class AppConfig(_Strict):
 
 
 class ConfigStore:
-    """Thread-safe holder with atomic persistence to data/config.json."""
+    """Thread-safe holder with atomic persistence to data/config.json.
+
+    1.46 arch (I0094): ONE process writes config.json - the running bot (its Runtime owns this store and keeps the configuration in memory).
+    Other processes (CLI, Studio, launchers) only READ it with peek() / server_port(); a CLI command that changes the configuration refuses
+    while the bot runs (python -m masterquo profile) - the running bot would overwrite the change with its own copy."""
 
     def __init__(self, path: Path | None = None):
         self.path = path or (paths.data_dir() / "config.json")
@@ -747,11 +762,9 @@ class ConfigStore:
             cfg = AppConfig.model_validate(raw)
             if migrated:
                 self._write(cfg)
+            _warn_unknown_required(cfg)                # 1.46 arch (I0000): a warning only - the saved list is never changed here
             return cfg
-        if paths.DEFAULTS_FILE.exists():
-            cfg = AppConfig.model_validate(json.loads(paths.DEFAULTS_FILE.read_text(encoding="utf-8")))
-        else:
-            cfg = AppConfig()
+        cfg = AppConfig()                       # first start: the pydantic defaults are the only source (1.46 arch I0122)
         self._write(cfg)
         return cfg
 
@@ -775,6 +788,7 @@ class ConfigStore:
             # migration chain on the next start (assets reset to UNMAPPED, RR thresholds, AUTO mode -> PAPER)
             merged["config_version"] = self._cfg.config_version
             cfg = AppConfig.model_validate(merged)
+            _check_new_required_models(self._cfg, cfg)     # 1.46 arch (I0000): warning only (unknown added ids), the save goes through
             self._write(cfg)
             self._cfg = cfg
             return cfg.model_copy(deep=True)
@@ -782,6 +796,64 @@ class ConfigStore:
     def set_runtime_flag(self, **flags) -> None:
         with self._lock:
             self._cfg = self._cfg.model_copy(update=flags)
+
+
+def peek(path: Path | None = None) -> AppConfig:
+    """1.46 arch (I0094): read-only view of config.json for processes that do not own it (CLI, Studio). The same migrations as
+    ConfigStore, in memory only: never writes the file, never a config.v<N>.bak.json, never creates a missing file (missing = the packaged
+    defaults, exactly what ConfigStore would create). Raises on an unreadable / invalid file (the caller decides the fallback)."""
+    p = path or (paths.data_dir() / "config.json")
+    if p.exists():
+        raw = json.loads(p.read_text(encoding="utf-8"))
+        migrate(raw)
+        return AppConfig.model_validate(raw)
+    return AppConfig()
+
+
+def server_port(path: Path | None = None) -> int:
+    """server.port from config.json without writing anything; paths.DEFAULT_PORT when the file cannot be read (never raises)."""
+    try:
+        return int(peek(path).server.port)
+    except Exception:  # noqa: BLE001 - a broken file is reported by the server itself; a launcher / CLI only needs a port to try
+        return paths.DEFAULT_PORT
+
+
+def _check_new_required_models(old: AppConfig, new: AppConfig) -> None:
+    """1.46 arch (I0000): decision.required_models was never validated - a typo or the canonical form of a family id ('family:TS_ARIMA',
+    'TH_XGB' instead of 'trainhub:TH_XGB') was saved and then blocked EVERY new entry (MODEL_REQUIRED_UNAVAILABLE), since no record ever
+    carries that id. Only the ids ADDED by this save are checked (a list already on disk - e.g. a settings form sending the decision section
+    back - never blocks another save: risk, mode, STOP); nothing is mapped to a 'correct' id (the hint is in the message only); the whole
+    patch is NOT refused (arch146 merge, safety verdict I0440: only a warning is the safe part - refusing the save would keep the bot
+    entering where today the saved list blocks every new entry): the save goes through as before and the unknown ids are logged with a
+    hint and reported in the coordinator status (required_models_unknown)."""
+    before = set(getattr(getattr(old, "decision", None), "required_models", None) or [])
+    added = [x for x in (new.decision.required_models or []) if x not in before]
+    if not added:
+        return
+    # import-free module (lazy: config stays the base module)
+    from .quant import ids as I
+    bad = I.unknown_required(added)
+    if bad:
+        logging.getLogger("masterquo.config").warning(
+            "decision.required_models: %s – każde nowe wejście będzie blokowane (MODEL_REQUIRED_UNAVAILABLE); lista zapisana bez zmian",
+            "; ".join(f"UNKNOWN_REQUIRED_MODEL:{n}" + (f" (czy chodziło o {h}?)" if h else " (brak producenta o tym id)") for n, h in bad))
+
+
+def unknown_required_models(cfg: AppConfig) -> list[str]:
+    """Saved decision.required_models no producer can satisfy (they block every new entry) - for the warning and the coordinator status."""
+    from .quant import ids as I
+    return [n for n, _ in I.unknown_required(getattr(getattr(cfg, "decision", None), "required_models", None) or [])]
+
+
+def _warn_unknown_required(cfg: AppConfig) -> None:
+    try:
+        bad = unknown_required_models(cfg)
+    except Exception:  # noqa: BLE001 - a warning must never stop the configuration from loading
+        return
+    if bad:
+        logging.getLogger("masterquo.config").warning(
+            "decision.required_models zawiera id bez producenta: %s – każde nowe wejście będzie blokowane (MODEL_REQUIRED_UNAVAILABLE); "
+            "lista nie jest zmieniana automatycznie (quant/ids.required_ids)", ", ".join(bad))
 
 
 # v1 -> v2: less restrictive defaults. A value is replaced only when it still equals the old

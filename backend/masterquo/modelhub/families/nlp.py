@@ -3,7 +3,10 @@
 Corpus: imported JSONL / CSV records {id, source, lang, text, label, topic?, published_at, first_seen_at, version}; deduplicated by a hash
 of normalised text before training and aggregation. Chronological split by first_seen_at (information is usable only from when it was
 seen). Baseline: TF-IDF (1-2 grams) + multinomial logistic regression, temperature calibrated on validation; metrics macro-F1, log loss,
-confusion. Optional local transformer (deep_runtime.nlp) only from a local checkpoint the user is licensed to use - never downloaded here.
+confusion. No transformer in 1.46 (I0223 / I0471): deep_runtime.nlp (worker op nlp_predict) has no caller in the bot, the config
+key nlp_transformer_path (section families) is only passed to the job config and never read, `transformers` is not in
+requirements-deep - the family is TF-IDF + logistic regression only. Connecting a transformer is a separate feature (checkpoint
+spec, label mapping).
 Runtime: the existing news module's recent headlines (headline only - marked) -> per-text sentiment + topic relevance (gold / USD / Fed /
 BTC keywords) + exponentially decayed aggregate by first_seen_at. Without a corpus: BLOCKED_DATA (waiting for data); it never creates
 orders from text.
@@ -41,8 +44,44 @@ def corpus_path() -> Path:
     return B.root() / "_corpus" / "nlp_corpus.jsonl"
 
 
-def import_file(path: Path) -> dict:
-    """JSONL or CSV -> corpus (dedup by text hash; label must be one of LABELS)."""
+# 1.46 arch (I0469): the data kind of the imported texts is recorded on every corpus record (run.load_data derives the artifact's data kind
+# from the corpus - it inherited the kind of the CANDLE archive, so a synthetic corpus could give an artifact labelled REAL_USER_DATA)
+CORPUS_KINDS = ("REAL_USER_DATA", "SYNTHETIC_TEST", "UNKNOWN_SOURCE")
+IMPORT_SUFFIXES = (".jsonl", ".csv")
+MAX_IMPORT_BYTES = 200 * 1024 * 1024
+
+
+def check_import(path: Path) -> None:
+    """Existing .jsonl / .csv file within the size limit - checked before anything is read (ValueError with the reason)."""
+    path = Path(path)
+    if not path.is_file():
+        raise ValueError(f"brak pliku korpusu: {path}")
+    if path.suffix.lower() not in IMPORT_SUFFIXES:
+        raise ValueError(f"korpus musi mieć rozszerzenie {' / '.join(IMPORT_SUFFIXES)} (podano {path.suffix or 'brak'})")
+    size = path.stat().st_size
+    if size > MAX_IMPORT_BYTES:
+        raise ValueError(f"plik korpusu za duży: {size} B > {MAX_IMPORT_BYTES} B")
+
+
+def corpus_data_kind(rows: list[dict]) -> str:
+    """Data kind of a training corpus: SYNTHETIC_TEST when any record is synthetic, REAL_USER_DATA only when EVERY record is marked real,
+    otherwise UNKNOWN_SOURCE (records imported before 1.46 carry no marker - never treated as real)."""
+    kinds = {B.kind_class(r.get("data_kind")) for r in rows}
+    if "SYNTHETIC" in kinds:
+        return "SYNTHETIC_TEST"
+    if rows and kinds == {"REAL"}:
+        return "REAL_USER_DATA"
+    return "UNKNOWN_SOURCE"
+
+
+def import_file(path: Path, data_kind: str | None = None) -> dict:
+    """JSONL or CSV -> corpus (dedup by text hash; label must be one of LABELS). Append only - nothing is overwritten or removed.
+    data_kind (1.46 arch I0469): REAL_USER_DATA / SYNTHETIC_TEST / UNKNOWN_SOURCE recorded on every added record (None = UNKNOWN_SOURCE)."""
+    path = Path(path)
+    dk = str(data_kind or "UNKNOWN_SOURCE").upper()
+    if dk not in CORPUS_KINDS:
+        raise ValueError(f"data_kind korpusu: {'|'.join(CORPUS_KINDS)} (podano {data_kind})")
+    check_import(path)
     cp = corpus_path()
     cp.parent.mkdir(parents=True, exist_ok=True)
     have = {r["hash"] for r in load_corpus()}
@@ -62,7 +101,8 @@ def import_file(path: Path) -> dict:
             continue
         have.add(h)
         rows.append({"hash": h, "id": r.get("id") or h, "source": r.get("source"), "lang": r.get("lang") or "en", "text": r["text"], "label": lab,
-                     "published_at": r.get("published_at"), "first_seen_at": r.get("first_seen_at") or r.get("published_at"), "version": r.get("version")})
+                     "published_at": r.get("published_at"), "first_seen_at": r.get("first_seen_at") or r.get("published_at"), "version": r.get("version"),
+                     "data_kind": dk})
     with cp.open("a", encoding="utf-8") as f:
         for r in rows:
             f.write(json.dumps(r, ensure_ascii=False) + "\n")
@@ -92,7 +132,7 @@ def topics(text: str) -> dict:
 
 class NLP(B.Family):
     ID = "NLP_SENTIMENT"
-    NAME = "Sentyment tekstu – TF-IDF + regresja logistyczna (+ opcjonalny lokalny transformer)"
+    NAME = "Sentyment tekstu – TF-IDF + regresja logistyczna"
     KIND = "TRAINED"
     TASK_TYPE = "NLP_SENTIMENT"
     UNIT = "sentiment"
@@ -100,7 +140,8 @@ class NLP(B.Family):
     DEPS = ("sklearn",)
     TF = None
     HORIZONS = ()
-    RECEIVERS = ("AGENT:news_context", "PANEL:news_sentiment", "RISK:information_context (OBSERVE)")
+    RECEIVERS = ("PANEL:news_sentiment",)
+    PLANNED_RECEIVERS = ("AGENT:news_context", "RISK:information_context (OBSERVE)")
     DATA = {"kind": "TEXT", "source": "import JSONL/CSV (oznaczony korpus) + nagłówki z news/", "min_records": 300}
 
     def validate_data(self, data):

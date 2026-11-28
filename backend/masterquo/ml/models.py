@@ -87,12 +87,18 @@ def train_dt(folds, X_full, y_full, *, budget: int, seed: int, prep_fit) -> tupl
         for tr, va in folds:
             if len(tr) < 30 or len(va) < 10:
                 continue
-            pp = prep_fit(tr)
             ytr = np.array([r["label"] for r in tr])
-            if len(set(ytr.tolist())) < 2:
+            yva = np.array([r["label"] for r in va])
+            # 1.46 (I0788, hunk of the reverted f43379b): a one-class VALIDATION part gave log loss inf -> every trial scored inf (the
+            # first shuffled grid entry "won") and the inf in the result made Registry.register fail (dumps allow_nan=False) after both
+            # bundles were saved. Such a fold is skipped; only finite losses count.
+            if len(set(ytr.tolist())) < 2 or len(set(yva.tolist())) < 2:
                 continue
+            pp = prep_fit(tr)
             m = DecisionTreeClassifier(random_state=seed, **params).fit(pp.transform(tr), ytr)
-            losses.append(_ll(np.array([r["label"] for r in va]), m.predict_proba(pp.transform(va))[:, 1]))
+            ll = _ll(yva, m.predict_proba(pp.transform(va))[:, 1])
+            if math.isfinite(ll):
+                losses.append(ll)
         if losses:
             trials.append((float(np.mean(losses)), params))
     if not trials:
@@ -183,6 +189,8 @@ class Bundle:
         unknown = [c for c in prep.numeric if c not in FEATURE_NAMES]
         if unknown:
             raise ValueError("FEATURE_COLUMNS_UNKNOWN:" + ",".join(unknown[:5]))
+        from .features import feature_context_check
+        meta["feature_context"] = feature_context_check(meta)    # 1.46 (I0024): warning only (OK / MISMATCH / UNKNOWN), never a load failure
         calib = Calibrator.from_json(json.loads((path / "calibrator.json").read_text(encoding="utf-8")))
         return cls(fam, model, prep, calib, meta)
 

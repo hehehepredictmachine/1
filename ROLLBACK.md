@@ -61,7 +61,8 @@ Pełna instrukcja: `docs/AKTUALIZACJA_1_33_PL.md`. W skrócie:
 Wykrywanie wraca do dotychczasowego M07/M10A (jak w wersji 1.1). Tryb pracy, limity i historia zostają.
 * w monitorze: ⚙ Ustawienia → **AUTO / ACTIVE** → Profil wykrywania = `ORIGINAL` → Zapisz, albo
 * zatrzymaj program (`04_STOP_MASTERQUO.bat`) i uruchom `08_PROFIL_ORIGINAL.bat` (ponowne włączenie: `08_PROFIL_ORIGINAL.bat ACTIVE`).
-Kopia ustawień obu profili: `config/profiles/ACTIVE.json`, `config/profiles/ORIGINAL.json` (fragmenty sekcji `active`).
+Przełączenie zmienia wyłącznie `active.profile` w `data/config.json` (pozostałe ustawienia sekcji `active` zostają; wartości domyślne
+są w kodzie – `ActiveConfig` w `backend/masterquo/config.py`). Ścisłe reguły MasterQUO 1.0 profil ORIGINAL NIE ustawia – patrz punkt 2.
 
 ## 2. Łagodne bramki 1.1 → ścisłe reguły MasterQUO 1.0
 Ustawienia → Strategia M07 → Kierunek struktury `STRICT_H4_H1`; Ryzyko → RR 1,5 / 2,0 i „RR pomiędzy progami” wyłączone;
@@ -132,3 +133,11 @@ Ustawienia → Wygląd → OFF (statyczne kadry). Wgrane GIF-y: usuń pliki z `d
 ## 1.42.8 → 1.42.7 (Kronos-small → Kronos-base)
 Wagi Kronos-base zostają w folderze wag (`NeoQuasar__Kronos-base@2b55…`). Po powrocie do 1.42.7 uruchom `33_KRONOS_INSTALUJ.bat` z folderu 1.42.7 –
 instalator 1.42.7 pobierze i sprawdzi parę Kronos-base (ok. 420 MB) i zapisze jej manifest.
+
+## 1.46 (gałąź architektury) → 1.46.0: Quant, wersje cech
+Szczegóły: `docs/quant/ROLLBACK.md`, sekcja „1.46 – wersje cech Quant”. W skrócie:
+* Przed powrotem: jeśli aktywny jest MetaModel `PMW-QUANT-FEAT-3`, przywróć poprzedni artefakt
+  (`python -m masterquo quant rollback --instrument XAUUSD --task <task_hash>`) albo przełącz Quant na SHADOW. Starsza wersja odrzuca
+  artefakt FEAT-3, a Quant ASSIST bez modelu nie wstrzymuje wejść.
+* Ledger `<dane>\quant\ledger.sqlite` ma nową kolumnę `feature_version` (addytywną). Starsza wersja jej nie filtruje: po powrocie nie
+  trenuj Quant na ledgerze z wierszami `PMW-QUANT-FEAT-3` (kopia pliku i zapytanie SQL do ich odfiltrowania – w `docs/quant/ROLLBACK.md`).

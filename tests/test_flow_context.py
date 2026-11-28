@@ -1,9 +1,11 @@
 """PMW-UPD-11 FF06-FF08: native export importer/parity, runtime sections, CLI pipeline (TEST_ONLY synthetic export), reaction task,
 holdout once, TEST_ONLY never SHADOW. No orders, no MT5 connection."""
 import json
+import os
 import tempfile
 import time
 import unittest
+import unittest.mock
 from pathlib import Path
 
 
@@ -72,8 +74,8 @@ class NativeTests(unittest.TestCase):
 
 class KnowledgeTests(unittest.TestCase):
     def test_t59_agent_knowledge(self):
+        from masterquo.agent import structure_knowledge as sk
         from masterquo.agent.service import load_prompt
-        from masterquo.analysis import structure_knowledge as sk
         text, ver = load_prompt()
         self.assertIn("F05", text)
         self.assertTrue("PMW-FLOW-KNOWLEDGE-1.0.0" in ver)
@@ -126,10 +128,12 @@ class PipelineTests(unittest.TestCase):
         pr["heikin"]["p1"] = 7
         pj.write_text(json.dumps(pr))
         self.assertEqual(FT.train("XAUUSD", FT.latest("XAUUSD"), ["LOGREG"], "quick")["status"], "STALE_DATASET")
-        # runtime: same producer, repeated poll does not change state, markov from the fitted artefact
+        # runtime: same producer, repeated poll does not change state, markov from the fitted artefact. The artefact is a synthetic
+        # fixture (role TEST_ONLY): since D23 the SI cell loads it only with the test variable PMW_FLOW_ALLOW_TEST_MODEL=1
         bars = m1_bars(900)
         fs = FlowSections()
-        k = fs.update("XAUUSD", "M1", bars, 0.01, 0.01)
+        with unittest.mock.patch.dict(os.environ, {"PMW_FLOW_ALLOW_TEST_MODEL": "1"}):
+            k = fs.update("XAUUSD", "M1", bars, 0.01, 0.01)
         n = len(k.ha)
         fs.update("XAUUSD", "M1", bars, 0.01, 0.01)
         self.assertEqual(len(k.ha), n)
@@ -137,6 +141,8 @@ class PipelineTests(unittest.TestCase):
         self.assertEqual(s["status"], "OK")
         self.assertIn(s["heikin"]["color"], ("BULL", "BEAR", "NEUTRAL"))
         self.assertNotEqual(s["markov3"].get("status"), "MODEL_MISSING")
+        self.assertIn("next", s["markov3"])
+        self.assertEqual(s["markov3"]["model_role"], "TEST_ONLY")
         st = fs.stopdistance(k, 2000.0, "BUY", 50)
         self.assertLess(st["sl_price_proposal"], 2000.0)
         self.assertTrue(st["diagnostics"]["advisory"])

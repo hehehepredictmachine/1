@@ -7,7 +7,9 @@ Management of an existing plan (hedge leg, partials, SL/TP, closing) is never re
 the same account the plan was opened on (the 1.14 Execution Lock is withdrawn, user decision 1.24).
 
 Every action is claimed in sh_actions before the terminal is touched (idempotency): a repeated event reuses the stored result,
-an action whose outcome is unknown (timeout) is never resent - reconciliation with the terminal decides.
+an action whose outcome is unknown (timeout) is never resent. w2 (I0111) what settles it: reconciliation books the VOLUME of an unknown
+close (volume drop / closing deal), adoption decides an unknown ENTRY (recover / SHService.adopt_pending); an unknown close / modify is
+not retried - it is shown (SH status 'unknown_actions', log ACTIONS_UNKNOWN).
 w2 (I0739): a MANAGEMENT action (perform: CLOSE_* / MODIFY_*) that certainly did not reach the terminal (the worker refused it
 before submitting, the job was cancelled while queued, no tick before order_send) ends NOT_SENT instead of UNKNOWN - the service may
 send the same action again for a short time. Entries (open(): OPEN_P and OPEN_H) stay UNKNOWN exactly as before.

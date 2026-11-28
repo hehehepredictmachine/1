@@ -311,7 +311,7 @@ class Toolbox:
         return dict(c, timeframe_view=timeframe, note="te same boksy/ID na każdym TF (zmienia się tylko prezentacja)") if c else {"status": "UNAVAILABLE"}
 
     def t_get_structure_intelligence(self, snapshot_id: str) -> dict:
-        from ..analysis import structure_knowledge as sk
+        from . import structure_knowledge as sk
         if not isinstance(snapshot_id, str) or len(snapshot_id) > 40:
             raise ToolError("SNAPSHOT_ID_INVALID")
         fn = self.ctx.get("structure_snapshot_fn")

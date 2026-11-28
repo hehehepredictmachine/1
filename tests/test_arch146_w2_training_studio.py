@@ -57,7 +57,9 @@ FROZEN_TASK_IDS = ("export", "quality", "forecast", "scalp_A", "scalp_B", "scalp
 FROZEN_TASKS_H = "35acc96e429e43ce"
 FROZEN_PIPELINE_H = "8a7d1af6691808fe"
 FROZEN_EXTRA_H = "54467f828311876f"
-FROZEN_RUNNER_GROUPS_H = "3b326216aa5fa344"
+# scalenie z gałęzią docelową: RUNNER_GROUPS celowo zmienione przez I0622 (scalp_A w .venv_candles) i I0130 (TF eksportu = bazowy TF +
+# wymagania trenera; tests/test_arch146_w2_research_studio.py) - skrót treści po tych poprawkach (HEAD 5c679ab: "3b326216aa5fa344")
+FROZEN_RUNNER_GROUPS_H = "2f44df15daf76938"
 FROZEN_RUNNER_GROUP_KEYS = ("forecast", "scalp_A", "ml", "lab", "indicator_context", "ml_scalp", "neural_scalp", "structure_intelligence",
                             "flow_context", "context_indicators", "sh_models", "sh_pack", "monte_carlo", "master_models")
 FROZEN_REQUIREMENTS_H = "7edfb2447aedf71a"
@@ -539,6 +541,23 @@ class TestI0100TrainingStopsWithRuntime(_Data):
         self.assertEqual((j["state"], j["reason"]), ("CANCELLED", "przerwany zamknięciem aplikacji"))
         self.assertEqual(svc.submit("KALMAN_LS", "XAUUSD")["status"], "STOPPING")   # nothing new after stop
         self.assertEqual(svc.status("KALMAN_LS", "XAUUSD")["artifact"], "NOT_TRAINED")  # status() still works
+
+    def test_one_stop_also_ends_the_precompute_thread(self):
+        # scalenie z gałęzią docelową: I0790 (wątek precompute .venv_deep, start()/stop()) i I0100 dodały po własnym stop() - druga
+        # definicja zasłaniała pierwszą (procesy treningu przeżyłyby STOP). Jedna metoda robi obie rzeczy.
+        from masterquo.modelhub.families.service import FamilyService
+        self.assertEqual([k for k in vars(FamilyService) if k == "stop"], ["stop"])
+        svc = FamilyService(SimpleNamespace(get=lambda: None))
+        svc.PRECOMPUTE_PERIOD_S = 0.05
+        svc.start()
+        self.assertTrue(svc._bg.is_alive())
+        p = _sleeper(start_new_session=True)
+        self.addCleanup(_end, p)
+        svc.procs["KALMAN_LS__XAUUSD"] = p
+        self.assertEqual(svc.stop()["stopped"], ["KALMAN_LS__XAUUSD"])
+        svc._bg.join(2.0)
+        self.assertFalse(svc._bg.is_alive())                              # the precompute thread ended
+        self.assertIsNotNone(p.poll())                                    # and the training child too
 
     def test_pepe_center_stop_ends_its_own_pipeline_process_only(self):
         from masterquo.training import pepe_center as PC

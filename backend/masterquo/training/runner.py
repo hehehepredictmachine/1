@@ -330,7 +330,10 @@ def t_ml(run: Run, inst: str) -> None:
     q = "TEST_TECHNICZNY" if plan["synthetic"] else ("NIEZWALIDOWANY" if res["role"] == "RESEARCH_APPROX" and passed else
                                                    "ZWALIDOWANY_SHADOW" if passed else "ODRZUCONY")
     integ = "AKTYWNY_W_REJESTRZE" if res.get("champion") in passed and res["role"] == "ELIGIBLE_FOR_CHAMPION" else "ZAPISANY_DO_BADAN"
-    run.set(tid, execution="UKONCZONE", quality=q, integration=integ, model_id=",".join(res["models"]), result={k: res[k] for k in ("counts", "role", "champion", "models", "costs")},
+    # 1.46 w2 (I0061): the training set of this run (own dataset feed + window) and its composition are kept in state.json
+    result = {k: res[k] for k in ("counts", "role", "champion", "models", "costs")}
+    result.update(scope=res.get("scope"), snapshot_composition=(res.get("snapshot") or {}).get("composition"))
+    run.set(tid, execution="UKONCZONE", quality=q, integration=integ, model_id=",".join(res["models"]), result=result,
             detail=f"{res['role']}: " + ", ".join(f"{d['family']} {'spełnia reguły' if d['passed_rules'] else 'odrzucony'}" for d in res["models"].values())
                    + f"; etykiet {res['counts']['labeled']}",
             unit={"task": "P(setup S01–S12 osiąga cel netto przed SL)", "tf": "TF setupu (M5–H1)", "side": "oba (cecha kierunku setupu)"})
@@ -735,11 +738,10 @@ def t_activate(run: Run, inst: str) -> None:
 def t_bot(run: Run, inst: str) -> None:
     """Reload in a running bot (identity checked via /api/v1/health, session + CSRF). Never starts a second bot."""
     tid = f"{inst}:bot"
-    from ..train_all import Bot, _health
+    from ..localapi import Bot, health, port as _local_port
     from ..version import APP_NAME
-    from ..__main__ import _port
-    port = _port()
-    h = _health(port)
+    port = _local_port()
+    h = health(port, 3)
     if not h:
         return run.set(tid, execution="POMINIETE", detail="bot nie działa – modele z rejestru załadują się przy starcie (03_START_MASTERQUO.bat)")
     if h.get("app") != APP_NAME:

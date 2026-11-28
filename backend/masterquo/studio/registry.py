@@ -13,8 +13,12 @@ INSTRUMENTS = ("XAUUSD", "BTC")
 ADAPTER_VERSION = {"TRAINHUB": "1", "FAMILY": "1", "RUNNER_GROUP": "1", "DETERMINISTIC": "1", "PRETRAINED": "1"}
 
 # existing training/runner.py tasks: each is ONE model task group with its own trainer + registry; activation stays manual. arch146 I0131: from the
-# one task registry (training/tasks.py) - the same keys, categories, venvs and Studio export timeframes (a field of their own there)
+# one task registry (training/tasks.py) - the same keys, categories, venvs and base timeframes. kind -> (category, title, environment of
+# the runner step, export timeframes). 1.46 (I0622): scalp_A runs in .venv_candles like forecast (training/runner.py t_scalp / t_forecast:
+# core.candles_python(); every other step core.bot_python() = .venv). 1.46 (I0130): the export timeframes = the base timeframe (first,
+# part of task_key) + what the trainer reads (training/requirements.REQUIREMENTS, required + optional) - tasks.studio_export_tfs.
 RUNNER_GROUPS = _TT.studio_runner_groups()
+
 DETERMINISTIC = {
     "IND_AVWAP_SESSION": ("AVWAP od początku sesji (PMW-IND-AVWAP-1)", "M5"),
     "IND_SEMIVAR": ("Semiwariancja 20/60 M1 (PMW-IND-SEMIVAR-1)", "M1"),
@@ -64,15 +68,17 @@ def tasks(cfg_store=None) -> list[dict]:
                              state="SUPPORTED" if avail.get(mid) else "BLOCKED_DEPENDENCY",
                              reason=None if avail.get(mid) else "biblioteka niedostępna", transfer="TRAINHUB_REGISTRY", config={"models": [mid]}))
         from ..modelhub.families import registry as famreg
+        from ..quant import ids as I  # 1.46 arch (I0009): alias constants
         for fid, f in famreg().items():
-            if fid in ("TH_RF", "TH_XGB", "TH_SVM"):
+            if fid in I.TRAINHUB_FAMILY_ALIASES:
                 continue                                                        # trained through the TRAINHUB tasks above
             kind = f.DATA.get("kind")
-            cat = {"TRAINED": "TRAINABLE", "ESTIMATED": "FITTABLE", "VALIDATED_RULES": "CALIBRATABLE", "MEASUREMENT": "TRAINABLE",
+            # 1.46 w2 (I0008): a MEASUREMENT family is shown as MEASUREMENT (was TRAINABLE); operations() keeps its verb (TRAIN by default)
+            cat = {"TRAINED": "TRAINABLE", "ESTIMATED": "FITTABLE", "VALIDATED_RULES": "CALIBRATABLE", "MEASUREMENT": "MEASUREMENT",
                    "PRETRAINED_ADAPTER": "EXTERNAL"}[f.KIND]
             impl, why = f.implementation()
             st = "SUPPORTED" if impl == "AVAILABLE" else "BLOCKED_DEPENDENCY"
-            if fid == "SEQ_GRU_EVENT":
+            if fid == I.EVENT_GRU_FAMILY:
                 st, why = "EXTERNAL", "trening w Centrum MM (mm/event_engine) – Studio pokazuje stan, nie trenuje drugi raz"
             if kind == "MULTI_SERIES":
                 # 1.46: Studio exports ONLY the task's own instrument - pair / basket tasks (PAIR_COINT, STATARB) were SUPPORTED with export /

@@ -114,7 +114,8 @@ def run(snapshot_path: str, cfg: dict, out_dir: str, prior_test_end: str | None,
         pol = val.policy_eval(test_rows, p_eval >= best_thr)
         bundle.meta.update({"family": fam, "threshold": best_thr, "base_rate": base_rate, "calibration": calib.kind,
                             "feature_schema_version": fe.FEATURE_SCHEMA_VERSION, "test_window": info["windows"]["test"],
-                            "trained_at": _iso(), "versions": out["versions"], "target_definition": TARGET})
+                            "trained_at": _iso(), "versions": out["versions"], "target_definition": TARGET,
+                            **fe.feature_context()})                  # 1.46 (I0024): zone defaults / session profiles used by the features
         mid = f"{fam[:2]}-{datetime.now(UTC).strftime('%Y%m%dT%H%M%S')}-{__import__('uuid').uuid4().hex[:4]}"
         path = Path(out_dir) / mid
         bundle.save(path)

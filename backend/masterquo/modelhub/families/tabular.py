@@ -16,6 +16,14 @@ class Tabular(B.Family):
     DATA = {"kind": "BARS", "tf": "M5", "pipeline": "trainhub (eksport MT5 -> dataset -> walk-forward -> holdout -> paczka)"}
     TH_ID = "?"
 
+    def capabilities(self) -> dict:
+        """1.46 arch (I0007): TF / HORIZONS above describe the reference configuration (M5, h=6) only - trainhub trains any base TF of
+        its feature schema and any horizon (one package per model_key <MODEL>_<TF>_H<h>). The allowed set is added as NEW descriptive
+        fields (read from trainhub.features); tf / horizons keep their meaning and type."""
+        from ...trainhub import features as TF
+        return {**super().capabilities(), "tf_allowed": list(TF.HTF_OF),
+                "horizon_source": "h świec z paczki trainhub (model_key <MODEL>_<TF>_H<h>); aktywna konfiguracja: trainhub_state(inst)['active_config']"}
+
     def implementation(self):
         from ...trainhub import learn as L
         return ("AVAILABLE", None) if L.available().get(self.TH_ID) else ("MISSING_DEPENDENCY", "biblioteka niedostępna (np. xgboost)")
@@ -31,7 +39,14 @@ class Tabular(B.Family):
         act = st["active"]
         live = {} if st.get("cause") == "NO_LIVE_VIEW" else {"state": st["state"], "reason": st["reason"]}
         return {"artifact": "CANDIDATE" if st["n_versions"] else "NOT_TRAINED", "versions": st["n_versions"], "active": act,
-                "use": "SHADOW" if act else "OFF", **live, "note": "trening / aktywacja w Centrum treningu (trainhub)"}
+                "use": "SHADOW" if act else "OFF", **live, "note": "trening / aktywacja w Centrum treningu (trainhub)",
+                "active_config": [c for c in (self._parse_key(k, v) for k, v in sorted(act.items())) if c]}   # 1.46 arch (I0007), read-only
+
+    def _parse_key(self, key: str, version) -> dict | None:
+        """model_key <TH_ID>_<TF>_H<h> (trainhub.registry.model_key) -> its base TF and horizon (description only)."""
+        rest = key[len(self.TH_ID) + 1:] if key.startswith(self.TH_ID + "_") else ""
+        tf, _, h = rest.rpartition("_H")
+        return {"model_key": key, "version": version, "base_tf": tf, "horizon": int(h)} if tf and h.isdigit() else None
 
 
 class RF(Tabular):
@@ -40,6 +55,8 @@ class RF(Tabular):
 
 class XGB(Tabular):
     ID, TH_ID, NAME = "TH_XGB", "TH_XGB", "XGBoost (trainhub, eksport natywny JSON)"
+    # 1.46 (I0446): the capabilities / model card said "no additional libraries"; availability itself stays trainhub.learn.available()
+    DEPS = ("xgboost",)
 
 
 class SVM(Tabular):

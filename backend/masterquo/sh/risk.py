@@ -79,7 +79,9 @@ def evaluate(*, setup: dict, spec: SymbolSpec, prof: dict, cfg: dict, inst: str,
     if not chk("equity", eq > 0, f"equity {eq}"):
         return done()
     dl = -abs(r["daily_loss_limit_pct"]) / 100.0 * eq
-    chk("daily_loss", float(state.get("daily_realized_money") or 0) > dl, f"dzienny wynik {state.get('daily_realized_money')} ≤ limit {dl:.2f}")
+    dd = state.get("daily_realized_detail")             # w2 (I0746): min(UTC day all modes, broker day of this mode / account)
+    chk("daily_loss", float(state.get("daily_realized_money") or 0) > dl, f"dzienny wynik {state.get('daily_realized_money')} ≤ limit {dl:.2f}"
+        + (f" ({dd})" if dd else ""))
     opens = [p for p in state.get("open_plans") or [] if p.get("state") not in ("CLOSED",)]
     npos = sum(1 + (1 if p.get("hedge_volume") else 0) for p in opens)
     chk("max_positions", npos + (2 if strat == "HEDGING" and not netting_reduce else 1) <= r["max_open_positions"],
@@ -89,7 +91,11 @@ def evaluate(*, setup: dict, spec: SymbolSpec, prof: dict, cfg: dict, inst: str,
     dup = [s for s in state.get("recent_signals") or []
            if s["signal_id"] == setup.get("signal_id") or (s["strategy"] == strat and s["side"] == side and now - s["created_at"] < 60 * r["duplicate_window_minutes"])]
     chk("duplicate", not dup, f"duplikat sygnału ({dup[0]['signal_id']})" if dup else "")
-    chk("foreign_owner", not state.get("foreign_positions"), f"{state.get('foreign_positions')} pozycji innego menedżera na symbolu – jeden właściciel")
+    fp = state.get("foreign_positions")
+    if fp == "UNAVAILABLE":                             # w2 (I0747): no position list from MT5 - never read as 0 foreign positions
+        chk("foreign_owner", False, "brak danych o pozycjach na symbolu z MT5 – jeden właściciel niesprawdzalny")
+    else:
+        chk("foreign_owner", not fp, f"{fp} pozycji innego menedżera na symbolu – jeden właściciel")
 
     # --- sizing ----------------------------------------------------------------------------------------------------------
     try:

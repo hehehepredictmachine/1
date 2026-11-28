@@ -321,6 +321,30 @@ class Context:
             return None, None
         return max(m5.h[a:b]), min(m5.l[a:b])
 
+    def last_traded_day_range(self, mirror: bool, max_back: int = 4) -> tuple[float | None, float | None, float | None]:
+        """1.46 arch (I0744): high / low / UTC start of the most recent COMPLETED trading day that HAS visible M5 bars, at most max_back
+        trading days back. The 'previous trading day' of the Monday session is the empty weekend window [Sat 17:00, Sun 17:00) NY, so
+        prev_day_range is (None, None) there. Used ONLY as an additional target obstacle (engine._obstacle: more obstacles = less room for
+        TP2 = only stricter); prev_day_range / prev_session_profile, which feed setup detection, are unchanged (S0: new entries)."""
+        td = self.cm.get("trading_day") or {}
+        tz, st = td.get("tz", "America/New_York"), td.get("start", "17:00")
+        end = trading_day_start(self.as_of, tz, st)
+        m5 = self.tf("M5", mirror)
+        for _ in range(max(1, max_back)):
+            start = trading_day_start(end - 1, tz, st)
+            a, b = m5.since(start), m5.since(end)
+            if b > a:
+                return max(m5.h[a:b]), min(m5.l[a:b]), start
+            end = start
+        return None, None, None
+
+    def prev_day_gap_note(self) -> str | None:
+        """I0744 (text only): why the previous trading day has no data - its window has no M5 bars (weekend / holiday)."""
+        hi, _lo = self.prev_day_range(False)
+        if hi is not None or not (self.raw.get("M5") or []):
+            return None
+        return "poprzednia doba handlowa nie ma świec (weekend lub święto) – profil i poziomy poprzedniej doby niedostępne"
+
     def prev_session_profile(self, value_area_pct: float = 0.70, bin_ticks: int = 10) -> dict:
         """Value area of the COMPLETED previous trading day (PMW-SVP-1 on closed M5 bars, tick activity). Frozen per trading day."""
         td = self.cm.get("trading_day") or {}

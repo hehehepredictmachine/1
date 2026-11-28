@@ -39,7 +39,7 @@ from . import events as EV
 from . import features as F
 
 log = logging.getLogger(__name__)
-VERSION = "PMW-QUANT-TABICL-1"
+VERSION = "PMW-QUANT-TABICL-2"        # 1.46 arch (I0538): strategy one-hot instead of a hash code
 MAX_COLUMNS = 48
 MIN_ROWS = 24                      # technical minimum for an in-context classifier (both classes needed) - NOT a validation gate
 RESULTS_MAX = 500                  # plan_hash -> newest results kept in memory
@@ -71,19 +71,24 @@ def tdir() -> Path:
 
 
 def weights_root() -> Path:
+    """The folder of tabicl_v2 = the one the installer uses (P004: tsfm.settings.default_weights_root honours weights_root from
+    <data>/tsfm/settings.json exactly like tools/tsfm_setup.py --weights-root auto)."""
     from ..tsfm.settings import default_weights_root
     return default_weights_root()
 
 
 def find_python() -> str | None:
-    root = paths.ROOT_DIR
-    for x in (os.environ.get("MQ_TABICL_PYTHON"), str(root / ".venv_tabicl" / "Scripts" / "python.exe"), str(root / ".venv_tabicl" / "bin" / "python")):
-        if x and Path(x).is_file():
-            return x
-    return None
+    # 1.46 arch (I0117): MQ_TABICL_PYTHON -> .venv_tabicl (is_file), as before
+    from .. import runtimes
+    return runtimes.find_python("tabicl")
 
 
-_INST_CACHE: dict = {}
+_INST_CACHE: dict = {}     # process cache (TTL max_age_s) of installed(); reset_install_cache() is the hook (1.46 arch I0104)
+
+
+def reset_install_cache() -> None:
+    """Forget the cached installation state (tests; after an install / removal of the TabICL environment)."""
+    _INST_CACHE.clear()
 
 
 def installed(max_age_s: float = 300.0) -> dict:
@@ -109,18 +114,33 @@ def _installed() -> dict:
 
 
 # ---------------------------------------------------------------------------------------------------------------- reference rows
+STRATEGY_PREFIX = "ctx:strategy="
+
+
 def strategy_features(engine: str | None, strategy: str | None) -> dict:
-    """Provenance of the row as features (the identity stays in the record): engine one-hot is already in FEAT-1; the strategy id becomes
-    a stable small integer code + family flags so different rules are not merged silently."""
+    """Provenance of the row as features (the identity stays in the record): engine one-hot is already in FEAT-1; the strategy id is a
+    one-hot column ctx:strategy=<id> (1 for this row; rows of other strategies get 0 in vector()) + family flags, so different rules are
+    not merged silently. 1.46 arch (I0538): it was ctx:strategy_code = sha256(id) % 997 - a categorical id given to TabICL as ONE ordinal
+    number (two unrelated rules 412 / 413 were 'neighbours')."""
     s = str(strategy or "")
-    return {"ctx:strategy_code": float(int(hashlib.sha256(s.encode()).hexdigest()[:4], 16) % 997),
-            "ctx:family_hedging": 1.0 if "HG" in s or "HEDG" in s.upper() else 0.0}
+    out = {STRATEGY_PREFIX + s: 1.0} if s else {}
+    out["ctx:family_hedging"] = 1.0 if "HG" in s or "HEDG" in s.upper() else 0.0
+    return out
+
+
+def _current(r: dict) -> bool:
+    """A ledger row of the CURRENT feature semantics (QuantLedger.training_rows names the version of every row; LEGACY_ROWS = pre-1.46)."""
+    return r.get("feature_version", F.CURRENT) == F.CURRENT
 
 
 def live_rows(ledger, inst: str, key: str, now: float, *, real_only: bool = False) -> list[dict]:
-    """now = the as-of time (the candidate's decision): only rows whose label was resolved by then. real_only: REAL rows only."""
+    """now = the as-of time (the candidate's decision): only rows whose label was resolved by then. real_only: REAL rows only.
+    1.46: rows of the CURRENT feature semantics only (features.CURRENT, as the candidate's features from QuantService.assess) - a
+    pre-1.46 row (LEGACY_ROWS) has the same column names with another meaning (Kalman candidate, stale DXY)."""
     out = []
     for r in ledger.training_rows(inst):
+        if not _current(r):
+            continue
         if real_only and kind_of(r.get("data_kind")) != "REAL":
             continue                                   # 1.46: a REAL candidate never gets SYNTHETIC / UNKNOWN reference rows
         try:
@@ -154,7 +174,9 @@ def recon_rows(inst: str, key: str, now: float, *, real_only: bool = False) -> l
             if real_only and kind_of(r.get("data_kind")) != "REAL":
                 continue                               # 1.46: same data-kind rule as the live ledger rows
             if r.get("event_key") == key and r.get("resolve_ts") is not None and float(r["resolve_ts"]) <= now and r.get("y") in (0, 1):
-                out.append(r)
+                f = {k: v for k, v in (r.get("features") or {}).items() if k != "ctx:strategy_code"}     # I0538: file of TABICL-1
+                f.update(strategy_features(None, r.get("strategy")))
+                out.append({**r, "features": f})
     return out
 
 
@@ -182,11 +204,26 @@ def columns(rows: list[dict], max_cols: int = MAX_COLUMNS) -> list[str]:
     return sorted(names)
 
 
+def coverage_by_provenance(rows: list[dict], names: list[str]) -> dict:
+    """w2 (I0017, diagnostics only - the context and its result are unchanged): per provenance the rows and the context columns
+    that NONE of its rows carries (LIVE_LEDGER vs RECONSTRUCTED_HISTORY had disjoint columns: the query always looks like a live row)."""
+    out: dict = {}
+    for prov in sorted({str(r.get("provenance")) for r in rows}):
+        rs = [r for r in rows if str(r.get("provenance")) == prov]
+        have = {k for r in rs for k in (r.get("features") or {})}
+        out[prov] = {"rows": len(rs), "missing_columns": [n for n in names if n not in have]}
+    return out
+
+
 def vector(feats: dict, names: list[str]) -> list[float]:
+    """Missing = NaN (TabICL's missing value), except a strategy one-hot column: absent = another strategy = 0.0 (I0538)."""
     out = []
     for n in names:
         v = feats.get(n)
-        out.append(float(v) if isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v) else float("nan"))
+        if isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v):
+            out.append(float(v))
+        else:
+            out.append(0.0 if n.startswith(STRATEGY_PREFIX) and v is None else float("nan"))
     return out
 
 
@@ -203,12 +240,14 @@ def build_context(ledger, inst: str, key: str, now: float, *, target: int = 512,
     kinds: dict[str, int] = {}
     for r in rows:
         kinds[kind_of(r.get("data_kind"))] = kinds.get(kind_of(r.get("data_kind")), 0) + 1
-    return {"context_id": cid, "event_key": key, "instrument": inst, "names": names, "feature_schema": F.schema2(names), "n": len(rows),
+    # 1.46 (I0531): the label names the feature semantics of the rows (features.CURRENT - live_rows keeps those only), not FEAT-2
+    return {"context_id": cid, "event_key": key, "instrument": inst, "names": names, "feature_schema": F.schema_for(F.CURRENT, names), "n": len(rows),
             "positives": sum(ys), "classes": sorted(set(ys)), "provenance": prov, "first_ts": rows[0]["decision_ts"] if rows else None,
             "last_ts": rows[-1]["decision_ts"] if rows else None, "X": [vector(r["features"], names) for r in rows], "y": ys,
             "row_ids": [r["id"] for r in rows], "built_at": time.time(),
             # 1.46 (additive): as-of time, data kinds of the rows, REAL-only filter, labelled live rows of this event before selection
-            "as_of": now, "data_kinds": kinds, "real_only": real_only, "live_rows": len(live)}
+            "as_of": now, "data_kinds": kinds, "real_only": real_only, "live_rows": len(live),
+            "coverage_by_provenance": coverage_by_provenance(rows, names)}
 
 
 # ---------------------------------------------------------------------------------------------------------------- reconstruction
@@ -251,6 +290,24 @@ def store_bars(inst: str, days: int) -> tuple[dict, dict] | dict | None:
     return bars, meta
 
 
+def recon_candidate(inst: str, vid: str, t: float, su: dict) -> dict | None:
+    """Candidate dict of one replayed SH pack setup (None = not a two-target plan). w2 (I0017): the spread of the setup's costs as on the
+    live SH candidate (execution_context.spread -> ctx:spread_r); the regime is not known in the replay and stays absent (never guessed)."""
+    side = "LONG" if su.get("side") == "BUY" else "SHORT"
+    tps = su.get("tps") or []
+    if len(tps) < 2 or su.get("sl") is None or su.get("entry_ref") is None:
+        return None
+    fam = "SH_HEDGING" if vid.startswith("PMW_HG") else "SH_SCALPING"
+    costs = su.get("costs") or {}
+    return {"instrument": inst, "engine": fam, "strategy_id": vid, "direction": side, "entry_price": float(su["entry_ref"]),
+            "stop_loss": float(su["sl"]), "targets": [{"price": float(x["price"]), "weight": float(x["share"])} for x in tps],
+            "horizon_s": 60.0 * float(su.get("position_max_minutes") or su.get("horizon_minutes") or 60), "decision_ts": float(t),
+            "score": (su.get("score") or {}).get("value"), "entry_type": "MARKET",
+            "execution_context": {"cost_price": costs.get("round_trip_price"), "commission_known": costs.get("commission_known"),
+                                  "spread": costs.get("spread")},
+            "features": {"atr_m5": ((su.get("pack") or {}).get("features") or {}).get("atr_m5")}}
+
+
 def reconstruct(inst: str, *, days: int = 30, cancel=None, progress=None, bars_meta: tuple | None = None) -> dict:
     """Historical candidates of the live SH pack detectors (causal replay, plans only) labelled with the live EventSpec simulator.
     Written to reconstructed_<inst>.jsonl (provenance RECONSTRUCTED_HISTORY). Idempotent: rows are keyed by (variant, tf, t, side)."""
@@ -267,18 +324,9 @@ def reconstruct(inst: str, *, days: int = 30, cancel=None, progress=None, bars_m
     rows = []
 
     def on_ready(t, vid, tf, su):
-        side = "LONG" if su.get("side") == "BUY" else "SHORT"
-        tps = su.get("tps") or []
-        if len(tps) < 2 or su.get("sl") is None or su.get("entry_ref") is None:
+        cd = recon_candidate(inst, vid, t, su)
+        if cd is None:
             return
-        fam = "SH_HEDGING" if vid.startswith("PMW_HG") else "SH_SCALPING"
-        cd = {"instrument": inst, "engine": fam, "strategy_id": vid, "direction": side, "entry_price": float(su["entry_ref"]),
-              "stop_loss": float(su["sl"]), "targets": [{"price": float(x["price"]), "weight": float(x["share"])} for x in tps],
-              "horizon_s": 60.0 * float(su.get("position_max_minutes") or su.get("horizon_minutes") or 60), "decision_ts": float(t),
-              "score": (su.get("score") or {}).get("value"), "entry_type": "MARKET",
-              "execution_context": {"cost_price": (su.get("costs") or {}).get("round_trip_price"),
-                                    "commission_known": (su.get("costs") or {}).get("commission_known")},
-              "features": {"atr_m5": ((su.get("pack") or {}).get("features") or {}).get("atr_m5")}}
         try:
             spec = EV.spec_from_candidate(cd)
         except (EV.EventError, KeyError, TypeError, ValueError):
@@ -298,7 +346,7 @@ def reconstruct(inst: str, *, days: int = 30, cancel=None, progress=None, bars_m
             continue                                       # unfinished / no bars: not a loss, simply not a reference row
         fills = lab.get("fills") or []
         resolve = max([float(f["t"]) + 60 for f in fills] or [cd["decision_ts"] + spec.horizon_s])
-        feats = F.build2(cd, [])                           # no historical model forecast existed -> those columns are missing
+        feats = F.build_for(F.CURRENT, cd, [])             # no historical model forecast existed -> those columns are missing
         feats.update(strategy_features(cd["engine"], spec.strategy))
         # 1.46: the TF is part of the id - a variant with several signal TFs can publish two different plans at the same t
         # (the same id made select() drop one of them silently)
@@ -464,6 +512,14 @@ class TabICLService:
     def settings(self) -> dict:
         return (self.q.settings.get().get("tabicl") or {})
 
+    def register_with(self, governor) -> None:
+        """1.46 arch (I0089/I0102): register the TabICL worker with the Memory Governor (heavy slot, idle release) - was a lambda on
+        worker.proc / jobs / worker.last_used in runtime._wire_governor. Same callables, evaluated lazily; never released while a job
+        waits in the queue."""
+        import time as _time
+        governor.register("tabicl", "heavy", lambda: self.worker.proc.pid if (self.worker.proc and self.worker.proc.poll() is None) else None,
+                          release=lambda: self.jobs.empty() and self.worker.kill(), idle=lambda: _time.monotonic() - self.worker.last_used)
+
     def active(self) -> bool:
         s = self.q.settings.get()
         return s.get("estimator") == "tabicl_v2" and bool((s.get("tabicl") or {}).get("enabled", True))
@@ -604,6 +660,23 @@ class TabICLService:
                                             "missing_features": missing[:20], "coverage": round(1 - len(missing) / max(1, len(ctx["names"])), 3),
                                             "latency_ms": round((time.perf_counter() - t0) * 1000, 1), "computed_at": time.time(),
                                             "model": (self.worker.info or {}).get("fingerprint")})
+        self._persist(job, ctx, p)
+
+    def _persist(self, job: dict, ctx: dict, p: float) -> None:
+        """1.46 arch (I0536): the READY p_event_raw is kept durably (quant ledger, table confidence_scores) for a later calibration check -
+        best effort: a write failure never changes the published result."""
+        add = getattr(getattr(self.q, "ledger", None), "add_confidence", None)
+        if add is None:
+            return
+        ident = job.get("ident") or {}
+        try:
+            add({"plan_hash": job["plan_hash"], "task_hash": ident.get("task_hash"), "event_key": job.get("event_key"),
+                 "instrument": job.get("instrument"), "decision_ts": ident.get("decision_ts"), "strategy": ident.get("strategy"),
+                 "engine": ident.get("engine"), "p_event_raw": p, "calibration_status": "UNCALIBRATED", "estimator_kind": "tabicl_v2",
+                 "context_id": ctx.get("context_id"), "context_n": ctx.get("n"), "feature_schema": ctx.get("feature_schema"),
+                 "model_fingerprint": (self.worker.info or {}).get("fingerprint"), "computed_at": time.time()})
+        except Exception as exc:  # noqa: BLE001 - persistence is evidence only, never the result
+            log.warning("TabICL: zapis wyniku do ledgera: %s: %s", type(exc).__name__, exc)
 
     def submit(self, cd: dict, spec: EV.EventSpec, feats: dict, gen) -> dict:
         """Enqueue the candidate (non-blocking). Returns the current state for THIS plan_hash (READY only when computed for it)."""
@@ -664,8 +737,8 @@ class TabICLService:
         known = any(k.split("|", 1)[0] == inst for k in self._live_n)
         if known and not short:
             return
-        if not known and len(self.q.ledger.training_rows(inst)) >= target:
-            return                                       # no candidate scored yet: the 1.41 rule (all labelled rows of the instrument)
+        if not known and sum(1 for r in self.q.ledger.training_rows(inst) if _current(r)) >= target:
+            return                                       # no candidate scored yet: the 1.41 rule (labelled rows usable as context, 1.46: CURRENT)
         self.run_reconstruction(inst, days=int(s.get("reconstruct_days", 30)))
 
     def run_reconstruction(self, inst: str, days: int = 30, background: bool = True) -> dict:

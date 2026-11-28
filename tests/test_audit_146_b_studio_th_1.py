@@ -484,10 +484,10 @@ class TestStudioApi(StudioEnv):
                 return 200, {"items": [{"import_id": "IMP-9", "package": str(pk.resolve()), "state": "CANDIDATE"}]}
         with mock.patch("masterquo.studio.app._bot_health", return_value={"ok": True}):
             for cls in (NoSession, TimesOut):
-                with mock.patch("masterquo.train_all.Bot", cls):
+                with mock.patch("masterquo.localapi.Bot", cls):
                     self.assertEqual(_call(app, "POST", f"/api/studio/jobs/{jid}/transfer", {})[0], 503, cls.__name__)
             self.assertEqual(q.job(jid)["state"], "PACKAGED")
-            with mock.patch("masterquo.train_all.Bot", AlreadyImported):
+            with mock.patch("masterquo.localapi.Bot", AlreadyImported):
                 st, body = _call(app, "POST", f"/api/studio/jobs/{jid}/transfer", {})
         self.assertEqual(st, 200)
         self.assertEqual(body["import"]["import_id"], "IMP-9")

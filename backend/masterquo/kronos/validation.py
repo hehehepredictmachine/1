@@ -247,6 +247,11 @@ def run(svc, inst: str, tf: str, *, max_origins: int = 300, progress=None, clien
         reasons.append("trafność kierunku nie przewyższa bazowego momentum")
     if p is None or p >= 0.05:
         reasons.append(f"trafność kierunku nieistotna statystycznie (p = {p if p is None else round(p, 4)})")
+    # arch 1.46 I0786: the approval is for the band the TEST was evaluated with (k chosen on DEV), not for the band that happened to be in
+    # the settings - before, a user who set the validated band got VALIDATION_STALE (binding: settings band -> k) and REQUIRED could be
+    # enabled only when k equalled the old setting by chance. The settings band at validation time stays as information.
+    base["binding"] = {**base["binding"], "direction_band_atr": k_best}
+    base["binding_settings_band_at_validation"] = s.direction_band_atr
     rep = {**base, "status": "DONE", "finished_at": iso(utcnow()), "duration_s": round(time.time() - t0, 1), "horizon_bars": H, "lookback": L,
            "calendar": {"source": cal_src, "coverage_days": round(cal.coverage_days, 1)},
            "bars_used": len(bars), "first_bar": bars[0]["open_utc"], "last_bar": bars[-1]["open_utc"], "origins": len(origins),
@@ -287,5 +292,14 @@ def _mean(it) -> float | None:
 def _save(rep: dict) -> dict:
     rid = f"{rep['instrument']}_{rep['timeframe']}_{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}"
     rep["report_id"] = rid
-    (reports_dir() / f"{rid}.json").write_text(json.dumps(rep, indent=1, ensure_ascii=False, default=str), encoding="utf-8")
+    # arch 1.46 I0785: atomic write (temporary file + os.replace) - an interrupted write never leaves a truncated report under the final
+    # name (a REQUIRED approval reads it; an unreadable report now holds REQUIRED, see predictions.context)
+    final = reports_dir() / f"{rid}.json"
+    tmp = final.with_name(final.name + ".tmp")
+    tmp.write_text(json.dumps(rep, indent=1, ensure_ascii=False, default=str), encoding="utf-8")
+    try:
+        os.replace(tmp, final)
+    except OSError:
+        tmp.unlink(missing_ok=True)
+        raise
     return rep

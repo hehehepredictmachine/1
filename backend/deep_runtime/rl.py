@@ -9,6 +9,8 @@ from pathlib import Path
 
 import numpy as np
 
+SAMPLE_BARS = 100          # bars of the activation sample (the bot passes the last 200 closed bars; obs needs k + 1)
+
 
 def _env_cls():
     import gymnasium as gym
@@ -83,8 +85,14 @@ def train(req):
     venv.save(str(d / "ppo_vecnorm.pkl"))
     test = _eval(model, venv, bars, va, n, kw)
     (d / "rl_config.json").write_text(json.dumps({"env": kw, "seed": s, "obs_dim": int(Env(bars, 0, 100, kw).core.obs_dim)}), encoding="utf-8")
+    # 1.46 (I0466): deterministic inference sample - the last SAMPLE_BARS bars of the validation segment, FLAT position, read back through
+    # predict() (the runtime path: saved policy + frozen VecNormalize). Activation re-runs it, so a broken / swapped policy or normaliser
+    # file no longer passes (sample.expected was None - only rl_config.json was read).
+    tail = bars[max(0, va - SAMPLE_BARS):va]
+    smp = predict({"dir": str(d), "bars": tail, "position": 0.0})
     return {"ok": True, "seeds": runs, "chosen_seed": s, "test": test,
-            "val_ppo_minus_flat": ev["ppo"]["net_pnl"] - ev["flat"]["net_pnl"], "val_ppo_minus_momentum": ev["ppo"]["net_pnl"] - ev["momentum"]["net_pnl"]}
+            "val_ppo_minus_flat": ev["ppo"]["net_pnl"] - ev["flat"]["net_pnl"], "val_ppo_minus_momentum": ev["ppo"]["net_pnl"] - ev["momentum"]["net_pnl"],
+            "sample_bars": tail, "sample_probs": smp["probs"]}
 
 
 def predict(req):
@@ -92,18 +100,23 @@ def predict(req):
     from stable_baselines3.common.vec_env import DummyVecEnv, VecNormalize
     d = Path(req["dir"])
     conf = json.loads((d / "rl_config.json").read_text(encoding="utf-8"))
-    Env = _env_cls()
     bars = req["bars"]
-    dummy = DummyVecEnv([lambda: Env(bars, 0, len(bars), conf["env"])])
-    vn = VecNormalize.load(str(d / "ppo_vecnorm.pkl"), dummy)
-    vn.training = False
-    model = PPO.load(str(d / "ppo_policy"), device="cpu")
     from masterquo.modelhub.families.rl_core import ReplayCore
     core = ReplayCore(bars, **conf["env"])
     # 1.46: off-by-one - the caller passes CLOSED bars only (include_forming=False) and the action is chosen after the CLOSE of bar t
     # (rl_core); reset(len - 2) observed the second-to-last bar and ignored the newest closed candle. obs() needs nothing after t.
     core.reset(len(bars) - 1)
-    core.pos = float(req.get("position", 0.0))
+    # 1.46 (I0465): the whole position state (exposure, entry price, bars in position) - `core.pos = position` alone left entry 0 and an
+    # unrealised P/L at the price level; an incomplete state is refused before any model is loaded
+    try:
+        core.set_live_state(req.get("position", 0.0), req.get("position_entry"), req.get("bars_in_position"))
+    except ValueError as exc:
+        return {"ok": False, "error": str(exc)[:200]}                         # POSITION_STATE_INCOMPLETE / _INVALID / _UNITS
+    Env = _env_cls()
+    dummy = DummyVecEnv([lambda: Env(bars, 0, len(bars), conf["env"])])
+    vn = VecNormalize.load(str(d / "ppo_vecnorm.pkl"), dummy)
+    vn.training = False
+    model = PPO.load(str(d / "ppo_policy"), device="cpu")
     o = core.obs()
     oo = vn.normalize_obs(o[None, :])
     a, _ = model.predict(oo, deterministic=True)

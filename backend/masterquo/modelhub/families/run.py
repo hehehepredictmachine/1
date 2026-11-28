@@ -73,12 +73,12 @@ def load_data(fam, inst: str, cfg: dict, bars_file: str | None = None, max_rows:
             pair = (cfg.get("pairs") or [None])[0]
             out["pair"] = pair
             if pair:
-                out["pair_bars"] = [B.bars_from_store(st, s, fam.TF) for s in pair]
+                out["pair_bars"], out["legs_missing"] = _legs(st, pair, fam.TF)
         else:
             uni = cfg.get("basket") or []
             out["basket"] = uni
             if len(uni) >= 3:
-                out["basket_bars"] = [B.bars_from_store(st, s, fam.TF) for s in uni]
+                out["basket_bars"], out["legs_missing"] = _legs(st, uni, fam.TF)
     elif kind == "L2_BOOK":
         out["source"], out["quality_path"] = "BOOK_ARCHIVE", None
         # 1.46: without the instrument's broker symbol the query had no WHERE - snapshots of every symbol (XAUUSD and BTC after an
@@ -96,9 +96,29 @@ def load_data(fam, inst: str, cfg: dict, bars_file: str | None = None, max_rows:
             out["books"] = books_from_archive(cfg.get("indicators_db"), sym, limit=lim, levels=BOOK_LEVELS)
     elif kind == "TEXT":
         out["source"], out["quality_path"] = "TEXT_CORPUS", None
-        from .nlp import load_corpus
+        from .nlp import corpus_data_kind, load_corpus
         out["corpus"] = load_corpus()
+        # 1.46 arch (I0469 / I0470): the provenance of the CORPUS (recorded per record at import), not of the instrument's candle export -
+        # a synthetic corpus gave an artifact labelled REAL_USER_DATA whenever the candles were REAL (ASSIST gate, Quant snapshot)
+        out["data_kind"] = corpus_data_kind(out["corpus"])
     return out
+
+
+def _legs(st, symbols, tf: str) -> tuple[list[list[dict]], list[dict]]:
+    """1.46 (I0424): the bars of every leg read on its own. A leg without candles in the store or with an unreadable part file is listed
+    in legs_missing (validate_data names it -> BLOCKED with the reason) - 1.45 / 1.46.0 raised out of train() for a damaged file (the job
+    stayed RUNNING until the dead process was noticed) and reported a missing leg as 'za mało wspólnych świec: 0'."""
+    bars, missing = [], []
+    for s in symbols:
+        try:
+            b = B.bars_from_store(st, s, tf)
+            why = None if b else "brak świec"
+        except Exception as exc:  # noqa: BLE001 - a damaged part file of one leg
+            b, why = [], f"nieczytelne dane: {type(exc).__name__}: {exc}"[:200]
+        if why:
+            missing.append({"symbol": s, "tf": tf, "reason": why})
+        bars.append(b)
+    return bars, missing
 
 
 def books_from_archive(db_path, symbol, limit: int | None = None, levels: int | None = None) -> list[dict]:
@@ -135,6 +155,17 @@ def _dataset_ref(inst: str, data: dict, dm: dict, bars: list) -> dict:
                         quality_path=Path(qp) if qp else None)
 
 
+def delegated(fid: str, inst: str, profile: str) -> str | None:
+    """The reason a family is trained OUTSIDE the family store (None = trained here). 1.46 (I0475): SEQ_GRU_EVENT (adapter of the MM
+    event model) was missing - `families train --family SEQ_GRU_EVENT` / POST /api/v1/families/SEQ_GRU_EVENT/train ended FAILED
+    NotImplementedError (EventGRU has no fit) after creating a .tmp-run directory; train_all and the CLI train-all already skipped it."""
+    if fid in ("TH_RF", "TH_XGB", "TH_SVM"):
+        return f"trening w trainhub: python -m masterquo trainhub train --instrument {inst} --models {fid} --profile {profile}"
+    if fid == "SEQ_GRU_EVENT":
+        return "trening w Centrum MM (mm/event_engine) – adapter istniejącego modelu zdarzeń, nie jest trenowany w magazynie rodzin"
+    return None
+
+
 def train(fid: str, inst: str, profile: str, cfg: dict, status_file: Path | None = None, data: dict | None = None, store: B.Store | None = None,
           bars_file: str | None = None) -> dict:
     from . import registry
@@ -148,14 +179,21 @@ def train(fid: str, inst: str, profile: str, cfg: dict, status_file: Path | None
         if sf:
             _status(sf, **res)
         return res
-    if fid in ("TH_RF", "TH_XGB", "TH_SVM"):
-        res = {"state": "DELEGATED", "reason": "trening w trainhub: python -m masterquo trainhub train --instrument "
-                                              f"{inst} --models {fid} --profile {profile}", "family": fid}
+    why_d = delegated(fid, inst, profile)
+    if why_d:                                            # before load_data / new_run: no data read, no .tmp-run directory
+        res = {"state": "DELEGATED", "reason": why_d, "family": fid}
         if sf:
             _status(sf, **res)
         return res
     budget = dict(BUDGETS.get(profile, BUDGETS["smoke"]), profile=profile)
-    data = data if data is not None else load_data(fam, inst, cfg, bars_file, max_rows=budget["max_rows"])
+    if data is None:
+        try:
+            data = load_data(fam, inst, cfg, bars_file, max_rows=budget["max_rows"])
+        except Exception as exc:  # noqa: BLE001 - 1.46 (I0424): a data error is BLOCKED with its reason, never an exception out of the job
+            res = {"state": "BLOCKED", "reason": f"dane: {type(exc).__name__}: {exc}"[:400], "family": fid}
+            if sf:
+                _status(sf, **res)
+            return res
     ok, why = fam.validate_data(data)
     if not ok:
         res = {"state": "BLOCKED", "reason": why, "family": fid}

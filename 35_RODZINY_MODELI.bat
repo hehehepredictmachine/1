@@ -13,11 +13,6 @@ if "%PROF%"=="" set "PROF=smoke"
 for %%I in ("%~dp0.") do set "ROOT=%%~fI"
 call "%ROOT%\tools\pmwpy.cmd"
 if not exist "%PY%" (echo [BLAD] Brak Pythona bota (.venv albo runtime aplikacji) - uruchom INSTALUJ_TRENING.bat albo raz aplikacje Apollo23 - PepeMarketWizard.exe & pause & exit /b 2)
-if not exist "%PY%" (
-  echo [BLAD] Brak srodowiska bota - uruchom najpierw 01_INSTALUJ.bat
-  %MQ_PAUSE%
-  exit /b 1
-)
 chcp 65001 >nul
 set "PYTHONIOENCODING=utf-8"
 set "PYTHONUTF8=1"

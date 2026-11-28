@@ -642,19 +642,21 @@ def _association(ctx) -> dict:
     al, sh = r.get("assess_long") or {}, r.get("assess_short") or {}
     steps = {"predict": check(r.get("status") == "READY" and isinstance(r.get("rules"), int),
                               f"trasa /association/snapshot ({_wf32(ctx)['n_h1']} świec H1 FakeMT5): {r.get('status')}, {r.get('n_labeled')} etykiet, "
-                              f"{r.get('rules')} reguł, LONG {al.get('action')} ({al.get('reason')}), SHORT {sh.get('action')}",
+                              f"{r.get('rules')} reguł (zwalidowanych na holdoucie: {r.get('validated_rules')}), LONG {al.get('action')} "
+                              f"({al.get('reason')}), SHORT {sh.get('action')} ({sh.get('reason')})",
                               f"snapshot: {str(r)[:300]}")}
     ctx.step = "contract"
     errs = []
-    if r.get("mode") != "OBSERVE" or r.get("schema") != AR.SCHEMA:
-        errs.append(f"mode/schema {r.get('mode')} {r.get('schema')}")
+    if r.get("mode") != "OBSERVE" or r.get("schema") != AR.SCHEMA or r.get("validation") != AR.VALIDATION:
+        errs.append(f"mode/schema/walidacja {r.get('mode')} {r.get('schema')} {r.get('validation')}")
     if not isinstance(r.get("current_mask"), int) or not all(e in AR.CATALOG for e in r.get("current_events") or []):
         errs.append(f"maska {r.get('current_mask')} / zdarzenia {r.get('current_events')}")
     for a in (al, sh):
         if "action" not in a or "reason" not in a:
             errs.append(f"assess bez action/reason: {sorted(a)}")
     steps["contract"] = check(not errs, f"{AR.SCHEMA}: tryb OBSERVE, maska {r.get('current_mask')} -> {r.get('current_events')}, assess LONG/SHORT z "
-                                        "action/reason (wynik nie trafia do decyzji)", "; ".join(errs))
+                                        f"action/reason, {AR.VALIDATION} (SUPPORTED tylko z reguł zwalidowanych; wynik nie trafia do decyzji)",
+                              "; ".join(errs))
     return steps
 
 

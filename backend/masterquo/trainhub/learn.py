@@ -6,8 +6,12 @@ Trainable models of this pipeline (task DIRECTION_H, 3 classes after costs; one 
   TH_HGB      - histogram gradient boosting (depth / learning rate chosen on the folds);
   TH_XGB      - XGBoost (CPU), only when the xgboost package is installed (no early stopping: n_estimators is a grid parameter chosen
                 on the walk-forward folds, so no validation rows are used inside a fit); native JSON booster saved with the package;
-  TH_RF       - random forest (bounded depth / leaf size, class_weight balanced_subsample); permutation importance on the HOLDOUT
-                (rows never used by the fit); OOB is not used as validation;
+  TH_RF       - random forest (bounded depth / leaf size, class_weight None since 1.46 - the grid point carries it, so it is in the
+                params / version hash / config.json); permutation importance on the HOLDOUT (rows never used by the fit); OOB is not used
+                as validation. Up to 1.46 class_weight was balanced_subsample: on imbalanced DOWN/FLAT/UP (0.19/0.62/0.19) the forest gave
+                mean P ~ [0.33, 0.34, 0.33] - the model publishes CLASS_PROBABILITIES and the temperature step (it scales log-odds, it
+                does not move class priors) did not undo the shift (holdout log loss 1.08 vs baseline 0.93; without class weights 0.92).
+                Params WITHOUT the key (packages / calls of <= 1.46) keep balanced_subsample (make() - reproducible);
   TH_SVM      - pipeline StandardScaler + SVM (linear for large sets, small RBF grid only up to `RBF_MAX_ROWS` rows); the decision
                 function is NOT a probability: an explicit chronological calibration block (last 20 % of each training window) fits a
                 multinomial logistic map decision_function -> P(DOWN/FLAT/UP); the temperature step of the pipeline follows as for
@@ -26,6 +30,8 @@ import time
 
 import numpy as np
 
+from ..quant import numeric as N
+
 MODELS = {
     "TH_BASELINE": {"name": "Bazowy – częstości klas", "grid": [{}]},
     "TH_LOGREG": {"name": "Regresja logistyczna (wieloklasowa)", "grid": [{"C": c} for c in (0.05, 0.3, 1.0, 3.0)]},
@@ -33,12 +39,13 @@ MODELS = {
                                                                     {"max_depth": 5, "learning_rate": 0.05, "max_iter": 200}]},
     "TH_XGB": {"name": "XGBoost (CPU)", "grid": [{"max_depth": 3, "learning_rate": 0.05, "n_estimators": 200},
                                                   {"max_depth": 5, "learning_rate": 0.05, "n_estimators": 250}]},
-    "TH_RF": {"name": "Random Forest", "grid": [{"n_estimators": 200, "max_depth": 6, "min_samples_leaf": 50},
-                                                {"n_estimators": 300, "max_depth": 10, "min_samples_leaf": 20}]},
+    "TH_RF": {"name": "Random Forest", "grid": [{"n_estimators": 200, "max_depth": 6, "min_samples_leaf": 50, "class_weight": None},
+                                                {"n_estimators": 300, "max_depth": 10, "min_samples_leaf": 20, "class_weight": None}]},
     "TH_SVM": {"name": "SVM (skalowanie + kalibracja chronologiczna)", "grid": [{"kernel": "linear", "C": 0.1}, {"kernel": "linear", "C": 1.0},
                                                                                   {"kernel": "rbf", "C": 1.0}]},
 }
 RBF_MAX_ROWS = 6000
+PRIOR_FALLBACK = "PRIOR_FALLBACK"           # SVMProb.used_kernel when the fit fell back to the class frequencies (no SVM model)
 
 
 class SVMProb:
@@ -58,12 +65,17 @@ class SVMProb:
         kern = self.kernel if (self.kernel != "rbf" or cut <= RBF_MAX_ROWS) else "linear"
         svm = LinearSVC(C=self.C, max_iter=5000, random_state=self.seed) if kern == "linear" else SVC(C=self.C, kernel="rbf", gamma="scale",
                                                                                                     random_state=self.seed)
-        self.used_kernel = kern
         Xa, ya, Xb, yb = X[:cut], y[:cut], X[cut:], y[cut:]
         if len(np.unique(ya)) < 2 or len(yb) < 5 or len(np.unique(yb)) < 2:
+            # 1.46 (I0674): the model IS the class frequencies (baseline) - marked, not reported as the requested kernel
             self.svm, self.cal, self.prior = None, None, Prior().fit(X, y)
             self.classes_ = np.arange(3)
+            self.used_kernel = PRIOR_FALLBACK
+            self.fallback_reason = (f"część SVM ma {len(np.unique(ya))} klas(y)" if len(np.unique(ya)) < 2 else
+                                    f"blok kalibracyjny (ostatnie {round(100 * self.calib_share)} % okna): {len(yb)} wierszy, "
+                                    f"{len(np.unique(yb))} klas(y) – potrzeba >= 5 wierszy i >= 2 klas")
             return self
+        self.used_kernel, self.fallback_reason = kern, None
         self.svm = make_pipeline(StandardScaler(), svm).fit(Xa, ya)
         self.cal = LogisticRegression(max_iter=500).fit(self._df(Xb), yb)
         self.classes_ = self.cal.classes_
@@ -123,8 +135,9 @@ def make(model_id: str, params: dict, seed: int):
                              random_state=seed, n_jobs=1, verbosity=0)
     if model_id == "TH_RF":
         from sklearn.ensemble import RandomForestClassifier
+        # 1.46 (I0667): class_weight from the grid point (None); params without the key = the training of <= 1.46 (balanced_subsample)
         return RandomForestClassifier(n_estimators=params["n_estimators"], max_depth=params["max_depth"], min_samples_leaf=params["min_samples_leaf"],
-                                      class_weight="balanced_subsample", oob_score=False, n_jobs=1, random_state=seed)
+                                      class_weight=params.get("class_weight", "balanced_subsample"), oob_score=False, n_jobs=1, random_state=seed)
     if model_id == "TH_SVM":
         if params.get("kernel") not in ("linear", "rbf"):
             raise ValueError("TH_SVM: kernel linear|rbf")
@@ -156,7 +169,7 @@ def proba3(m, X) -> np.ndarray:
 
 # ------------------------------------------------------------------------------------------------ metrics
 def logloss(p, y) -> float:
-    return float(-np.mean(np.log(np.clip(p[np.arange(len(y)), y], 1e-12, 1.0))))
+    return N.log_loss_multiclass(p, y, 1e-12)          # 1.46 arch (I0054): the shared implementation, bit-for-bit the same formula
 
 
 def brier(p, y) -> float:
@@ -165,19 +178,8 @@ def brier(p, y) -> float:
 
 
 def ece(p, y, bins: int = 10) -> dict:
-    conf = p.max(axis=1)
-    pred = p.argmax(axis=1)
-    hit = (pred == y).astype(float)
-    edges = np.linspace(1 / 3, 1.0, bins + 1)
-    tot, rows = 0.0, []
-    for a, b in zip(edges[:-1], edges[1:]):
-        m = (conf >= a) & (conf < b if b < 1 else conf <= b)
-        if m.sum():
-            gap = abs(hit[m].mean() - conf[m].mean())
-            tot += m.sum() / len(y) * gap
-            rows.append({"from": round(float(a), 3), "to": round(float(b), 3), "n": int(m.sum()), "confidence": round(float(conf[m].mean()), 4),
-                         "accuracy": round(float(hit[m].mean()), 4)})
-    return {"ece": round(float(tot), 5), "bins": rows}
+    """Top-label ECE on the confidence max p in [1/3, 1] - quant/numeric.ece_confidence (1.46 arch, I0054: one implementation)."""
+    return N.ece_confidence(p, y, bins, 1 / 3)
 
 
 def metrics(p, y) -> dict:
@@ -249,6 +251,8 @@ def train_one(model_id: str, ds: dict, sp: dict, seed: int = 7, progress=None, c
             base = Prior().fit(X[f["train"]], y[f["train"]]).predict_proba(X[f["test"]])
             mm = metrics(p, y[f["test"]])
             mm["baseline_log_loss"] = round(logloss(base, y[f["test"]]), 5)
+            if model_id == "TH_SVM":
+                mm["svm_prior_fallback"] = getattr(m, "used_kernel", None) == PRIOR_FALLBACK
             fold_m.append(mm)
             oof_p.append(p)
             oof_i.append(f["test"])
@@ -290,6 +294,11 @@ def train_one(model_id: str, ds: dict, sp: dict, seed: int = 7, progress=None, c
         res["feature_importance_holdout"] = _perm_importance(final, X[hold], y[hold], ds.get("names"), seed)
     if model_id == "TH_SVM":
         res["svm_kernel_used"] = getattr(final, "used_kernel", None)
+        # 1.46 (I0674): fallback to the class frequencies is visible (final model + walk-forward folds of the chosen params);
+        # pipeline.stage_train does not save a TH_SVM package whose final model is the baseline
+        res["svm_fallback"] = res["svm_kernel_used"] == PRIOR_FALLBACK
+        res["svm_fallback_reason"] = getattr(final, "fallback_reason", None)
+        res["svm_fallback_folds"] = f"{sum(1 for m in fm if m.get('svm_prior_fallback'))}/{len(fm)}"
     return {"result": res, "model": final}
 
 

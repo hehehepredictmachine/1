@@ -18,7 +18,13 @@ from pathlib import Path
 
 from . import paths
 
-ALLOWED = ("ANTHROPIC_API_KEY", "TELEGRAM_BOT_TOKEN", "FRED_API_KEY", "MT5_PASSWORD", "COINGLASS_API_KEY")
+# 1.46 arch (I0118): the ONE source of the secret / variable name lists (before: copies with different sets in exports/core, api/app.py and
+# __main__._load_dotenv). tools/verify_release.py keeps its own SUPERSET (+ the license server secrets) - it runs without the backend.
+ALLOWED = ("ANTHROPIC_API_KEY", "TELEGRAM_BOT_TOKEN", "FRED_API_KEY", "MT5_PASSWORD", "COINGLASS_API_KEY")   # every secret of this store
+# settable through POST /api/v1/secrets (COINGLASS_API_KEY has its own route under the liquidity heatmap settings)
+UI_SETTABLE = ("TELEGRAM_BOT_TOKEN", "FRED_API_KEY", "ANTHROPIC_API_KEY", "MT5_PASSWORD")
+# the ONLY variables __main__._load_dotenv takes from <root>/.env (deliberately without MT5_PASSWORD / COINGLASS_API_KEY)
+DOTENV_VARS = ("ANTHROPIC_API_KEY", "ANTHROPIC_MODEL", "MASTERQUO_DATA_DIR", "FRED_API_KEY", "TELEGRAM_BOT_TOKEN")
 
 
 def _dpapi(data: bytes, protect: bool) -> bytes:

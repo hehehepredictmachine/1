@@ -123,6 +123,15 @@ class SHStore:
             args.append(symbol)
         return self.db.query(q + " ORDER BY created_at DESC LIMIT ?", (*args, limit))
 
+    def recent_signals_with_plan(self, since: float) -> list[dict]:
+        """w2 (I0825): signals since `since` that produced a plan, in ANY status (a READY that expired after its TTL still counts for the
+        duplicate window) - one query, the columns of recent_signals()."""
+        return self.db.query(
+            "SELECT s.signal_id, s.strategy, COALESCE(s.strategy_id, CASE s.strategy WHEN 'SCALPING' THEN 'LEGACY_SCALPING' WHEN 'HEDGING' THEN "
+            "'LEGACY_HEDGING' ELSE s.strategy END) AS strategy_id, s.signal_tf, s.instrument, s.symbol, s.side, s.status, s.status_reason, "
+            "s.created_at, s.valid_until FROM sh_signals s WHERE s.created_at >= ? AND EXISTS (SELECT 1 FROM sh_plans p WHERE p.signal_id = s.signal_id) "
+            "ORDER BY s.created_at DESC", (since,))
+
     def signals_with_levels(self, rows: list[dict]) -> list[dict]:
         """CHARTS K3: list rows + stored levels and the outcome of the plan made from the signal (state, TP legs done, close time, R).
         Levels / outcome absent in the record -> null (old rows, signals without a plan)."""
@@ -210,16 +219,26 @@ class SHStore:
         return {r["strategy"]: r["t"] for r in self.db.query(
             "SELECT strategy, MAX(closed_at) AS t FROM sh_plans WHERE symbol=? AND closed_at IS NOT NULL GROUP BY strategy", (symbol,))}
 
-    def realized_since(self, since: float) -> float:
+    def realized_since(self, since: float, exec_mode: str | None = None, account_key: str | None = None) -> float:
+        """Net result of the plans closed since `since`; w2 (I0746): optional filters by execution mode / account (default: all, as before)."""
+        q, args = "SELECT result FROM sh_plans WHERE closed_at >= ? AND result IS NOT NULL", [since]
+        if exec_mode:
+            q += " AND exec_mode=?"
+            args.append(exec_mode)
+        if account_key:
+            q += " AND account_key=?"
+            args.append(account_key)
         tot = 0.0
-        for r in self.db.query("SELECT result FROM sh_plans WHERE closed_at >= ? AND result IS NOT NULL", (since,)):
+        for r in self.db.query(q, args):
             tot += float((json.loads(r["result"]) or {}).get("net_money") or 0.0)
         return tot
 
     # actions (idempotency) ----------------------------------------------------------------------------------------------
     def claim_action(self, action: dict, now: float | None = None) -> dict:
         """Claim an action id before touching the terminal. Returns {claimed: True} for a new id (or a retry of a REJECTED one),
-        otherwise the stored row: DONE -> the stored result is reused, SENT/UNKNOWN -> never resent (reconciliation decides).
+        otherwise the stored row: DONE -> the stored result is reused, SENT/UNKNOWN -> never resent. w2 (I0111) what really settles them:
+        the volume of a close by reconcile (volume drop / closing deal), an entry by adoption (recover / adopt_pending); a close / modify left
+        UNKNOWN is not retried - it is only shown (SHService._watch: state 'unknown_actions' + log ACTIONS_UNKNOWN).
         w2 (I0739): a NOT_SENT management action (certainly not sent) may be claimed again like a REJECTED one - never an OPEN_* entry."""
         now = time.time() if now is None else now
         with self.db.tx() as c:
@@ -241,7 +260,12 @@ class SHStore:
     def actions(self, plan_id: str) -> list[dict]:
         return self.db.query("SELECT * FROM sh_actions WHERE plan_id=? ORDER BY created_at", (plan_id,))
 
-    def unknown_actions(self) -> list[dict]:
+    def unknown_actions(self, open_only: bool = False) -> list[dict]:
+        """Actions whose outcome is unknown (SENT / UNKNOWN). w2 (I0111): open_only = only of plans still open (one JOIN, no full scan
+        of the history) - read by the SH status, never resent or resolved."""
+        if open_only:
+            return self.db.query("SELECT a.* FROM sh_actions a JOIN sh_plans p ON p.plan_id = a.plan_id WHERE a.status IN ('SENT','UNKNOWN') "
+                                 "AND p.state NOT IN ('CLOSED','ERROR_CLOSED','REJECTED') ORDER BY a.created_at")
         return self.db.query("SELECT * FROM sh_actions WHERE status IN ('SENT','UNKNOWN')")
 
     # ownership -----------------------------------------------------------------------------------------------------------

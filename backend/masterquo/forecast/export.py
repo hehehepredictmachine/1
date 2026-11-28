@@ -48,20 +48,22 @@ def _measure_offset(mt5, sym: str, server: str | None) -> tuple[float | None, st
 
 
 def _gaps(times: list[int], step: int) -> dict:
-    """Classify gaps between consecutive bars (UTC): weekend, short daily break (<= 2 h), other (listed)."""
+    """Classify gaps between consecutive bars (UTC): weekend, short daily break (<= 2 h), other (listed). 1.46 (I0051): the shared
+    classifier data/quality.classify_gap_series with the parameters of this report (unchanged): any distance != step is a gap, weekend =
+    >= 40 h covering a Saturday (daily probe), daily break = <= 2 h (no recurrence required)."""
+    from ..data.quality import classify_gap_series
+    r = classify_gap_series(times, step, weekend_min_s=40 * 3600, weekend_probe_s=86400, break_max_s=2 * 3600, gap_if_not_step=True)
     out = {"weekend": 0, "daily_break_le_2h": 0, "other": 0, "other_list": []}
-    for a, b in zip(times, times[1:]):
-        if b - a == step:
-            continue
-        da, db = datetime.fromtimestamp(a, timezone.utc), datetime.fromtimestamp(b, timezone.utc)
-        if db - da >= timedelta(hours=40) and any((da + timedelta(days=k)).weekday() == 5 for k in range((db - da).days + 1)):
+    for a, b, kind, miss in r["gaps"]:
+        if kind == "WEEKEND":
             out["weekend"] += 1
-        elif b - a <= 2 * 3600 + step:
+        elif kind == "BREAK":
             out["daily_break_le_2h"] += 1
         else:
             out["other"] += 1
             if len(out["other_list"]) < 60:
-                out["other_list"].append({"after_utc": iso(da), "next_utc": iso(db), "missing_bars": (b - a) // step - 1})
+                out["other_list"].append({"after_utc": iso(datetime.fromtimestamp(a, timezone.utc)), "next_utc": iso(datetime.fromtimestamp(b, timezone.utc)),
+                                          "missing_bars": miss})
     return out
 
 
@@ -349,10 +351,66 @@ def export_candles(months: int = 12, out_dir: str | None = None, dst_model: str 
     size choice, at most 31 days). Progress, result and failures are in EXPORT_STATUS.json; source_metadata.json is written last, so
     an interrupted export is never read as complete. A repeated export into the same folder continues the same frozen range."""
     try:
-        return _export(months, out_dir, dst_model, timeframes, kind, instrument, symbol, date_from, date_to, tick_days)
+        with _export_lock(instrument):
+            return _export(months, out_dir, dst_model, timeframes, kind, instrument, symbol, date_from, date_to, tick_days)
     except ExportError as exc:
         print(f"[BLAD] {exc}")
         return exc.code
+
+
+EXPORT_LOCK_WAIT_S = 600.0        # wait for another MT5 history export before refusing (exit code 9)
+EXPORT_LOCK_HEARTBEAT_S = 30.0    # studio.lock.Lock treats a heartbeat older than 120 s as a stale (dead) owner
+
+
+class _export_lock:
+    """1.46 (I0063): the SAME cross-process lock as marketdata/export.run and the Studio queue (data/locks/pmw_export.lock) - export_candles
+    (training runner, panel export job, 11_/16_ .bat) took none, so two MT5 history exports could run at once. Waits up to
+    EXPORT_LOCK_WAIT_S for another export, then refuses with code 9 (BUSY); a heartbeat thread keeps the lock fresh during a long export.
+    Inside a Studio job (MQ_STUDIO_DATA_DIR) the Studio queue already holds it (as in marketdata/export.run)."""
+
+    def __init__(self, instrument: str | None):
+        self.job = f"export_candles:{instrument or 'XAUUSD'}"
+        self.lk, self.stop = None, None
+
+    def __enter__(self):
+        if os.environ.get("MQ_STUDIO_DATA_DIR"):
+            return self
+        import threading
+
+        from ..paths import data_dir
+        from ..studio.lock import Lock
+        self.lk = Lock(data_dir() / "locks" / "pmw_export.lock", app="PepeMarketWizard-export")
+        end, said = time.monotonic() + EXPORT_LOCK_WAIT_S, False
+        while True:
+            ok, owner = self.lk.acquire(self.job)
+            if ok:
+                break
+            from ..marketdata.export import _owner_name
+            who = f"{_owner_name((owner or {}).get('app'))}: {(owner or {}).get('job')}"
+            if time.monotonic() >= end:
+                self.lk = None
+                raise ExportError(9, f"BUSY: trwa inny eksport historii z MT5 ({who}) – spróbuj ponownie po jego zakończeniu.")
+            if not said:
+                print(f"[..] Czekam na zakończenie innego eksportu ({who}), najwyżej {EXPORT_LOCK_WAIT_S / 60:.0f} min…", flush=True)
+                said = True
+            time.sleep(min(5.0, max(0.0, end - time.monotonic())))
+        self.stop = threading.Event()
+
+        def beat():
+            while not self.stop.wait(EXPORT_LOCK_HEARTBEAT_S):
+                try:
+                    self.lk.heartbeat()
+                except OSError:
+                    pass
+        threading.Thread(target=beat, name="export-lock-heartbeat", daemon=True).start()
+        return self
+
+    def __exit__(self, *exc):
+        if self.stop is not None:
+            self.stop.set()
+        if self.lk is not None:
+            self.lk.release()
+        return False
 
 
 def _fail_status(st: _Status | None, code: int, msg: str) -> ExportError:

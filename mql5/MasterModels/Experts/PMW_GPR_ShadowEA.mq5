@@ -8,6 +8,10 @@
 //| restart - unscored ones are written as UNSCORED_RESTART on deinit.|
 //| Files: MQL5\Files\PMW\gpr_forecasts.csv, PMW\gpr_scored.csv.      |
 //| No OrderSend / CTrade / trade include anywhere in this program.  |
+//| Start hyper-parameters before the first fit = GPRConfig defaults  |
+//| (ell 4, signal 0.1, noise 0.01 - 1.46 arch I0491). Python live    |
+//| (mm/service) re-tunes on EVERY call, this EA every InpRetuneEvery |
+//| closed bars: forecasts match the bot only on re-tune bars.        |
 //+------------------------------------------------------------------+
 #property strict
 #include <PMW\PMW_GPR.mqh>
@@ -85,7 +89,7 @@ void OnTick()
    if(PmwGprSamples(c, T, InpWindow, InpHorizon, x, y))
      {
       bool tune = InpAutoTune && g_since >= InpRetuneEvery;
-      double e0 = g_gp.fit.valid ? g_gp.fit.ell : 4.0, s0 = g_gp.fit.valid ? g_gp.fit.sv : 0.1, n0 = g_gp.fit.valid ? g_gp.fit.nv : 0.5;
+      double e0 = g_gp.fit.valid ? g_gp.fit.ell : 4.0, s0 = g_gp.fit.valid ? g_gp.fit.sv : 0.1, n0 = g_gp.fit.valid ? g_gp.fit.nv : 0.01;
       if(g_gp.Refit(x, y, tune, e0, s0, n0)) { fit_status = "FITTED"; g_since = tune ? 0 : g_since + 1; }
      }
    double m = 0, lv = 0, ov = 0;

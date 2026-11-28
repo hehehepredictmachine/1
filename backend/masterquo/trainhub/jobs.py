@@ -288,7 +288,9 @@ class TrainingCenter:
                                          stderr=subprocess.STDOUT, cwd=str(paths.ROOT_DIR / "backend"), **kw)
             try:
                 from ..training.core import _job_limit, ram_budget_mb
-                _job_limit(self.proc, ram_budget_mb())            # arch146 I0069: the one RAM budget (was its own default)
+                # arch146 I0069 / 1.46 arch I0117: the one RAM budget of a training child (was 6 GB here): MQ_RAM_BUDGET_MB -> profile
+                # PELNY_TRENING -> runtimes.DEFAULT_RAM_BUDGET_MB
+                _job_limit(self.proc, ram_budget_mb())
             except Exception:  # noqa: BLE001
                 pass
             update(self.db, jid, pid=self.proc.pid)

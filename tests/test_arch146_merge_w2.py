@@ -72,5 +72,18 @@ class TestNotSentCloseIsInFlight(_Base):
         self.assertFalse(self.svc._primary_close_free(self.row, b))                            # przed scaleniem: True (drugie zamknięcie)
 
 
+class TestBreakoutParityNeedsComparison(unittest.TestCase):
+    """mm/fixtures._events_equal after the mql5 + mm merge: zone bounds that cannot be compared never give a PASS."""
+
+    def test_malformed_native_rows_are_not_equal(self):
+        from masterquo.mm import fixtures as FX
+        ref = [["100", "UP", "1.0", "2.0"]]
+        self.assertTrue(FX._events_equal(ref, [[100, "UP", 1.0, 2.0]], 1e-9))
+        self.assertFalse(FX._events_equal(ref, [[100, "UP"]], 1e-9))                 # before: True (bounds never compared)
+        self.assertFalse(FX._events_equal(ref, [[100, "UP", "x", "y"]], 1e-9))       # before: True
+        self.assertTrue(FX._events_equal([], [], 1e-9))
+        self.assertFalse(FX._events_equal(ref, None, 1e-9))
+
+
 if __name__ == "__main__":
     unittest.main()

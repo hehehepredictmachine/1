@@ -166,6 +166,18 @@ def installer_required(read, files) -> set[str]:
     return need
 
 
+STUDIO_LAUNCHERS = ("36_STUDIO.bat",)
+_SET_BOT_DIR = re.compile(rb'^\s*set\s+"?MQ_BOT_DATA_DIR=', re.IGNORECASE | re.MULTILINE)
+
+
+def studio_launcher_problems(read, files) -> list[str]:
+    """1.46 (I0065): a Studio launcher must not set MQ_BOT_DATA_DIR - 36_STUDIO.bat forced <program>\\data, while the bot of the DESKTOP
+    edition uses %LOCALAPPDATA%\\PepeMarketWizard\\data (mq_instruments.default_data_dir): the shared export lock and the hand-over to the
+    bot went to the wrong folder. Studio finds the bot folder with the bot's own rule (studio/settings.bot_data_dir)."""
+    return [f"{r}: ustawia MQ_BOT_DATA_DIR na sztywno (Studio ma użyć reguły bota default_data_dir)" for r in STUDIO_LAUNCHERS
+            if r in files and _SET_BOT_DIR.search(read(r))]
+
+
 # 1.44.0 paczka KLIENTA (nazwa z „KLIENT”): bez generatora licencji, funkcji podpisywania i klucza prywatnego, z kluczem publicznym wydawcy.
 OWNER_ONLY = ("backend/masterquo/licensing/owner.py", "backend/masterquo/licensing/signing.py", "backend/masterquo/api/owner_routes.py",
               "frontend/src/features/system/LicenseGeneratorPanel.tsx", "tests/test_licensing.py", "tests/test_license_client.py",
@@ -310,6 +322,7 @@ def _check_zip(path: Path, top: str | None, problems: list[str]) -> None:
         missing = sorted(n for n in installer_required(lambda r: z.read(files[r]), files) - set(manifests) if n not in files)
         if missing:
             problems.append(f"brak plików wymaganych przez instalatory / launcher: {missing[:8]}")
+        problems += studio_launcher_problems(lambda r: z.read(files[r]), files)
         client = "KLIENT" in path.name.upper()
         if client:
             problems += client_problems(lambda r: z.read(files[r]), list(files))
