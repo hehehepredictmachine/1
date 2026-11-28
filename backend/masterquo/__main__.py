@@ -228,10 +228,10 @@ def cmd_stop(args) -> int:
     return 4
 
 
-def _load_dotenv() -> None:
+def _load_dotenv(skip: tuple[str, ...] = ()) -> None:
     """Optional <root>/.env (never packaged). Only secrets_store.DOTENV_VARS are taken (ANTHROPIC_API_KEY, ANTHROPIC_MODEL,
     MASTERQUO_DATA_DIR, FRED_API_KEY, TELEGRAM_BOT_TOKEN - 1.46 arch I0118: one list, the same as before); a variable already set in the
-    environment wins."""
+    environment wins. `skip`: names this entry point never takes from .env (the Studio: MASTERQUO_DATA_DIR)."""
     from .secrets_store import DOTENV_VARS
     f = paths.ROOT_DIR / ".env"
     if not f.exists():
@@ -241,7 +241,7 @@ def _load_dotenv() -> None:
         if not line or line.startswith("#") or "=" not in line:
             continue
         k, v = (x.strip() for x in line.split("=", 1))
-        if k in DOTENV_VARS and v and not os.environ.get(k):
+        if k in DOTENV_VARS and k not in skip and v and not os.environ.get(k):
             os.environ[k] = v.strip('"')
 
 
@@ -264,6 +264,28 @@ def cmd_profile(name: str) -> int:
     store.update({"active": {"profile": name}})
     print(f"[OK] Profil wykrywania: {name}. Tryb wykonywania zleceń i limity bez zmian. Uruchom 03_START_MASTERQUO.bat.")
     return 0
+
+
+def _studio_port(rest: list[str]) -> int | None:
+    """1.46 (I0137): `studio [--port N]` (also --port=N). Was read by hand (int(argv[argv.index('--port') + 1])) - a missing or non-numeric
+    value ended in a traceback. N: integer 0-65535 (0 = the Studio default, as serve() treated it before); other arguments are ignored
+    as before. ValueError carries the Polish message for the console (exit code 2)."""
+    rng = "liczba całkowita 0-65535 (0 = domyślny port Studio)"
+    ap = argparse.ArgumentParser(prog="masterquo studio", add_help=False, exit_on_error=False)
+    ap.add_argument("--port", default=None)
+    try:
+        ns, _ignored = ap.parse_known_args(rest)
+    except (argparse.ArgumentError, SystemExit):
+        raise ValueError(f"--port wymaga wartości: {rng}, np. --port 8780") from None
+    if ns.port is None:
+        return None
+    try:
+        p = int(ns.port)
+    except ValueError:
+        raise ValueError(f"--port: oczekiwana {rng}, podano {ns.port!r}") from None
+    if not 0 <= p <= 65535:
+        raise ValueError(f"--port poza zakresem: {rng}, podano {p}")
+    return p
 
 
 def main(argv=None) -> int:
@@ -306,6 +328,14 @@ def main(argv=None) -> int:
         from .montecarlo.cli import main as mc_main
         return mc_main(argv[1:])
     if argv[:1] == ["studio"]:                       # 1.33 Pepe Data & Training Studio - separate app (own port / data dir, no bot Runtime)
+        # 1.46 (I0137): .env like every other branch, EXCEPT MASTERQUO_DATA_DIR - there it is the BOT's folder, while the Studio's own
+        # registries / logs live in its data_studio (studio/app.create_app setdefault; 36_STUDIO.bat and the desktop set it themselves)
+        _load_dotenv(skip=("MASTERQUO_DATA_DIR",))
+        try:
+            port = _studio_port(argv[1:])
+        except ValueError as e:
+            print(f"[PepeTrainingStudio] {e}", file=sys.stderr)
+            return 2
         from .licensing.gate import LicenseGate      # 1.44.0: wersja klienta – Studio tylko z ważną licencją (aktywacja w głównej aplikacji)
         lg = LicenseGate()
         st = lg.evaluate(refresh_net=True)
@@ -313,7 +343,6 @@ def main(argv=None) -> int:
             print(f"[PepeTrainingStudio] Brak ważnej licencji: {st.get('message')} Aktywuj klucz w aplikacji Apollo23.", file=sys.stderr)
             return 6
         from .studio.app import serve
-        port = int(argv[argv.index("--port") + 1]) if "--port" in argv else None
         return serve(port)
     if argv[:1] == ["models"]:                       # 1.46 arch: ONE health check of every model producer (modelhub/check.py)
         from .modelhub.check import main as models_main
@@ -371,20 +400,26 @@ def main(argv=None) -> int:
     sr.add_argument("--cost-stress", type=float, default=1.0, help="mnożnik kosztów zmiennych (np. 1.5 = +50%%)")
     sr.add_argument("--margin-mode", choices=["HEDGING", "NETTING"], default="HEDGING")
     sr.add_argument("--variants", action="store_true", help="porównanie wariantów z config/scalp_variants_v1.json (win ratio i expectancy obok siebie)")
-    ta = sub.add_parser("train-all", help="zgodność z 22_TRENUJ_WSZYSTKIE_MODELE.bat: ten sam mechanizm co `training run` (XAUUSD, potem BTC)")
+    # 1.46 (I0132): help = the real subset (22_*.bat runs `training run` with every task); scalp_B/C come with scalp_A (one scalp_train)
+    from .train_all import NOT_IN_TRAIN_ALL, TRAIN_ALL_TASKS
+    _ta_txt = ("podzbiór `training run` (XAUUSD, potem BTC): "
+               + ", ".join("scalp_A (+ scalp_B/C – ten sam proces scalp_train)" if t == "scalp_A" else t for t, _ in TRAIN_ALL_TASKS)
+               + " (+ eksport, kontrola, aktywacja, bot). Tylko `training run` bez --tasks (tak robi 22_TRENUJ_WSZYSTKIE_MODELE.bat) "
+               "trenuje też: " + ", ".join(NOT_IN_TRAIN_ALL) + ".")
+    ta = sub.add_parser("train-all", help=_ta_txt, description=_ta_txt)
     ta.add_argument("--months", type=int, default=None, help="historia (miesiące) – jeden eksport dla wszystkich rodzin modeli")
-    ta.add_argument("--scalp-months", type=int, default=None, help="(zgodność; historia jest wspólna – --months)")
+    ta.add_argument("--scalp-months", type=int, default=None, help="(przestarzałe, ignorowane – historia jest wspólna: --months)")
     ta.add_argument("--commission", type=float, default=None, help="prowizja XAUUSD na 1 lot na stronę (BTC: --commission-btc albo z historii transakcji)")
     ta.add_argument("--commission-btc", type=float, default=None)
     ta.add_argument("--instruments", default="XAUUSD,BTC")
     ta.add_argument("--ml-days", type=int, default=None, help="dni historii dla próbek ML (backfill)")
     ta.add_argument("--lab-bars", type=int, default=None, help="liczba świec M5 na aktywo dla modeli lab")
     ta.add_argument("--min-events", type=int, default=None)
-    ta.add_argument("--mt5-wait", type=float, default=300, help="ile sekund czekać na połączenie MT5")
+    ta.add_argument("--mt5-wait", type=float, default=None, help="(przestarzałe, ignorowane – połączenie MT5 sprawdza `training run`)")
     ta.add_argument("--ml-no-approx", action="store_true", help="nie używaj próbek odtworzonych z historii (APPROX) w treningu ML")
-    ta.add_argument("--skip-candles", action="store_true")
-    ta.add_argument("--skip-ml", action="store_true")
-    ta.add_argument("--skip-lab", action="store_true")
+    ta.add_argument("--skip-candles", action="store_true", help="pomiń forecast, scalp_A/B/C, indicator_context")
+    ta.add_argument("--skip-ml", action="store_true", help="pomiń ml, ml_scalp")
+    ta.add_argument("--skip-lab", action="store_true", help="pomiń lab, neural_scalp, structure_intelligence, flow_context, context_indicators")
     ta.add_argument("--quick", action="store_true", help="test ścieżki: mniej rodzin modeli")
     ta.add_argument("--demo", action="store_true", help="tylko test: uruchamia bota na danych syntetycznych, jeśli nie działa")
     iv = sub.add_parser("import-iv", help="import zmienności implikowanej (CSV/JSON, format: docs/STRATEGIA_WALLS_RANGE_PATTERNS_PL.md)")

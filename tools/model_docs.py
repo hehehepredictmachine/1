@@ -10,8 +10,10 @@
 """
 from __future__ import annotations
 
+import atexit
 import json
 import os
+import shutil
 import sys
 import tempfile
 from pathlib import Path
@@ -40,12 +42,41 @@ def role_rules(f: dict) -> str:
             "– brak / nieświeża / przeciwna prognoza blokuje nowe wejście. Żadna rola nie tworzy wejścia ani nie podnosi WAIT.")
 
 
+def _offline_env(var: str, prefix: str) -> None:
+    """Temporary folder for `var` only when it is not set - `os.environ.setdefault(var, tempfile.mkdtemp())` created (and left behind)
+    a folder on every call, also with the variable set. The folder created here is removed when the process exits."""
+    if os.environ.get(var):
+        return
+    d = tempfile.mkdtemp(prefix=prefix)
+    os.environ[var] = d
+    atexit.register(shutil.rmtree, d, ignore_errors=True)
+
+
 def _catalog():
-    os.environ.setdefault("MASTERQUO_DATA_DIR", tempfile.mkdtemp(prefix="pmw_docs_"))
-    os.environ.setdefault("PMW_FAMILIES_DIR", tempfile.mkdtemp(prefix="pmw_docs_fam_"))
+    _offline_env("MASTERQUO_DATA_DIR", "pmw_docs_")
+    _offline_env("PMW_FAMILIES_DIR", "pmw_docs_fam_")
     from masterquo.config import ConfigStore
     from masterquo.modelhub.families.service import FamilyService
     return FamilyService(ConfigStore()).catalog("XAUUSD")
+
+
+def _registry() -> dict:
+    """1.46 (I0012): canonical registry (quant/inventory.build(), offline) by canonical id - the source of TF / horizon of a family that
+    is only an ALIAS of another producer (TH_RF/TH_SVM/TH_XGB = trainhub, SEQ_GRU_EVENT = MM event engine)."""
+    from masterquo.quant import inventory as QI
+    return {e["id"]: e for e in QI.build()["entries"]}
+
+
+def _tf_h(f: dict, reg: dict, empty: str = "brak (pomiar stanu)") -> str:
+    """'TF / horizons' of a family card. An alias family (quant/ids resolves it to a non-family producer) takes both from the registry
+    entry of that producer - its adapter declares one illustrative TF/horizon (TH_XGB 'M5 / 6', SEQ_GRU_EVENT 'EVENT / 1') while the
+    producer trains per package / per event unit. A family of its own keeps its declared TF and horizons."""
+    from masterquo.quant import ids as I
+    cid = I.resolve(f["id"])
+    e = reg.get(cid) if cid and not cid.startswith("family:") else None
+    if e is not None:
+        return f"{', '.join(e.get('timeframes') or []) or f.get('tf') or '–'} / {e.get('horizon') or empty}"
+    return f"{f.get('tf') or '–'} / {', '.join(map(str, f.get('horizons') or [])) or empty}"
 
 
 def _req(d: dict | None) -> str:
@@ -72,6 +103,7 @@ def main() -> int:
     mat = REG.matrix()
     (ROOT / "docs" / "MODEL_DATA_MATRIX.json").write_text(json.dumps(mat, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     cat = _catalog()
+    reg = _registry()
     # ---------------------------------------------------------------- integration map
     L = ["# Mapa integracji modeli – 1.33.0 (PMW-FAM-1)", "", "Wygenerowane przez `tools/model_docs.py` z katalogu `FamilyService.catalog()`.", "",
          f"Role: {ROLE_RULES}", "",
@@ -79,7 +111,7 @@ def main() -> int:
           "rozkładzie kierunku, CONTEXT_VOL = scenariusz zmienności w widoku ryzyka SH, NONE = rola odrzucana (ASSIST_NO_RECEIVER)."), "",
          "| Rodzina | Nazwa | Zadanie / jednostka | TF / horyzonty | Środowisko | Zależności | Odbiorcy | ASSIST |", "|---|---|---|---|---|---|---|---|"]
     for f in cat:
-        L.append(f"| `{f['id']}` | {f['name']} | {f['task_type']} / {f['unit']} | {f.get('tf') or '–'} / {', '.join(map(str, f.get('horizons') or [])) or '–'} | "
+        L.append(f"| `{f['id']}` | {f['name']} | {f['task_type']} / {f['unit']} | {_tf_h(f, reg, '–')} | "
                  f"{f['runtime']} | {', '.join(f.get('deps') or []) or '–'} | {'<br>'.join(f.get('receivers') or [])}{_planned(f, '<br>')} | {f.get('assist_effect') or 'NONE'} |")
     L += ["", "## Gdzie prognozy trafiają w działającym bocie", "",
           "* **SCALPING / HEDGING** – `SHService.evaluate` → `FamilyService.setup_context` (kontekst w setupie, `family_context`) i "
@@ -116,7 +148,7 @@ def main() -> int:
         L = [f"# Karta modelu – {f['id']}", "", f"**{f['name']}**", "",
              "| Pole | Wartość |", "|---|---|",
              f"| Rodzaj | {f['kind']} ({f.get('fit_label')}) |", f"| Zadanie | {f['task']} – typ PMW-PRED-2 `{f['task_type']}`, jednostka `{f['unit']}` |",
-             f"| Interwał / horyzonty | {f.get('tf') or '–'} / {', '.join(map(str, f.get('horizons') or [])) or 'brak (pomiar stanu)'} |",
+             f"| Interwał / horyzonty | {_tf_h(f, reg)} |",
              f"| Środowisko | {f['runtime']} ({', '.join(f.get('deps') or []) or 'bez dodatkowych bibliotek'}) |",
              f"| Dane | {_req(f.get('data_requirements'))} |", f"| Odbiorcy | {', '.join(f.get('receivers') or [])} |",
              *([f"| Odbiorcy planowani | {', '.join(f['planned_receivers'])} – niepodłączeni w 1.46 (brak odbiorcy w kodzie) |"]

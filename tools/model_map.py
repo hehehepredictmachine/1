@@ -1,14 +1,31 @@
-"""Generates MAPA_MODELI_I_TRENINGU.md and MAPA_MODELI_I_TRENINGU.json (one source of truth: ELEMENTS below).
+"""Generates MAPA_MODELI_I_TRENINGU.md and MAPA_MODELI_I_TRENINGU.json from the CANONICAL registry.
+
+1.46 (I0012): the list of components is no longer typed by hand - it is quant/inventory.build() (PMW-QUANT-INV-1: sh/models.REGISTRY,
+modelhub families, trainhub/learn.MODELS, mm/inventory, lab/SI/flow registries, quant/ids.EXTRA_PRODUCERS; canonical ids and aliases
+from quant/ids.py - the same source as docs/quant/INVENTORY.*). ELEMENTS below are only the DESCRIPTIVE overlay (task / data / label /
+trainer texts) attached to the registry entry named by _canon(); TF and horizon come from the registry whenever it has them. A registry
+entry without an overlay gets the registry's own fields; an overlay that names no registry entry is listed separately as OUTSIDE the
+registry (never dropped silently, never invented). Schema mq-model-map-2 = mq-model-map-1 element keys + aliases / legacy_ids / category /
+registry_source, plus `outside_registry`.
 
 Status values describe the CODE state of this package (implemented / integrated / tested on synthetic data); none of them is a
 statement about model quality on real data - that comes only from a training run's report (data/training/runs/<run>/report.html).
+
+  python tools/model_map.py      (bot's Python environment; offline - a temporary data folder, no running bot, no artifact touched)
 """
 from __future__ import annotations
 
+import atexit
 import json
+import os
+import shutil
+import sys
+import tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT / "backend") not in sys.path:
+    sys.path.insert(0, str(ROOT / "backend"))
 BOTH = ["XAUUSD", "BTC"]
 LAB_TASK = "potrójna bariera: TP 1.5×ATR przed SL 1.0×ATR w 12 świecach M5 (LBL-TB-1.0.0); SL i TP w tej samej świecy → SL (konserwatywnie)"
 LAB_FE = "FS-1.0.0 (lab/features.py: zwroty, ATR, EMA gap, kinematyka, sesja; sekwencje 32×kanały dla sieci)"
@@ -115,21 +132,42 @@ ELEMENTS += [
      "loader": "MarketZonesService (zadania na przycisk / aktualizacja po zamknięciu świecy)", "artifact": "data/zones/market_zones.sqlite (historia stref i zdarzeń)",
      "instruments": BOTH, "status": "REGUŁY – zaimplementowane i zintegrowane; jakość 0–100 nie jest prawdopodobieństwem; EQH/EQL = płynność wnioskowana z OHLC"},
 ]
-for _mid, _nm in (("TH_BASELINE", "bazowy – częstości klas"), ("TH_LOGREG", "regresja logistyczna wieloklasowa"),
-                  ("TH_HGB", "gradient boosting histogramowy"), ("TH_XGB", "XGBoost (CPU, gdy pakiet dostępny)")):
-    ELEMENTS.append({
-        "id": _mid, "name": f"Centrum treningu – {_nm}: kierunek ruchu po kosztach",
-        "implementation": "masterquo/trainhub/learn.py, features.py (wspólne cechy trening/inferencja), dataset.py, registry.py, inference.py",
-        "task": "klasa DOWN/FLAT/UP zmiany zamknięcia po H świecach względem progu max(k×ATR14, koszt świecy)",
-        "data_source": "magazyn świec data/marketdata/<INST> (eksport MT5 przyrostowy/historyczny, Parquet + CSV + manifest z sumami)",
-        "tf": "bazowy M1/M5/M15/M30 + wyższe TF dołączane od zamknięcia świecy", "horizon": "H świec (domyślnie 6 × M5)", "side": "oba (klasy)",
-        "features": "PMW-TH-FEAT-1 (zwroty, ATR, świeca, zmienność, RSI, EMA, z-score, aktywność ticków, spread, czas, cechy wyższych TF)",
-        "label": "PMW-TH-LABEL-1 (koszty: spread ze świecy + prowizja z historii transakcji albo założenie + poślizg-założenie); okna przez lukę sesji odrzucone",
-        "trainer": "Centrum treningu / `python -m masterquo trainhub train|full` (purged walk-forward + embargo, nietknięty holdout 20%, kalibracja temperaturą na dev, proces osobny)",
-        "loader": "TrainhubInference (tylko AKTYWNA paczka po teście zgodności i predykcji; inaczej stan INCOMPATIBLE/ERROR bez wartości)",
-        "artifact": "data/trainhub/models/<INST>/<MODEL>_<TF>_H<h>/<wersja>/ (model.joblib, cechy, config, metryki, manifest danych, zależności, REPRODUCE.md, sha256)",
-        "instruments": BOTH,
-        "status": "ZAIMPLEMENTOWANE_I_ZINTEGROWANE (OBSERVATION – nie głosuje w strategiach); trening sprawdzony tylko na symulatorze (SYNTHETIC_TEST) – brak oceny na danych rzeczywistych"})
+def _trainhub_overlay() -> list[dict]:
+    """1.46 (I0666, I0658): one element per trainhub/learn.MODELS entry (was a hand list of 4 - TH_RF and TH_SVM were missing). The trainer
+    text tells which call trains the model: without --models / --profile the CLI trains only pipeline.DEFAULTS['models']."""
+    from masterquo.trainhub import learn as TL
+    from masterquo.trainhub import pipeline as TP
+    default = list(TP.DEFAULTS["models"])
+    notes = {"TH_XGB": "tylko gdy pakiet xgboost jest zainstalowany",
+             "TH_RF": "permutation importance liczone na HOLDOUT (raport), class_weight balanced_subsample",
+             "TH_SVM": f"jądro RBF tylko do {TL.RBF_MAX_ROWS} wierszy, powyżej liniowe"}
+    out = []
+    for mid, m in TL.MODELS.items():
+        prof = [k for k, v in TP.PROFILES.items() if mid in v.get("models", ())]
+        alt = f" albo `--profile {'|'.join(prof)}`" if prof else ""
+        if mid in default:
+            how = f"`python -m masterquo trainhub train|full --instrument XAUUSD|BTC` (domyślny zestaw bez --models: {', '.join(default)}){alt}"
+        else:
+            how = (f"`python -m masterquo trainhub train|full --instrument XAUUSD|BTC --models {mid}`{alt}"
+                   f" – NIE w domyślnym zestawie bez --models ({', '.join(default)})")
+        out.append({
+            "id": mid, "name": f"Centrum treningu – {m.get('name') or mid}: kierunek ruchu po kosztach" + (f" ({notes[mid]})" if mid in notes else ""),
+            "implementation": "masterquo/trainhub/learn.py, features.py (wspólne cechy trening/inferencja), dataset.py, registry.py, inference.py",
+            "task": "klasa DOWN/FLAT/UP zmiany zamknięcia po H świecach względem progu max(k×ATR14, koszt świecy)",
+            "data_source": "magazyn świec data/marketdata/<INST> (eksport MT5 przyrostowy/historyczny, Parquet + CSV + manifest z sumami)",
+            "tf": "bazowy M1/M5/M15/M30 + wyższe TF dołączane od zamknięcia świecy",
+            "horizon": f"H świec (domyślnie {TP.DEFAULTS['horizon']} × {TP.DEFAULTS['base_tf']})", "side": "oba (klasy)",
+            "features": "PMW-TH-FEAT-1 (zwroty, ATR, świeca, zmienność, RSI, EMA, z-score, aktywność ticków, spread, czas, cechy wyższych TF)",
+            "label": "PMW-TH-LABEL-1 (koszty: spread ze świecy + prowizja z historii transakcji albo założenie + poślizg-założenie); okna przez lukę sesji odrzucone",
+            "trainer": f"Centrum treningu / {how} (purged walk-forward + embargo, nietknięty holdout 20%, kalibracja temperaturą na dev, proces osobny)",
+            "loader": "TrainhubInference (tylko AKTYWNA paczka po teście zgodności i predykcji; inaczej stan INCOMPATIBLE/ERROR bez wartości)",
+            "artifact": "data/trainhub/models/<INST>/<MODEL>_<TF>_H<h>/<wersja>/ (model.joblib, cechy, config, metryki, manifest danych, zależności, REPRODUCE.md, sha256)",
+            "instruments": BOTH,
+            "status": "ZAIMPLEMENTOWANE_I_ZINTEGROWANE (OBSERVATION – nie głosuje w strategiach); trening sprawdzony tylko na symulatorze (SYNTHETIC_TEST) – brak oceny na danych rzeczywistych"})
+    return out
+
+
+ELEMENTS += _trainhub_overlay()
 ELEMENTS += [
     {"id": "STRATEGIES_S01_S12", "name": "Strategie S01–S12", "implementation": "masterquo/strategies/*", "task": "reguły setupów (strumień dla legacy ML)",
      "data_source": "bary bota / backfill z eksportu z symbolem instrumentu", "tf": "M5–D1", "horizon": "—", "side": "oba", "features": "—", "label": "—",
@@ -137,21 +175,119 @@ ELEMENTS += [
 ]
 
 
-def main() -> None:
-    (ROOT / "MAPA_MODELI_I_TRENINGU.json").write_text(json.dumps({"schema": "mq-model-map-1", "elements": ELEMENTS}, indent=1, ensure_ascii=False) + "\n",
-                                                       encoding="utf-8")
-    keys = ("implementation", "task", "data_source", "tf", "horizon", "side", "features", "label", "trainer", "loader", "artifact", "instruments", "status")
+# 1.46 (I0012): overlay id -> canonical id (quant/ids). LAB_<FAM> -> lab:<FAM> and TH_* -> trainhub:TH_* are derived in _canon(); an id that
+# resolves to no registry entry stays OUTSIDE the registry (listed, flagged). LEGACY_ML_DT / _XGB are two algorithms of ONE registry entry.
+CANON = {"FORECAST_GOLD_CANDLES": "forecast:gold_candles", "DOUBLE_RETEST_V2": "forecast:double_retest_v2", "SCALP_A": "scalp:A_direction",
+         "SCALP_B": "scalp:B_setup_quality", "SCALP_C": "scalp:C_policy", "LEGACY_ML_DT": "ml:legacy_s01_s12", "LEGACY_ML_XGB": "ml:legacy_s01_s12",
+         "MONTE_CARLO_PATHS": "analysis:montecarlo", "MARKET_ZONES_MZ1": "analysis:market_zones", "INDICATORS_FFT_VMD_EMD": "rule:decomposition",
+         "ML_SCALP_NET_R": "ml_scalp:xgb_net_r"}
+FIELDS = ("implementation", "task", "data_source", "tf", "horizon", "side", "features", "label", "trainer", "loader", "artifact", "instruments", "status")
+SCHEMA = "mq-model-map-2"
+
+
+def _canon(eid: str) -> str:
+    if eid in CANON:
+        return CANON[eid]
+    if eid.startswith("LAB_"):
+        return "lab:" + eid[4:]
+    if eid.startswith("TH_"):
+        return "trainhub:" + eid
+    return eid
+
+
+def _registry_element(e: dict) -> dict:
+    task = " / ".join(str(x) for x in (e.get("task_type"), e.get("task"), e.get("unit")) if x)
+    st = f"kod: {e['code_state']}; walidacja: {e['validation']}; rola w Quant Core: {e['quant_role']}"
+    why = e.get("not_applicable_reason") or e.get("notes")
+    return {"id": e["id"], "name": e["name"], "implementation": ", ".join(e.get("files") or []) or "—", "task": task or "—",
+            "data_source": e.get("data_required") or "—", "tf": ", ".join(e.get("timeframes") or []) or "—", "horizon": e.get("horizon") or "—",
+            "side": "—", "features": e.get("features") or "—", "label": "—", "trainer": e.get("owner_train") or "—",
+            "loader": e.get("owner_infer") or "—", "artifact": e.get("artifact") or "—", "instruments": [],
+            "status": st + (f" ({why})" if why else ""), "aliases": list(e.get("aliases") or []), "legacy_ids": [],
+            "category": e.get("category"), "registry_source": list(e.get("source_registry") or [])}
+
+
+def build(inv: dict | None = None) -> dict:
+    """The map: one element per non-group entry of quant/inventory.build() (registry order) with the overlay merged in."""
+    if inv is None:
+        from masterquo.quant import inventory as QI
+        inv = QI.build()
+    entries = [e for e in inv["entries"] if e.get("category") != "GROUP"]
+    ids = {e["id"] for e in entries}
+    over: dict[str, list[dict]] = {}
+    outside = []
+    for o in ELEMENTS:
+        cid = _canon(o["id"])
+        if cid in ids:
+            over.setdefault(cid, []).append(o)
+        else:
+            outside.append({**o, "category": "POZA_REJESTREM", "registry_source": [],
+                            "reason": "brak w rejestrze kanonicznym (quant/ids, quant/inventory) – opis zachowany, nie jest pozycją rejestru"})
+    elements = []
+    for e in entries:
+        el = _registry_element(e)
+        mine = over.get(e["id"]) or []
+        if mine:
+            o = mine[0]
+            for k in FIELDS:
+                if k in ("tf", "horizon") and el[k] != "—":
+                    continue                                   # TF / horizon: the registry wins whenever it has them
+                if k == "status":
+                    el[k] = f"{el[k]} | opis: {o[k]}" if o.get(k) else el[k]
+                elif o.get(k):
+                    el[k] = o[k]
+            el["name"] = " / ".join(x["name"] for x in mine)
+            el["legacy_ids"] = [x["id"] for x in mine]
+        elements.append(el)
+    return {"schema": SCHEMA, "source": f"quant/inventory.build() ({inv.get('version')}) + opisy tools/model_map.ELEMENTS",
+            "elements": elements, "outside_registry": outside}
+
+
+def to_markdown(m: dict) -> str:
     pl = {"implementation": "Implementacja", "task": "Zadanie", "data_source": "Źródło danych", "tf": "TF", "horizon": "Horyzont", "side": "Strona",
           "features": "Cechy", "label": "Etykieta", "trainer": "Trainer", "loader": "Loader", "artifact": "Artefakt", "instruments": "Instrumenty", "status": "Status"}
+
+    def val(v):
+        return (", ".join(v) if isinstance(v, list) else str(v)) or "—"
+
     out = ["# Mapa modeli i treningu (XAUUSD / BTC)", "",
-           "Wygenerowano przez `tools/model_map.py` (to samo źródło co `MAPA_MODELI_I_TRENINGU.json`).",
+           ("Wygenerowano przez `tools/model_map.py` (to samo źródło co `MAPA_MODELI_I_TRENINGU.json`) z rejestru kanonicznego "
+            "`quant/inventory.build()` – te same identyfikatory i aliasy co `docs/quant/INVENTORY.md` (`backend/masterquo/quant/ids.py`). "
+            "TF i horyzont pochodzą z rejestru; teksty opisowe (zadanie, dane, etykieta, trainer) z `tools/model_map.ELEMENTS`."),
            "Status opisuje stan KODU w tej paczce. Nie mówi nic o jakości modelu na Twoich danych – tę pokazuje dopiero raport runu treningu.",
            "Jednostka modelu: instrument × zadanie × TF × horyzont × strona. Każdy instrument ma osobne dane, skalery, kalibratory, modele i rejestry.", ""]
-    for e in ELEMENTS:
+    for e in m["elements"]:
         out += [f"## {e['id']} – {e['name']}", ""]
-        out += [f"- **{pl[k]}:** {', '.join(e[k]) if isinstance(e[k], list) else e[k]}" for k in keys]
+        if e["aliases"] or e["legacy_ids"]:
+            out.append(f"- **Aliasy:** {val(e['aliases'] + [x for x in e['legacy_ids'] if x not in e['aliases']])}")
+        out.append(f"- **Kategoria:** {e['category']} (rejestr: {val(e['registry_source'])})")
+        out += [f"- **{pl[k]}:** {val(e[k])}" for k in FIELDS]
         out.append("")
-    (ROOT / "MAPA_MODELI_I_TRENINGU.md").write_text("\n".join(out), encoding="utf-8")
+    if m["outside_registry"]:
+        out += ["# Poza rejestrem kanonicznym", "",
+                "Opisy, których identyfikator nie odpowiada żadnej pozycji `quant/inventory` – zachowane jako opis, nie są pozycją rejestru.", ""]
+        for e in m["outside_registry"]:
+            out += [f"## {e['id']} – {e['name']}", "", f"- **Uwaga:** {e['reason']}"]
+            out += [f"- **{pl[k]}:** {val(e.get(k, '—'))}" for k in FIELDS]
+            out.append("")
+    return "\n".join(out)
+
+
+def _offline_env(var: str, prefix: str) -> None:
+    """Temporary folder for `var` only when it is not set - `os.environ.setdefault(var, tempfile.mkdtemp())` created (and left behind)
+    a folder on every call, also with the variable set. The folder created here is removed when the process exits."""
+    if os.environ.get(var):
+        return
+    d = tempfile.mkdtemp(prefix=prefix)
+    os.environ[var] = d
+    atexit.register(shutil.rmtree, d, ignore_errors=True)
+
+
+def main() -> None:
+    _offline_env("MASTERQUO_DATA_DIR", "pmw_map_")                  # offline: no probe of the user's data folder
+    m = build()
+    (ROOT / "MAPA_MODELI_I_TRENINGU.json").write_text(json.dumps(m, indent=1, ensure_ascii=False) + "\n", encoding="utf-8")
+    (ROOT / "MAPA_MODELI_I_TRENINGU.md").write_text(to_markdown(m), encoding="utf-8")
 
 
 if __name__ == "__main__":
