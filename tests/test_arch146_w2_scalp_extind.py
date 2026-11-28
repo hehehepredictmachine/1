@@ -166,13 +166,23 @@ class TestSchemaTexts(unittest.TestCase):
         self.td.close()
 
     def test_api_status_names_the_current_schema(self):
+        # review 2: comparing with F.FEATURE_SCHEMA alone also passed on c8277f4 (both V1) - the literal V2 and a patched constant prove
+        # that the view shows the schema the models are built with, not a text of its own
+        from unittest import mock
+
         from masterquo.extind import features as F
         from test_audit_146_b_mq_api import call, make_app, make_rt
         rt = make_rt()
         rt.extind.status.return_value = {}
-        st_, body, _ = call(make_app(rt), rt, "GET", "/api/v1/indicator-context")
-        self.assertEqual(st_, 200, body[:200])
-        self.assertEqual(json.loads(body)["model"]["schema"], F.FEATURE_SCHEMA)
+        app = make_app(rt)
+
+        def schema():
+            st_, body, _ = call(app, rt, "GET", "/api/v1/indicator-context")
+            self.assertEqual(st_, 200, body[:200])
+            return json.loads(body)["model"]["schema"]
+        self.assertEqual(schema(), "SCALP_INDICATOR_CONTEXT_V2")
+        with mock.patch.object(F, "FEATURE_SCHEMA", "SCALP_INDICATOR_CONTEXT_TEST"):
+            self.assertEqual(schema(), "SCALP_INDICATOR_CONTEXT_TEST")
 
     def test_smoke_text_has_no_stale_schema_or_skew(self):
         txt = (ROOT / "backend" / "masterquo" / "modelhub" / "smoke" / "extind.py").read_text(encoding="utf-8")
