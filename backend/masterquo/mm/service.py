@@ -4,7 +4,9 @@ Recomputes on the bot's CLOSED bars (rt.bridge, forming bar excluded) only when 
 every loaded TF (one shared configuration = the cross-chart view), read-only account P&L from the same bridge data the statistics page
 uses, Kalman state, breakout zones + latest-direction panel, robust volatility, Multi-Indicator decision trace, SMC continuation setups
 and a GP forecast (fitted transactionally on the current window; every forecast logged to the SHADOW ledger, matured from later closed
-bars). Trained artifacts are only LISTED here (_trained_models): the event engine is inferred in SHADOW by Quant (EventGRU) once a
+bars). 1.46 arch (I0357): next to it the procedure the gpr job validated (walk_forward: grid search every retune_every bars) runs as a
+separate SHADOW track with its own ledger id; the Quant-facing forecast keeps its per-bar grid fit (MetaModel inputs unchanged).
+Trained artifacts are only LISTED here (_trained_models): the event engine is inferred in SHADOW by Quant (EventGRU) once a
 VALIDATED_SHADOW artifact is active; HDC / STE-FlowNet have no live inference even with a validated pointer; the live GP never loads
 the gpr_logret artifact (validation reference only). Nothing here can place, modify or close an order; execution_allowed is always False.
 """
@@ -68,6 +70,8 @@ class MMService:
         self._lock = threading.Lock()
         self._cache: dict = {}
         self._ledgers: dict = {}
+        self._gpr_wf: dict = {}                 # 1.46 arch (I0357): per instrument {model, tuned_ts} of the walk-forward SHADOW track
+        self._gpr_wf_lock = threading.Lock()
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
         self.loop = {"runs": 0, "last_bar": None, "last_error": None}
@@ -209,23 +213,9 @@ class MMService:
         out["trained_models"] = _trained_models(artifacts.read_pointer(inst))
         return out
 
-    def _gpr(self, inst: str, b5: Bars, quality: str) -> dict:
-        from . import gpr as G
-        cfg = G.GPRConfig()
-        c = np.asarray(b5.c, float)
-        T = len(c) - 1
-        m = G.GPModel(cfg)
-        r = m.refit(c, T, True, f"{inst}:M5:{int(b5.t[T])}")
-        if not r["ok"]:
-            return {"status": r["status"], "reason": r.get("reason")}
-        p = m.predict(math.log(c[T] / c[T - 1]), c[T])
-        led = self._ledger(inst)
-        mid = "gpr_logret:LIVE"
-        if p["status"] in ("OK", "DEGRADED"):
-            led.log(pred_id=f"{mid}:{inst}:M5:{int(b5.t[T])}:h{cfg.horizon}", model_id=mid, artifact_id=None, feature_schema="GPR_LAG1_LOGRET", symbol=inst,
-                    timeframe="M5", source_ts=float(b5.t[T]), available_at=float(b5.t[T]) + 300, matures_at=float(b5.t[T]) + 300 * (cfg.horizon + 1),
-                    horizon=f"{cfg.horizon}bars", kind="GAUSSIAN_PREDICTIVE", payload={"pred": p["mean_logret"], "sd": p["sd"], "base": c[T]},
-                    quality=quality)
+    @staticmethod
+    def _resolver(b5: Bars, c: np.ndarray):
+        """Outcome of a GP ledger row from the closed bars of the current bridge window (None while bar t+h is not in it)."""
         idx = {float(t): i for i, t in enumerate(b5.t)}
 
         def resolve(row):
@@ -237,7 +227,74 @@ class MMService:
             real = math.log(c[i + h] / c[i])
             z = (real - pl["pred"]) / pl["sd"]
             return {"realized_logret": real, "z": z, "in_1sd": abs(z) <= 1, "in_2sd": abs(z) <= 2}
-        led.mature(float(b5.t[-1]) + 300, resolve, mid)
+        return resolve
+
+    def _gpr_walk_forward(self, inst: str, b5: Bars, c: np.ndarray, quality: str) -> dict:
+        """1.46 arch (I0357): the procedure the gpr job validated (mm/gpr.walk_forward) as a separate SHADOW track - ONE model per instrument,
+        the hyper-parameter grid search only when there is no committed fit or `retune_every` closed M5 bars have passed since the last
+        successful search, otherwise a refit on the current window with the last tuned hyper-parameters. Bars are counted in the bridge
+        window (a recompute of the same bar never counts; a tuned bar that left the window -> search). Logged under its own ledger id with
+        feature_schema GPR_LAG1_LOGRET;retune=N so its live calibration is comparable with the job's. Never fed to Quant: the top-level
+        forecast (Quant column fc:mm:gpr_logret) keeps its per-bar grid fit, so trained MetaModels get exactly the inputs they were built on."""
+        from . import gpr as G
+        cfg = G.GPRConfig()
+        T = len(c) - 1
+        ts = float(b5.t[T])
+        mid = f"gpr_logret:LIVE_RETUNE{cfg.retune_every}"
+        fs = f"GPR_LAG1_LOGRET;retune={cfg.retune_every}"
+        with self._gpr_wf_lock:
+            st = self._gpr_wf.setdefault(inst, {"model": G.GPModel(G.GPRConfig()), "tuned_ts": None})
+            m = st["model"]
+            since = None
+            if st["tuned_ts"] is not None:
+                j = int(np.searchsorted(b5.t, st["tuned_ts"]))
+                if j < len(b5.t) and float(b5.t[j]) == st["tuned_ts"]:
+                    since = T - j
+            tune = m.fit is None or since is None or since >= cfg.retune_every
+            r = m.refit(c, T, tune, f"{inst}:M5:{int(ts)}")
+            if tune and r["ok"]:
+                st["tuned_ts"], since = ts, 0
+            p = m.predict(math.log(c[T] / c[T - 1]), c[T]) if r["ok"] else None
+        out = {"procedure": f"mm/gpr.walk_forward: siatka hiperparametrów co {cfg.retune_every} świec M5, pomiędzy refit na stałych hiperparametrach",
+               "retune_every": cfg.retune_every, "retuned": bool(tune and r["ok"]), "bars_since_tune": since, "ledger_model_id": mid,
+               "feature_schema": fs, "used_by_quant": False}
+        if p is None:
+            return {**out, "status": r["status"], "reason": r.get("reason")}
+        led = self._ledger(inst)
+        if p["status"] in ("OK", "DEGRADED"):
+            led.log(pred_id=f"{mid}:{inst}:M5:{int(ts)}:h{cfg.horizon}", model_id=mid, artifact_id=None, feature_schema=fs, symbol=inst,
+                    timeframe="M5", source_ts=ts, available_at=ts + 300, matures_at=ts + 300 * (cfg.horizon + 1), horizon=f"{cfg.horizon}bars",
+                    kind="GAUSSIAN_PREDICTIVE", payload={"pred": p["mean_logret"], "sd": p["sd"], "base": c[T], "hp": p["hp"], "retuned": out["retuned"]},
+                    quality=quality)
+        led.mature(ts + 300, self._resolver(b5, c), mid, min_source_ts=float(b5.t[0]))
+        tot = led.outcome_means(mid, ("in_1sd", "in_2sd"))
+        return {**out, **{k: p.get(k) for k in ("status", "mean_logret", "sd", "hp", "jitter", "flags")},
+                "live_calibration": {"n_scored": tot["n"], "coverage_1sd": tot["in_1sd"] if tot["n"] else None,
+                                     "coverage_2sd": tot["in_2sd"] if tot["n"] else None, "inconclusive": tot["n"] < 200}}
+
+    def _gpr(self, inst: str, b5: Bars, quality: str) -> dict:
+        from . import gpr as G
+        cfg = G.GPRConfig()
+        c = np.asarray(b5.c, float)
+        T = len(c) - 1
+        try:
+            wf = self._gpr_walk_forward(inst, b5, c, quality)
+        except Exception as exc:  # noqa: BLE001 - the SHADOW track never takes the Quant-facing forecast down with it
+            wf = {"status": "ERROR", "reason": f"{type(exc).__name__}: {exc}"[:200], "used_by_quant": False}
+        m = G.GPModel(cfg)
+        r = m.refit(c, T, True, f"{inst}:M5:{int(b5.t[T])}")
+        if not r["ok"]:
+            return {"status": r["status"], "reason": r.get("reason"), "walk_forward": wf}
+        p = m.predict(math.log(c[T] / c[T - 1]), c[T])
+        led = self._ledger(inst)
+        mid = "gpr_logret:LIVE"
+        if p["status"] in ("OK", "DEGRADED"):
+            led.log(pred_id=f"{mid}:{inst}:M5:{int(b5.t[T])}:h{cfg.horizon}", model_id=mid, artifact_id=None, feature_schema="GPR_LAG1_LOGRET", symbol=inst,
+                    timeframe="M5", source_ts=float(b5.t[T]), available_at=float(b5.t[T]) + 300, matures_at=float(b5.t[T]) + 300 * (cfg.horizon + 1),
+                    horizon=f"{cfg.horizon}bars", kind="GAUSSIAN_PREDICTIVE", payload={"pred": p["mean_logret"], "sd": p["sd"], "base": c[T]},
+                    quality=quality)
+        # 1.46 arch (I0358): rows whose base bar left the bridge window can never be resolved here - not re-scanned (kept, unscored)
+        led.mature(float(b5.t[-1]) + 300, self._resolver(b5, c), mid, min_source_ts=float(b5.t[0]))
         from . import drift as D                     # AR-08: calibration drift of the live forecast vs the nominal 1-sigma coverage
         # 1.46: the drift input was the coverage of the WHOLE history (and rows() returned the OLDEST 100k): a fresh mis-calibration was
         # diluted and never alerted, and every M5 bar loaded + decoded the full ledger. Cumulative coverage = SQL aggregate (information);
@@ -257,4 +314,6 @@ class MMService:
             cal["drift"]["note"] = f"za mało ocenionych prognoz ({len(rec)} < {D.DEFAULT_POLICY['min_recent']}) – dryf nieoceniany"
         return {**{k: p.get(k) for k in ("status", "mean_logret", "latent_var", "observed_var", "sd", "price", "edge_price", "z", "hp", "jitter", "flags")},
                 "horizon_bars": cfg.horizon, "live_calibration": cal, "search": m.last_search and {k: m.last_search[k] for k in ("candidates", "failed", "flat_surface")},
+                "procedure": "siatka hiperparametrów na każdej świecy M5 (wartości cechy Quant bez zmian); procedura walidowana: walk_forward",
+                "walk_forward": wf,
                 "note": "prognoza log-zwrotu z niepewnością; pasma to założenie gaussowskie do kalibracji, nie gwarancja"}

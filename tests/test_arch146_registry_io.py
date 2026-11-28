@@ -49,7 +49,7 @@ class TestUnreadableRegistryIsNeverOverwritten(_Base):
     def test_mm_shadow_pointer(self):
         from masterquo import registry_io as RIO
         from masterquo.mm import artifacts as A
-        aid = A.save("XAUUSD", "hdc_dir3", {"w": [1.0, 2.0]}, {"status": "VALIDATED_SHADOW"})
+        aid = A.save("XAUUSD", "hdc_dir3", {"w": [1.0, 2.0]}, {"status": "VALIDATED_SHADOW", "gates": {"g": True}, "data_kind": "REAL_USER_DATA"})
         p = A._ptr_path("XAUUSD")
         before = self._corrupt(p)
         with self.assertRaises(RIO.RegistryUnreadable):

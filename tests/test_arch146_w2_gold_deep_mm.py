@@ -372,8 +372,10 @@ class TestEventGruFeatureSchemaI0023(_Data):
         from masterquo.mm import events as EV
         st = {**EE.EventModel(F=len(EV.FEATURES)).state(), "scaler_med": np.zeros(len(EV.FEATURES)), "scaler_iqr": np.ones(len(EV.FEATURES)),
               "band": np.array([1e-4])}
+        # merge with group mm (I0545): promote_shadow needs every validation gate True on REAL_USER_DATA (as mm/jobs.py writes)
         aid = MA.save(INST, "event_engine_dir3", st, {"status": "VALIDATED_SHADOW", "model_type": "EVENT_GRU_STACK", "feature_schema": schema,
-                                                      "event_source": "BAR_CLOSE_EVENTS"})
+                                                      "event_source": "BAR_CLOSE_EVENTS", "gates": {"walk_forward": True},
+                                                      "data_kind": "REAL_USER_DATA"})
         MA.promote_shadow(INST, "event_engine_dir3", aid, "test")
         return aid
 
