@@ -16,17 +16,26 @@ Score (0-100, design defaults in config.zones.score_weights, NOT empirically val
                  0 when the volume source is NONE
   reaction     - rejection strength, displacement, sweep-and-reclaim, held retest
   mtf          - M5 and M15 members together 10, overlap with an H1+ S/R zone (analysis.levels) 5
-  freshness    - linear in age; minus 2 per retest above weaken_after_retests
+  freshness    - linear in age against max_age_bars of the member's own TF (the freshest member counts; age unknown -> 0 and flag
+                 AGE_UNKNOWN); minus 2 per retest above weaken_after_retests
   data_quality - 5 complete / 2 developing or degraded / 0 stale
 Correlated evidence counts once: every evidence item has a `root` (pivot id, profile id, box id ...) and each root is scored once per group.
 Penalties: WIDE -10, CONFLICT -10, provisional -10 (a map with INSUFFICIENT_HISTORY has no zones - engine.compute_map returns before
 UZICE). confidence_status stays UNVALIDATED (no calibrated model of zone outcomes exists yet).
+
+Semantics (engine.SEMANTICS): `legacy=True` reproduces PMW-ZONES-SEM-1 exactly. SEM-2 (1.46 audit) differs in:
+  * volume points: the "3 latest completed + developing" profiles are chosen ONCE among ALL profiles of the map (SEM-1 chose them
+    among the profiles near the zone only, so a zone near an arbitrarily old profile still scored volume);
+  * freshness: per member against max_age_bars of its own TF (SEM-1: the largest max_age_bars of all TFs, i.e. 576 M5 bars also for
+    M15 ages); a member without age_bars gets its age from its known time (created_at / confirmed_at) and as_of; no known age at all
+    -> freshness 0 and flag AGE_UNKNOWN (SEM-1: age 0 = the maximum freshness).
 """
 from __future__ import annotations
 
 import hashlib
 from datetime import datetime
 
+from ..timeutil import TF_SECONDS
 from .hlze import HIGH_TYPES, LOW_TYPES
 from .series import iso
 
@@ -75,8 +84,30 @@ def _struct_category(kind: str, tf: str | None) -> str:
     return "OTHER"
 
 
+def _keep_profiles(plevels: list[dict]) -> set:
+    """The 3 latest completed + the developing profile (4 latest by end) - chosen among the given profile levels."""
+    recent = sorted({pl["profile_id"]: pl.get("end_ts", 0) for pl in plevels}.items(), key=lambda x: x[1])[-4:]
+    return {pid for pid, _ in recent}
+
+
+def _member_freshness(m: dict, cfg, as_of: float | None) -> float | None:
+    """Freshness share (0..1) of one member against max_age_bars of its own TF; None = age unknown."""
+    tf = m.get("age_tf") or m.get("tf")
+    lim = (cfg.max_age_bars or {}).get(tf)
+    if not lim:
+        return None
+    if m.get("age_bars") is not None:
+        age = float(m["age_bars"])
+    else:
+        t0 = _t(m.get("created_at")) or _t(m.get("confirmed_at"))
+        if t0 is None or as_of is None or not TF_SECONDS.get(tf):
+            return None
+        age = max(0.0, (as_of - t0) / TF_SECONDS[tf])
+    return max(0.0, min(1.0, 1.0 - age / lim))
+
+
 def _score(members: list[dict], plevels: list[dict], *, cfg, atr: float, htf_sr: list[dict], vol_source: str, data_state: str,
-           max_age: int) -> tuple[dict, list[str], list[dict]]:
+           max_age: int, keep: set | None = None, as_of: float | None = None, legacy: bool = False) -> tuple[dict, list[str], list[dict]]:
     """Each evidence ROOT counts once (correlated labels of one pivot are one confirmation); structure counts each CATEGORY once
     (ten M5 swings in one place are not ten independent confirmations); reaction takes the strongest member, not a sum."""
     w = cfg.score_weights
@@ -110,8 +141,8 @@ def _score(members: list[dict], plevels: list[dict], *, cfg, atr: float, htf_sr:
             pts["reaction"] += 6
     pts["reaction"] += min(6.0, 3.0 * max((float(m.get("rejection_max_atr") or 0.0) for m in members), default=0.0))
     if vol_source != "NONE":
-        recent = sorted({pl["profile_id"]: pl.get("end_ts", 0) for pl in plevels}.items(), key=lambda x: x[1])[-4:]
-        keep = {pid for pid, _ in recent}                                # the 3 latest completed + developing profiles only
+        if legacy or keep is None:
+            keep = _keep_profiles(plevels)                               # SEM-1: chosen among the profiles near this zone only
         best: dict = {}
         for pl in plevels:
             if pl["profile_id"] not in keep:
@@ -131,9 +162,15 @@ def _score(members: list[dict], plevels: list[dict], *, cfg, atr: float, htf_sr:
     if any(z["low"] <= up and z["high"] >= lo for z in htf_sr):
         pts["mtf"] += 5
         evidence.append({"group": "mtf", "kind": "HTF_SR_OVERLAP", "root": "HTF", "detail": "nakłada się na strefę S/R H1+ (analysis.levels)"})
-    ages = [m.get("age_bars") for m in members if m.get("age_bars") is not None]
-    age = min(ages) if ages else 0
-    pts["freshness"] = max(0.0, 10.0 * (1 - age / max_age)) if max_age else 0.0
+    if legacy:
+        ages = [m.get("age_bars") for m in members if m.get("age_bars") is not None]
+        age = min(ages) if ages else 0
+        pts["freshness"] = max(0.0, 10.0 * (1 - age / max_age)) if max_age else 0.0
+    else:
+        fr = [f for f in (_member_freshness(m, cfg, as_of) for m in members) if f is not None]
+        pts["freshness"] = 10.0 * max(fr) if fr else 0.0
+        if not fr:
+            flags.append("AGE_UNKNOWN")                                  # unknown age is not "fresh" (SEM-1 gave the maximum)
     extra_tests = max(0, max((m.get("retests") or 0) for m in members) - cfg.weaken_after_retests)
     pts["freshness"] = max(0.0, pts["freshness"] - 2 * extra_tests)
     pts["data_quality"] = {"OK": 5.0, "DEGRADED": 2.0}.get(data_state, 0.0)
@@ -149,7 +186,7 @@ def _score(members: list[dict], plevels: list[dict], *, cfg, atr: float, htf_sr:
 
 
 def unify(hlz: list[dict], ds: list[dict], profiles: list[dict], *, cfg, atr: float, tick: float, price: float, htf_sr: list[dict],
-          vol_source: str, data_state: str, as_of: float) -> tuple[list[dict], list[dict]]:
+          vol_source: str, data_state: str, as_of: float, legacy: bool = False) -> tuple[list[dict], list[dict]]:
     cands = [z for z in hlz + ds if z.get("status") in LIVE]
     expired = [z for z in hlz + ds if z.get("status") not in LIVE]
     tol = max(cfg.merge_tol_atr * atr, cfg.min_width_ticks * tick)
@@ -169,13 +206,14 @@ def unify(hlz: list[dict], ds: list[dict], profiles: list[dict], *, cfg, atr: fl
                 continue
         cl.append([z])
     max_age = max(cfg.max_age_bars.values()) if cfg.max_age_bars else 500
+    keep = None if legacy else _keep_profiles(plevels)                   # SEM-2: the latest profiles of the whole map, chosen once
     out = []
     for pol, cls in clusters.items():
         for members in cls:
             lo, up = min(m["lower"] for m in members), max(m["upper"] for m in members)
             pl = [p for p in plevels if p["upper"] >= lo - tol and p["lower"] <= up + tol]
             comp, flags, evidence = _score(members, pl, cfg=cfg, atr=atr, htf_sr=htf_sr, vol_source=vol_source, data_state=data_state,
-                                           max_age=max_age)
+                                           max_age=max_age, keep=keep, as_of=as_of, legacy=legacy)
             types = {m["zone_type"] for m in members}
             if types & {"DEMAND", "SUPPLY"}:
                 ztype = "DEMAND" if pol == "LOW" else "SUPPLY"

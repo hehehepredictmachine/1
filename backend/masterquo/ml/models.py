@@ -132,11 +132,18 @@ class Bundle:
     def __init__(self, family: str, model, prep: Preprocessor, calib: Calibrator, meta: dict):
         self.family, self.model, self.prep, self.calib, self.meta = family, model, prep, calib, meta
 
-    def raw(self, rows: list[dict]) -> np.ndarray:
-        from .features import LEGACY_CONSTANT_DXY
-        if self.meta.get("feature_schema_version") in LEGACY_CONSTANT_DXY:    # compatibility adapter: these models saw dxy_missing=1
+    def adapt(self, rows: list[dict]) -> list[dict]:
+        """Feature rows as THIS model was trained to see them (compatibility adapters of its feature schema)."""
+        from .features import LEGACY_CONSTANT_DXY, LEGACY_ZONE_KEY, LEGACY_ZONE_SCHEMAS
+        sv = self.meta.get("feature_schema_version")
+        if sv in LEGACY_CONSTANT_DXY:                            # these models saw dxy_missing=1
             rows = [{**r, "dxy_missing": 1.0} for r in rows]
-        X = self.prep.transform(rows)
+        if not sv or sv in LEGACY_ZONE_SCHEMAS:                  # 1.46: models <= 1.2.0 get exactly their zone block (semantics SEM-1)
+            rows = [{**r, **r[LEGACY_ZONE_KEY]} if isinstance(r.get(LEGACY_ZONE_KEY), dict) else r for r in rows]
+        return rows
+
+    def raw(self, rows: list[dict]) -> np.ndarray:
+        X = self.prep.transform(self.adapt(rows))
         if self.family == "XGBOOST":
             it = self.meta.get("train", {}).get("best_iteration")
             return self.model.predict_proba(X, iteration_range=(0, it + 1) if it is not None else None)[:, 1]
@@ -221,7 +228,7 @@ def export_tree(model, columns: list[str]) -> dict:
 
 
 def explain_dt(bundle: Bundle, row: dict) -> dict:
-    X = bundle.prep.transform([row])
+    X = bundle.prep.transform(bundle.adapt([row]))
     m = bundle.model
     t = m.tree_
     path = m.decision_path(X).indices.tolist()
@@ -245,7 +252,7 @@ def explain_dt(bundle: Bundle, row: dict) -> dict:
 
 def explain_xgb(bundle: Bundle, row: dict, top: int = 10) -> dict:
     import xgboost as xgb
-    X = bundle.prep.transform([row])
+    X = bundle.prep.transform(bundle.adapt([row]))
     it = bundle.meta.get("train", {}).get("best_iteration")
     contrib = bundle.model.get_booster().predict(xgb.DMatrix(X, feature_names=None), pred_contribs=True,
                                                   iteration_range=(0, it + 1) if it is not None else (0, 0))[0]

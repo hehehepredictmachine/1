@@ -34,6 +34,30 @@ TEXT = {
                  "zamknięcie > EMA9+b i ponad zamrożone lokalne maksimum sprzed korekty"),
 }
 SCALAR = {"PMW_HG02": "L", "PMW_HG03": "mid", "PMW_HG04": "or_mid", "PMW_HG06": "break_level", "PMW_HG07": "L", "PMW_HG08": "VAL"}
+# 1.46: activation parameters of the policies -> (built-in value used when the plan carries none, the STRICTER direction: fewer / later /
+# smaller hedge activations). engine._plan freezes into the plan (frozen_activation) the variant's configured value only when it is at
+# least as strict as the built-in one: the live policy then follows a stricter configuration like the replay does, and never activates a
+# hedge leg that the 1.46 live code would not have activated (no new opening order). Unwind parameters are not frozen.
+ACTIVATION = {"adverse_min_r": (0.5, max), "confirm_closes": (2, max), "body_atr": (0.8, max), "sigma_ratio_on": (1.5, max),
+              "move_atr": (0.5, max), "ratio_min": (0.25, min), "ratio_max": (0.5, min), "mfe_min_r": (1.5, max), "giveback_r": (0.5, max)}
+
+
+def frozen_activation(hcfg: dict) -> dict:
+    """Activation parameters of the variant hedge config to freeze into a live plan: per key the stricter of (configured, built-in)."""
+    out = {}
+    for k, (dflt, stricter) in ACTIVATION.items():
+        if (hcfg or {}).get(k) is None:
+            continue
+        try:
+            val = stricter(float(hcfg[k]), float(dflt))
+        except (TypeError, ValueError):
+            continue
+        out[k] = int(val) if isinstance(dflt, int) else val
+    return out
+
+
+def _a(hc: dict, k: str) -> float:
+    return float(hc.get(k, ACTIVATION[k][0]))
 
 
 def texts(vid: str) -> dict:
@@ -129,9 +153,10 @@ def _activate(vid, v: F.TF, idx, st, b5, ps, plan, E, S, r, px, h1_ok):
     cost = float(plan["pack"]["economics"].get("c_round_trip") or 0.0)
     if vid in ("PMW_HG01",):
         e20 = v.ema(20)
-        ps["progress"] = f"MAE {ps.get('max_adverse', 0):.2f}r / 0,5r"
-        if ps.get("max_adverse", 0) >= float(hc.get("adverse_min_r", 0.5)) and h1_ok is not False and \
-                _two_below(v, idx, lambda k: (e20[k] or 0) - b5, int(hc.get("confirm_closes", 2))):
+        ps["progress"] = f"MAE {ps.get('max_adverse', 0):.2f}r / {_a(hc, 'adverse_min_r')}r"
+        # 1.46: a missing EMA20 (warm-up / gap) never satisfies the condition - `or 0` made it always true in the mirrored (SELL) view
+        if ps.get("max_adverse", 0) >= _a(hc, "adverse_min_r") and h1_ok is not False and \
+                _two_below(v, idx, lambda k: (e20[k] - b5) if e20[k] is not None else float("-inf"), int(_a(hc, "confirm_closes"))):
             return {"reason": "korekta: dwa zamknięcia M5 pod EMA20−b po niekorzystnym ruchu ≥ 0,5r", "ratio": ratio}
     elif vid in ("PMW_HG02", "PMW_HG07"):
         L = st["L"]
@@ -151,7 +176,7 @@ def _activate(vid, v: F.TF, idx, st, b5, ps, plan, E, S, r, px, h1_ok):
         M = st["mid"]
         if M - b5 <= S or h1_ok is False:
             return None
-        if _two_below(v, idx, lambda k: M - b5, int(hc.get("confirm_closes", 2))):
+        if _two_below(v, idx, lambda k: M - b5, int(_a(hc, "confirm_closes"))):
             return {"reason": "dwa zamknięcia M5 pod środkiem zamrożonego kanału − b", "ratio": ratio}
     elif vid == "PMW_HG04":
         if any(v.c[k] < st["or_high"] - b5 for k in idx):
@@ -162,33 +187,33 @@ def _activate(vid, v: F.TF, idx, st, b5, ps, plan, E, S, r, px, h1_ok):
         anc = F.ts(st["anchor"])
         vw = v.vwap(anc)
         if h1_ok is not False and vw[i] is not None and _two_below(v, idx, lambda k: (vw[k] if vw[k] is not None else -1e18) - b5,
-                                                                    int(hc.get("confirm_closes", 2))):
+                                                                    int(_a(hc, "confirm_closes"))):
             return {"reason": "dwa zamknięcia M5 pod AVWAP−b (kotwica niezmieniona)", "ratio": ratio}
     elif vid == "PMW_HG06":
         a = v.atr()
         BL, comp = st["break_level"], st.get("compression_low")
-        if len(idx) >= 2 and all(v.c[k] < BL for k in idx[-2:]) and a[i] and (v.o[i] - v.c[i]) > float(hc.get("body_atr", 0.8)) * a[i] \
+        if len(idx) >= 2 and all(v.c[k] < BL for k in idx[-2:]) and a[i] and (v.o[i] - v.c[i]) > _a(hc, "body_atr") * a[i] \
                 and (comp is None or px > comp):
             return {"reason": "dwa zamknięcia pod poziomem wybicia z korpusem > 0,8 ATR (wygasanie impulsu)", "ratio": ratio}
     elif vid == "PMW_HG08":
-        if _two_below(v, idx, lambda k: st["VAL"] - b5, int(hc.get("confirm_closes", 2))):
+        if _two_below(v, idx, lambda k: st["VAL"] - b5, int(_a(hc, "confirm_closes"))):
             return {"reason": "dwa zamknięcia M5 pod VAL−b (akceptacja poza obszarem wartości)", "ratio": ratio}
     elif vid == "PMW_HG09":
         sg = _hg09_sigma(v, st, plan)
         a = v.atr()
         se, sn = st.get("sigma_entry"), sg[i]
         if se and sn and a[i]:
-            ps["progress"] = f"σ-ratio {sn / se:.2f} / {hc.get('sigma_ratio_on', 1.5)}"
-            if sn / se >= float(hc.get("sigma_ratio_on", 1.5)) and v.c[i] < v.c[i - 1] and abs(v.c[i] - v.c[i - 1]) > float(hc.get("move_atr", 0.5)) * a[i]:
-                rt = min(max(1 - se / sn, float(hc.get("ratio_min", 0.25))), float(hc.get("ratio_max", 0.5)))
+            ps["progress"] = f"σ-ratio {sn / se:.2f} / {_a(hc, 'sigma_ratio_on')}"
+            if sn / se >= _a(hc, "sigma_ratio_on") and v.c[i] < v.c[i - 1] and abs(v.c[i] - v.c[i - 1]) > _a(hc, "move_atr") * a[i]:
+                rt = min(max(1 - se / sn, _a(hc, "ratio_min")), _a(hc, "ratio_max"))
                 return {"reason": f"skok zmienności σ×{sn / se:.2f} i przeciwna świeca > 0,5 ATR", "ratio": rt}
     elif vid == "PMW_HG10":
         e9 = v.ema(9)
-        ps["progress"] = f"MFE {ps.get('mfe', 0):.2f}r / {hc.get('mfe_min_r', 1.5)}r"
-        if ps.get("mfe", 0) >= float(hc.get("mfe_min_r", 1.5)):
+        ps["progress"] = f"MFE {ps.get('mfe', 0):.2f}r / {_a(hc, 'mfe_min_r')}r"
+        if ps.get("mfe", 0) >= _a(hc, "mfe_min_r"):
             give = (ps["best"] - px) / r
-            ps["progress"] = f"oddanie {give:.2f}r / {hc.get('giveback_r', 0.5)}r"
-            if give >= float(hc.get("giveback_r", 0.5)) and e9[i] is not None and v.c[i] < e9[i]:
+            ps["progress"] = f"oddanie {give:.2f}r / {_a(hc, 'giveback_r')}r"
+            if give >= _a(hc, "giveback_r") and e9[i] is not None and v.c[i] < e9[i]:
                 return {"reason": f"MFE ≥ 1,5r, oddanie {give:.2f}r i zamknięcie M5 pod EMA9", "ratio": ratio}
     return None
 

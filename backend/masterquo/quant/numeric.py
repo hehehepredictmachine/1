@@ -3,15 +3,17 @@
 Every function either returns a finite result or raises NumericError with a named reason (ZERO_VARIANCE, SMALL_SAMPLE, SINGULAR,
 NON_FINITE_INPUT, ZERO_DENOMINATOR ...). Callers turn the error into an unavailable result with that reason - never into 0 / 0.5.
 
-Contents: simple / log returns, rolling mean / variance (Welford, stable), quantiles, historical and EWMA volatility, GARCH(1,1) variance
-recursion for given parameters, percent <-> decimal scale, time-aligned covariance / correlation with PSD repair (eigenvalue floor +
-shrinkage) and sample-size checks, stable log-sum-exp / softmax, log loss, Brier score, reliability bins with counts + ECE, regression
-metrics, moving-block bootstrap for metrics of dependent series.
-Square-root-of-time scaling is NOT applied anywhere implicitly (it assumes i.i.d. increments; a caller must ask for it by name).
+Contents: log returns, rolling mean / variance (Welford, stable), quantiles, historical volatility, GARCH(1,1) variance recursion for
+given parameters, time-aligned covariance / correlation with PSD repair (eigenvalue floor + shrinkage) and sample-size checks, stable
+softmax, log loss, Brier score, reliability bins with counts + ECE, regression metrics, moving-block bootstrap for metrics of dependent
+series. (1.46 arch, I0114: simple_returns, EWMA volatility, percent/decimal scale, sqrt-of-time scaling and log-sum-exp had no caller
+and were removed.)
+Square-root-of-time scaling is NOT applied anywhere implicitly (it assumes i.i.d. increments; a caller must apply it explicitly).
 """
 from __future__ import annotations
 
 import math
+from itertools import pairwise
 
 import numpy as np
 
@@ -35,13 +37,6 @@ def _arr(x, what: str = "x", min_n: int = 1) -> np.ndarray:
 
 
 # ------------------------------------------------------------------------------------------------ returns and statistics
-def simple_returns(prices) -> np.ndarray:
-    p = _arr(prices, "prices", 2)
-    if np.any(p <= 0):
-        raise NumericError("NON_POSITIVE_PRICE")
-    return p[1:] / p[:-1] - 1.0
-
-
 def log_returns(prices) -> np.ndarray:
     p = _arr(prices, "prices", 2)
     if np.any(p <= 0):
@@ -85,20 +80,6 @@ def hist_vol(returns, ddof: int = 1) -> float:
     return math.sqrt(v)
 
 
-def ewma_vol(returns, lam: float = 0.94, seed_n: int = 20) -> np.ndarray:
-    """RiskMetrics recursion sigma2_t = lam * sigma2_{t-1} + (1 - lam) * r_{t-1}^2, seeded with the variance of the first seed_n returns."""
-    r = _arr(returns, "returns", seed_n + 1)
-    if not 0 < lam < 1:
-        raise NumericError("LAMBDA_OUT_OF_RANGE")
-    s2 = np.empty(len(r) - seed_n + 1)
-    s2[0] = float(np.mean(r[:seed_n] ** 2))
-    if s2[0] <= 0:
-        raise NumericError("ZERO_VARIANCE")
-    for i, x in enumerate(r[seed_n:], start=1):
-        s2[i] = lam * s2[i - 1] + (1 - lam) * x * x
-    return np.sqrt(s2)
-
-
 def garch11_forecast(returns, omega: float, alpha: float, beta: float, h: int = 1) -> dict:
     """Variance recursion for GIVEN parameters (fitting belongs to the VOL_GARCH family); h-step forecast of the per-bar variance.
     Requires omega > 0, alpha, beta >= 0, alpha + beta < 1 (covariance stationary)."""
@@ -112,21 +93,6 @@ def garch11_forecast(returns, omega: float, alpha: float, beta: float, h: int = 
     path = [lr + (alpha + beta) ** (k - 1) * (s2 - lr) for k in range(1, h + 1)]
     return {"variance_next": float(s2), "variance_path": [float(v) for v in path], "long_run_variance": float(lr),
             "variance_sum_h": float(sum(path)), "note": "suma wariancji po krokach (bez skalowania pierwiastkiem czasu)"}
-
-
-def to_decimal(v: float, scale: str) -> float:
-    if scale == "decimal":
-        return float(v)
-    if scale == "percent":
-        return float(v) / 100.0
-    raise NumericError(f"SCALE_UNKNOWN:{scale}")
-
-
-def sqrt_time(sigma: float, h: int) -> float:
-    """Explicit i.i.d. scaling - only when the caller accepts that assumption."""
-    if h <= 0:
-        raise NumericError("HORIZON_INVALID")
-    return float(sigma) * math.sqrt(h)
 
 
 # ------------------------------------------------------------------------------------------------ covariance
@@ -177,12 +143,6 @@ def covariance(X, *, min_obs_per_var: int = 5, shrink: float | None = None) -> d
 
 
 # ------------------------------------------------------------------------------------------------ probabilities
-def logsumexp(z, axis: int = -1) -> np.ndarray:
-    z = _arr(z, "z", 1)
-    m = np.max(z, axis=axis, keepdims=True)
-    return (m + np.log(np.sum(np.exp(z - m), axis=axis, keepdims=True))).squeeze(axis)
-
-
 def softmax(z, axis: int = -1) -> np.ndarray:
     z = _arr(z, "z", 1)
     e = np.exp(z - np.max(z, axis=axis, keepdims=True))
@@ -214,6 +174,62 @@ def log_loss(p, y, eps: float = 1e-12) -> float:
     p, y = _check_binary(p, y)
     q = np.clip(p, eps, 1 - eps)
     return float(-np.mean(y * np.log(q) + (1 - y) * np.log1p(-q)))
+
+
+# ------------------------------------------------------------------------------------------------ shared calibration metrics (1.46 arch, I0054)
+# The consumers had their own copies with other constants. The ones below are THE implementations, each with the consumer's exact
+# convention (results bit-for-bit as before - tests/test_arch146_w2_quant_core.py pins them on fixed arrays):
+#   log_loss            (above) Quant MetaModel: checked input (NumericError), clip 1e-12, log1p
+#   log_loss_clipped    Monte Carlo validation (montecarlo/validate.logloss): clip eps = 1e-4, no input check
+#   log_loss_multiclass Training Center DOWN/FLAT/UP (trainhub/learn.logloss): true-class probability, clip [1e-12, 1]
+#   reliability         (below) Quant: equal-width bins on p in [0, 1]
+#   ece_confidence      Training Center (trainhub/learn.ece): top-label confidence max p in [1/3, 1]
+# METRIC_VARIANTS lists every variant that stays separate and why (the bootstraps: another resampling scheme / RNG stream / interval
+# each - unifying them changes the numbers of the gates that read them, i.e. decisions; that is Etap 4 work, not a refactor).
+METRIC_VARIANTS = {
+    "log_loss": {"quant/numeric.log_loss": "clip 1e-12, log1p, NumericError na złym wejściu",
+                 "montecarlo/validate.logloss": "-> numeric.log_loss_clipped(eps=1e-4)",
+                 "trainhub/learn.logloss": "-> numeric.log_loss_multiclass(eps=1e-12)"},
+    "ece": {"quant/numeric.reliability": "biny równej szerokości na p w [0, 1], min_count",
+            "trainhub/learn.ece": "-> numeric.ece_confidence (max p w [1/3, 1])",
+            "lab/nss._ece_top, ml/scalp_task._ece, extind/trainer._ece": "własne biny – osobne bramki modułów (Etap 4)"},
+    "block_bootstrap": {"quant/numeric.block_bootstrap": "moving block, PCG64(seed=7), blok n^(1/3), przedział percentylowy 1-alpha",
+                        "ml/validation.block_bootstrap": "moving block, default_rng(42) per powtórzenie, blok 10, 95 %",
+                        "strategies/ema_pullback_backtest.block_bootstrap": "random.Random(7), blok max(2, n^(1/3)), 90 %, expectancy/WR/PF",
+                        "lab/edge.block_bootstrap_mean": "circular block, default_rng(7), blok max(2, n^(1/3)), 95 %",
+                        "baskets/sfb._block_bootstrap_lcb": "random.Random(0), blok min(block, n//2), dolna granica (LCB)"},
+}
+
+
+def log_loss_clipped(p, y, eps: float) -> float:
+    """Binary log loss with the probability clipped to [eps, 1 - eps] and NO input check (a NaN stays NaN) - the Monte Carlo validation
+    convention (eps = 1e-4); log_loss() above is the checked MetaModel variant."""
+    p = np.clip(np.asarray(p, float), eps, 1 - eps)
+    y = np.asarray(y, float)
+    return float(-np.mean(y * np.log(p) + (1 - y) * np.log(1 - p)))
+
+
+def log_loss_multiclass(P, y, eps: float = 1e-12) -> float:
+    """Multiclass log loss: -mean log P[i, y_i], the true-class probability clipped to [eps, 1] (P: n x k, y: class indices)."""
+    return float(-np.mean(np.log(np.clip(P[np.arange(len(y)), y], eps, 1.0))))
+
+
+def ece_confidence(P, y, bins: int = 10, lo: float = 1 / 3) -> dict:
+    """Top-label ECE: confidence = max p, hit = argmax == y, equal-width bins on [lo, 1] (lo = 1/k for k classes; the Training Center
+    3-class default 1/3). -> {"ece" (rounded 5), "bins": [{from, to, n, confidence, accuracy}]}."""
+    conf = P.max(axis=1)
+    pred = P.argmax(axis=1)
+    hit = (pred == y).astype(float)
+    edges = np.linspace(lo, 1.0, bins + 1)
+    tot, rows = 0.0, []
+    for a, b in pairwise(edges):
+        m = (conf >= a) & (conf < b if b < 1 else conf <= b)
+        if m.sum():
+            gap = abs(hit[m].mean() - conf[m].mean())
+            tot += m.sum() / len(y) * gap
+            rows.append({"from": round(float(a), 3), "to": round(float(b), 3), "n": int(m.sum()), "confidence": round(float(conf[m].mean()), 4),
+                         "accuracy": round(float(hit[m].mean()), 4)})
+    return {"ece": round(float(tot), 5), "bins": rows}
 
 
 def brier(p, y) -> float:

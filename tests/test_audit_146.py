@@ -768,7 +768,6 @@ class TestTrainhubStudioRobustness(unittest.TestCase):
 
     def test_inference_loop_survives_an_error(self):
         import threading
-        import types
 
         from masterquo.events import AppLog, EventBus
         from masterquo.trainhub import inference as INF

@@ -23,7 +23,7 @@ from . import contract as C
 
 VERSION = "PMW-IND-OFI-1"
 UNITS = {"best_imbalance": "ratio", "depth_imbalance": "ratio", "ofi": "lots", "ofi_window": "lots", "microprice": "price",
-         "microprice_dev": "price", "mid": "price"}
+         "microprice_dev": "price", "mid": "price", "book_spread": "price"}
 BOOK_TYPE_SELL, BOOK_TYPE_BUY, BOOK_TYPE_SELL_MARKET, BOOK_TYPE_BUY_MARKET = 1, 2, 3, 4
 
 
@@ -133,7 +133,9 @@ def compute(book: dict | None, acc: OFIAccumulator, *, instrument: str, broker_s
     vals = {"best_imbalance": best_imbalance(book), "depth_imbalance": depth_imbalance(book, levels), "microprice": mp, "mid": mid,
             "microprice_dev": (mp - mid) if mp is not None else None, "ofi": v["ofi"], "ofi_window": v["ofi_window"],
             "bid_levels": len(book["bids"]), "ask_levels": len(book["asks"]), "best_bid_size": book["bids"][0][1],
-            "best_ask_size": book["asks"][0][1]}
+            "best_ask_size": book["asks"][0][1],
+            # 1.46 arch (I0192): spread of THIS book (best ask - best bid) - the classifier is trained on microprice_dev / this spread
+            "book_spread": book["asks"][0][0] - book["bids"][0][0]}
     extra = {"ofi_state": v, "note": "arkusz kwotowań brokera; OFI z próbek = estymata"}
     if now - book["t"] > max_age_s:
         return C.result("MICROSTRUCTURE", VERSION, values=vals, status="STALE", reason=f"BOOK_AGE_{now - book['t']:.0f}S", data_time=book["t"],

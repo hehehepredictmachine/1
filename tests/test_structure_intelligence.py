@@ -291,7 +291,7 @@ class TestTask(unittest.TestCase):
         self.assertEqual(sci2.read(t[:5], o[:5], h[:5], lo[:5], c[:5], "M1")["role"], "NO_STRUCTURAL_CONTEXT")
 
     def test_t58_t59_knowledge(self):
-        from masterquo.analysis import structure_knowledge as sk
+        from masterquo.agent import structure_knowledge as sk
         from masterquo.agent.service import load_prompt
         text, ver = load_prompt()
         self.assertIn(sk.KNOWLEDGE_VERSION, ver)

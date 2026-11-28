@@ -123,6 +123,8 @@ class MarketBridge:
         self.attempts = 0
         self.next_retry = 0.0
         self.consecutive_errors = 0
+        self._reconnect_requests = 0              # w2 (I0734): reconnect requests of the API thread - see request_reconnect()
+        self._reconnects_during_connect = 0       # w2 (I0734): consecutive connects ended by such a request (reported, never blocking)
         self._last_ok = time.monotonic()
         self.disconnect_grace_s = 20.0
         self.busy_waits = 0
@@ -314,12 +316,43 @@ class MarketBridge:
 
     def request_reconnect(self, reason: str | None = None) -> None:
         """A reconnect asked by the API (asset / MT5 settings changed, button): the same effect as the former direct write
-        `state = "RECONNECTING"; next_retry = 0` (1.45 connection behaviour); 1.46 only adds the reason to the state, the log and the
-        connection event."""
+        `state = "RECONNECTING"; next_retry = 0` (1.45 connection behaviour); 1.46 adds the reason to the state, the log and the
+        connection event. w2 (I0734, patch a6b9301): the request is also counted under the lock - a request landing inside a running
+        connect() was overwritten by its final CONNECTED; connect() now sees it and reconnects instead."""
+        with self._lock:
+            self._reconnect_requests += 1
         self._set_state("RECONNECTING", reason or "RECONNECT_REQUESTED")
         self.next_retry = 0
 
+    def retry_now(self) -> None:
+        """1.46 arch (I0089): the next bridge cycle tries to connect at once (the former direct write `bridge.next_retry = 0` of the API,
+        e.g. after a new MT5 password). Only the retry timer is reset - connect() is never called from the caller's (API) thread."""
+        self.next_retry = 0
+
+    def deals_snapshot(self) -> tuple[list[dict], float | None]:
+        """1.46 arch (I0089/I0081): (copy of the deal list, start of the period it covers - stats.deals_coverage_from_utc) taken
+        ATOMICALLY under one self._lock (as the API did with `with b._lock`); nothing else that takes a lock is called under it."""
+        from ..stats import deals_coverage_from_utc
+        with self._lock:
+            return list(self.deals), deals_coverage_from_utc(self)
+
+    def loaded_deals_copy(self, account_key: str | None = None, *, check_account: bool = False) -> list[dict] | None:
+        """1.46 arch (I0089): copies of the deals under self._lock, or None when the history is NOT LOADED (no poll yet) or - with
+        check_account - when it was loaded for another account than `account_key` (the former `with b._lock` block of the Telegram
+        account center in api/wf32_routes.py)."""
+        with self._lock:
+            if getattr(self, "deals_loaded_at", None) is None or (check_account and account_key != self.account_key):
+                return None
+            return [dict(d) for d in (self.deals or [])]
+
+    def request_deals_reload(self) -> None:
+        """w2 (I0711): the deal history is read again in the next bridge cycle (only the history poll timer is reset - nothing is
+        sent to the terminal besides the usual history_deals_get)."""
+        self._t_hist = 0.0
+
     def connect(self) -> None:
+        with self._lock:
+            req0 = self._reconnect_requests
         self._set_state("CONNECTING", None)
         self._initialize()
         from .fake import is_fake
@@ -339,15 +372,32 @@ class MarketBridge:
             self.account = account
             self.account_key = new_key
             self.session_epoch += 1
+            if prev_key is not None and prev_key != new_key:
+                # w2 (I0793, patch f2ed7c2): another account after a reconnect - its positions / deals are loaded by the first poll,
+                # the old lists are never served under the new account_key
+                self.positions, self.orders, self.deals = [], [], []
+                self.deals_loaded_at = None
         self._record_account(account)
         if prev_key is not None and (prev_key != new_key or prev_path != terminal.get("path")):
             self.log.warn("MT5", "ACCOUNT_OR_TERMINAL_CHANGED", f"Zmiana rachunku/terminala: {prev_key} -> {new_key}")
             self._notify("account_changed", {"previous": prev_key, "current": new_key})
         self.clock.reset()
         self._load_stored_offset(account["server"])
-        self._check_symbol()
-        self._load_all_history()
+        sym0 = self._check_symbol()               # w2 (I0734): ONE symbol for symbol_info, every TF buffer and buffer_symbol
+        self._load_all_history(sym0)
         self._load_dxy()
+        with self._lock:
+            again = self._reconnect_requests != req0
+        if again or self.cfg.symbol != sym0:
+            # w2 (I0734): the symbol / MT5 settings changed (or a reconnect was asked) during this connect - its data is not CONNECTED
+            self._reconnects_during_connect += 1
+            if self._reconnects_during_connect == 6:
+                self.log.write("WARNING", "MT5", "RECONNECT_REQUESTED_DURING_CONNECT_REPEATED",
+                               "MT5: kolejne połączenia przerywane żądaniem ponownego połączenia (zmiana symbolu / ustawień MT5).")
+            self._set_state("RECONNECTING", "RECONNECT_REQUESTED_DURING_CONNECT")
+            self.next_retry = 0
+            return
+        self._reconnects_during_connect = 0
         self.connected_since = self.now()
         self._last_ok = time.monotonic()
         self.attempts = 0
@@ -381,7 +431,9 @@ class MarketBridge:
         if self.assets is not None:
             self.assets.check_symbol(symbol, path)
 
-    def _check_symbol(self) -> None:
+    def _check_symbol(self) -> str:
+        """Verify the configured (or auto-detected) symbol and store its metadata; returns the verified symbol (w2: connect() loads
+        the history of exactly this symbol)."""
         sym = self.cfg.symbol
         self._guard(sym)
         info = self._call(lambda m: m.symbol_info(sym))
@@ -421,6 +473,7 @@ class MarketBridge:
             tm = info.get("trade_mode")
             self.symbol_status = "OK" if tm == 4 else {0: "TRADE_DISABLED", 1: "LONG_ONLY", 2: "SHORT_ONLY", 3: "CLOSE_ONLY"}.get(tm, f"TRADE_MODE_{tm}")
         self.bus.publish("symbol", self.symbol_status_dict())
+        return sym
 
     # ---------------------------------------------------------------- history
     def _fetch(self, symbol: str, tf: str, count: int) -> list[Bar]:
@@ -467,11 +520,12 @@ class MarketBridge:
     def buffer_size(self, tf: str) -> int:
         return min(2000, max(self.cfg.chart_bars, self.required_bars.get(tf, 260) + 60))
 
-    def _load_all_history(self) -> None:
+    def _load_all_history(self, symbol: str | None = None) -> None:
+        symbol = symbol or self.cfg.symbol        # w2 (I0734): read once - cfg.symbol per TF mixed two symbols when it changed meanwhile
         with self._lock:
             self.buffer_symbol = None             # buffers of the previous symbol are never served as the new one
         for tf in TIMEFRAMES:
-            bars = self._fetch(self.cfg.symbol, tf, self.buffer_size(tf) + 1)
+            bars = self._fetch(symbol, tf, self.buffer_size(tf) + 1)
             for i in range(len(bars) - 1):
                 bars[i].closed = True
                 bars[i].available_raw_next_open = bars[i + 1].t_raw
@@ -481,7 +535,7 @@ class MarketBridge:
                 st.bars, st.loaded, st.last_poll, st.last_error = bars, True, time.monotonic(), None
             self.bus.publish("bars_reloaded", {"tf": tf, "count": len(bars)})
         with self._lock:
-            self.buffer_symbol = self.cfg.symbol
+            self.buffer_symbol = symbol
 
     def _load_dxy(self) -> None:
         sym = self.cfg.dxy_symbol
@@ -733,17 +787,28 @@ class MarketBridge:
             raise BridgeError("ACCOUNT_INFO_NONE")
         a = self._account_dict(_row(acct))
         key = f"{a['server']}:{a['login']}"
-        if key != self.account_key:
+        changed = key != self.account_key
+        if changed:
             prev = self.account_key
             with self._lock:
                 self.account, self.account_key = a, key
                 self.session_epoch += 1
+                # w2 (I0793, patch f2ed7c2): positions / orders / deals of the previous account are never served under the new account_key
+                # (deals stayed up to history_poll_seconds); deals_loaded_at=None = "history of this account not loaded yet" for every
+                # consumer (the manager neither reconciles nor settles before it is loaded again)
+                self.positions, self.orders, self.deals = [], [], []
+                self.deals_loaded_at = None
             self._record_account(a)
             self.log.warn("MT5", "ACCOUNT_CHANGED", f"Zmieniono rachunek w terminalu: {prev} -> {key}. Decyzje wygaszone; wysyłka zleceń zablokowana do zgodności rachunku z trybem.")
             self.clock.reset()
             self._load_stored_offset(a["server"])
-            self._load_all_history()
-            self._notify("account_changed", {"previous": prev, "current": key})
+            try:
+                self._load_all_history(self._check_symbol())   # w2 (I0793): symbol metadata of the new broker (was kept until a reconnect)
+            except Exception:
+                self._set_state("RECONNECTING", "ACCOUNT_CHANGED_RELOAD_FAILED")   # full connect() repeats the symbol / history checks
+                raise
+            finally:
+                self._notify("account_changed", {"previous": prev, "current": key})
         sym = self.cfg.symbol
         pos = self._call(lambda m: m.positions_get()) or ()
         ords = self._call(lambda m: m.orders_get()) or ()
@@ -753,6 +818,9 @@ class MarketBridge:
             self.orders = [{k: v for k, v in _row(o).items() if k in ("ticket", "time_setup", "type", "symbol", "volume_current", "price_open", "sl", "tp", "magic", "comment")} for o in ords]
         self.bus.publish("account", self.account_status())
         self.bus.publish("positions", {"positions": self.positions, "orders": self.orders, "symbol": sym})
+        if changed:
+            self._t_hist = time.monotonic()
+            self._poll_deals()                        # w2 (I0793): deal history of the new account right away (after its positions)
 
     def _pos_dict(self, p: dict) -> dict:
         return {"ticket": p.get("ticket"), "symbol": p.get("symbol"), "side": "BUY" if p.get("type") == 0 else "SELL",
@@ -877,3 +945,14 @@ class MarketBridge:
         server_now = self.now() + timedelta(seconds=off)
         midnight = server_now.replace(hour=0, minute=0, second=0, microsecond=0)
         return midnight - timedelta(seconds=off)
+
+
+def loaded_deals_copy(bridge, account_key: str | None = None, *, check_account: bool = False) -> list[dict] | None:
+    """MarketBridge.loaded_deals_copy for any bridge object: the class method when the object has it, else the same read under
+    bridge._lock (test doubles / objects with only the attributes) - callers outside the bridge never touch its lock themselves."""
+    if callable(getattr(type(bridge), "loaded_deals_copy", None)):
+        return bridge.loaded_deals_copy(account_key, check_account=check_account)
+    with bridge._lock:
+        if getattr(bridge, "deals_loaded_at", None) is None or (check_account and account_key != bridge.account_key):
+            return None
+        return [dict(d) for d in (bridge.deals or [])]

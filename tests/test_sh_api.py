@@ -17,7 +17,7 @@ from _env import TempData, wait_for
 CHROMIUM = os.environ.get("MQ_CHROMIUM", "/opt/pw-browsers/chromium")
 SHOTS = _env.ROOT / "data" / "logs" / "ui_sh"
 try:
-    from playwright.sync_api import sync_playwright
+    from playwright.sync_api import sync_playwright  # noqa: F401 - availability check
     HAVE_PW = True
 except ImportError:  # pragma: no cover
     HAVE_PW = False

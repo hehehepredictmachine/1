@@ -61,9 +61,17 @@ function norm(bot: any, setups: any, sh: any): Sig[] {
 // 1.46: catalog ids are lower case (th_logreg, kronos, chronos2, granite_ttm, gold_forecast) while /models/predictions names the models
 // TH_LOGREG, Kronos-small, Chronos-2, Granite TTM, gold_candles - the case-sensitive match never hit and every model landed in "BEZ WYNIKU".
 // Match without case / separators, a prefix only up to a separator (kronos -> Kronos-small), explicit aliases; a READY prediction first.
+// 1.46 arch (I0009): the catalog row and the prediction both carry canonical_id (quant/ids) - an exact match first; a group row
+// (group:lab, group:th_direction, group:si_move) never stands for one prediction; the name heuristic only for an older server.
 const PRED_ALIAS: Record<string, string[]> = { gold_forecast: ["gold_candles"] };
 const nkey = (v: unknown) => String(v ?? "").toLowerCase().replace(/[^a-z0-9]/g, "");
-function predFor(id: string, preds: any[]): any {
+function predFor(id: string, preds: any[], canonicalId?: string | null): any {
+  const cid = String(canonicalId ?? "");
+  if (cid.startsWith("group:")) return undefined;
+  if (cid && preds.some((p) => p?.canonical_id)) {
+    const exact = preds.filter((p) => p?.canonical_id === cid);
+    return exact.find((p) => p.state === "READY") ?? exact[0];
+  }
   const keys = [id, ...(PRED_ALIAS[id] || [])].map((k) => String(k).toLowerCase());
   const hit = preds.filter((p) => {
     const n = String(p?.model_name ?? "").toLowerCase();
@@ -164,7 +172,7 @@ function Detail({ s }: { s: Sig }) {
   const preds: any[] = pred?.items || [];
   const up = s.dir === "BUY";
   const rows = models.map((m) => {
-    const p = predFor(String(m.id ?? ""), preds);
+    const p = predFor(String(m.id ?? ""), preds, m.canonical_id);
     const ready = p?.state === "READY" || (!p && m.state === "READY");
     const d = p?.result?.direction;
     // 1.46: FLAT / NEUTRAL / any non UP-DOWN direction is neutral for BOTH sides ((d === "UP") === up was true for SELL + FLAT -> "agrees")

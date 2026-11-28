@@ -1,6 +1,5 @@
 """Multi-market scanner and the bot's signals (strategies S01-S10 on every market): simulator markets, bridge reads,
 analysis, strategy scan on other symbols, signal validation/dedupe/tracking, main-engine events. No orders, no AI."""
-import json
 import unittest
 from datetime import datetime, timezone
 from types import SimpleNamespace as NS

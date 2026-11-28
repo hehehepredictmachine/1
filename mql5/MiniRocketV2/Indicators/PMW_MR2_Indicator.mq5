@@ -7,6 +7,10 @@
 //| MQL5\Files\PMW (read-only importer in the bot: audit comparison  |
 //| with Python, never overrides the main forecast or the Lock).      |
 //| Bar times are broker wall time: clock_basis=BROKER_WALL_TIME.     |
+//| 1.46 arch (I0482): M1 charts only (the bot importer expects tf M1)|
+//| - on another period the indicator stays idle; the record carries  |
+//| the real chart period, so a foreign TF is rejected as             |
+//| CONTEXT_MISMATCH instead of being imported as M1.                 |
 //+------------------------------------------------------------------+
 #property strict
 #property indicator_separate_window
@@ -37,6 +41,12 @@ datetime g_lastBar = 0;
 int OnInit()
   {
    SetIndexBuffer(0, B1); SetIndexBuffer(1, B2); SetIndexBuffer(2, B3);
+   if(_Period != PERIOD_M1)
+     {
+      Print("PMW_MR2_INDICATOR CONTEXT_TF_NOT_M1 (", EnumToString((ENUM_TIMEFRAMES)_Period), ") - indicator idle");
+      g_ready = false;
+      return INIT_SUCCEEDED;
+     }
    string err;
    g_ready = MR2LoadModel(InpModel, false, g_mr, g_head, err, g_sha);
    if(!g_ready) Print("PMW_MR2_INDICATOR model not loaded: ", err, " (NOT_FITTED / INCOMPATIBLE) - indicator idle");
@@ -62,7 +72,8 @@ int OnCalculate(const int rates_total, const int prev_calculated, const datetime
    if(g_head.m_H >= 3) B3[last] = sc[8 + 2] - sc[8 + 0];
    string err;
    g_seq++;
-   if(!MR2WriteResult(InpOutDir, g_seq, (long)time[last], (long)TimeGMT(), g_sha, _Symbol, "M1", "BROKER_WALL_TIME", sc, err))
+   string tf = StringSubstr(EnumToString((ENUM_TIMEFRAMES)_Period), 7);   // real chart period ("PERIOD_M1" -> "M1"), never a literal
+   if(!MR2WriteResult(InpOutDir, g_seq, (long)time[last], (long)TimeGMT(), g_sha, _Symbol, tf, "BROKER_WALL_TIME", sc, err))
       Print("PMW_MR2_INDICATOR write failed: ", err);
    return rates_total;
   }

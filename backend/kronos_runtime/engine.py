@@ -3,8 +3,10 @@
 Calls the ORIGINAL upstream API only (vendor/kronos: KronosPredictor.predict / predict_batch). What this file adds:
 * loading from local, checksum-verified files (offline after installation; HF_HUB_OFFLINE=1),
 * the compatibility check of the pair (tokenizer s1/s2 bits == model s1/s2 bits, 6 input channels, context <= 512),
-* device choice: CUDA only when available AND a test operation works, otherwise CPU (the reason is reported); a CUDA error during a
-  forecast moves the engine to CPU once and says so,
+* device choice: CUDA only when available AND a test operation works, otherwise CPU (the reason is reported); a CUDA error during the
+  main forecast moves the engine to CPU once and says so (device_note GPU_ERROR_FALLBACK_CPU); a CUDA error in the optional paths block
+  returns the main forecast without the band (paths_error) - the bot uses both only for information and the ASSIST hold, never as a
+  REQUIRED confirmation (masterquo/kronos/predictions.py, decision_limited),
 * a seeded main forecast (one sampled path, sample_count=1 - upstream averages samples when sample_count > 1, so it never returns
   separate paths) and OPTIONAL independent paths for an uncertainty band: N copies of the same input in predict_batch, each row is
   sampled independently; the band is the empirical quantile of those paths - NOT calibrated, NOT a probability.
@@ -128,8 +130,9 @@ class Engine:
             return "cpu", f"test CUDA nieudany ({type(exc).__name__}: {exc}"[:160] + ") – CPU"
 
     def _move(self, dev: str) -> None:
-        """1.46: used ONLY by selftest(reference=True) (the separate `kronos_runtime.install verify` process, report only); the live
-        predict() GPU -> CPU fallback (_to_cpu) is unchanged from 1.45."""
+        """Move model + tokenizer to `dev` with the RoPE caches reset - used by the live predict() GPU -> CPU fallback (_to_cpu, arch 1.46
+        I0193: before, only .to() was called and the retry plus every later forecast failed until the process was restarted) and by
+        selftest(reference=True)."""
         p = self.predictor
         p.tokenizer = p.tokenizer.to(dev)
         p.model = p.model.to(dev)
@@ -141,17 +144,8 @@ class Engine:
                 if hasattr(m, "seq_len_cached"):
                     m.seq_len_cached = m.cos_cached = m.sin_cached = None
 
-    def _ref_to_cpu(self, why: str) -> None:
-        """selftest(reference=True) only: CPU move with the RoPE caches reset (see _move)."""
-        self._move("cpu")
-        self.info["device"] = "cpu"
-        self.info["device_note"] = f"GPU_ERROR_FALLBACK_CPU: {why}"[:200]
-
     def _to_cpu(self, why: str) -> None:
-        p = self.predictor
-        p.tokenizer = p.tokenizer.to("cpu")
-        p.model = p.model.to("cpu")
-        p.device = "cpu"
+        self._move("cpu")                                                   # RoPE caches reset (they stayed on the GPU)
         self.info["device"] = "cpu"
         self.info["device_note"] = f"GPU_ERROR_FALLBACK_CPU: {why}"[:200]
 
@@ -209,9 +203,18 @@ class Engine:
         if npaths >= 2:
             t1 = time.perf_counter()
             torch.manual_seed(seed + 1)
-            with torch.inference_mode():
-                outs = self.predictor.predict_batch([df] * npaths, [x_t] * npaths, [y_t] * npaths, pred_len=pred_len, T=T, top_k=top_k,
-                                                    top_p=top_p, sample_count=1, verbose=False)
+            try:
+                with torch.inference_mode():
+                    outs = self.predictor.predict_batch([df] * npaths, [x_t] * npaths, [y_t] * npaths, pred_len=pred_len, T=T, top_k=top_k,
+                                                        top_p=top_p, sample_count=1, verbose=False)
+            except Exception as exc:
+                # arch 1.46 I0193: a CUDA error in the OPTIONAL paths block (the batch needs the most memory) no longer discards the main
+                # forecast already computed - it is returned without the band (paths_error) and the device is kept (as before: the next
+                # forecast tries the GPU again). Any other error is raised as before.
+                if not str(self.predictor.device).startswith("cuda"):
+                    raise
+                res["paths_error"] = f"GPU_ERROR_PATHS: {type(exc).__name__}: {exc}"[:200]
+                return res
             closes = np.stack([o["close"].to_numpy() for o in outs])          # (N, pred_len)
             q = {f"q{int(p * 100)}": [float(v) for v in np.quantile(closes, p, axis=0)] for p in (0.1, 0.5, 0.9)}
             res["paths"] = {"n": npaths, "close_quantiles": q, "final_close": [float(v) for v in closes[:, -1]],
@@ -245,7 +248,7 @@ class Engine:
         dev0 = str(self.predictor.device)
         info0 = {k: self.info.get(k) for k in ("device", "device_note")}
         if dev0 != "cpu":
-            self._ref_to_cpu("porównanie referencyjne liczone na CPU (jak u autorów)")
+            self._to_cpu("porównanie referencyjne liczone na CPU (jak u autorów)")
         try:
             return self._reference(res, df, feats)
         finally:
@@ -256,7 +259,7 @@ class Engine:
                     self._move(dev0)
                     self.info.update(info0)
                 except Exception as exc:  # noqa: BLE001 - the GPU cannot take the model back: stay on CPU and say why
-                    self._ref_to_cpu(f"powrót na {dev0} po porównaniu referencyjnym nieudany ({type(exc).__name__}: {exc})")
+                    self._to_cpu(f"powrót na {dev0} po porównaniu referencyjnym nieudany ({type(exc).__name__}: {exc})")
 
     def _reference(self, res: dict, df, feats: list[str]) -> dict:
         import numpy as np

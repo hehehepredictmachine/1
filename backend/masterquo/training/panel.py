@@ -160,15 +160,22 @@ def models(rt, inst: str) -> dict:
     for r in mx["rows"]:
         kind = r["kind"]
         row = {**r, "requires_training": kind == "TRAINED"}
-        if kind != "TRAINED":
+        if kind == "PRETRAINED":                         # 1.46 w2 (I0008): pretrained weights - no training in the bot (was 'requires training')
+            opt = r.get("owner_train") or r.get("train")
+            row.update(training="nie wymaga treningu w bocie (model przetrenowany)" + (f"; dostrajanie opcjonalne: {opt}" if opt else ""),
+                       readiness="READY" if r["status"] == "READY" else ("SHADOW" if r["status"] == "SHADOW_ONLY" else "NIEGOTOWY"),
+                       blockers=[] if r["status"] in ("READY", "SHADOW_ONLY") else [r["reason"]])
+        elif kind != "TRAINED":
             row.update(training="nie wymaga treningu", readiness="DETERMINISTIC_OK" if r["status"] in ("DETERMINISTIC_OK", "SHADOW_ONLY") else r["status"],
                        blockers=[] if r["status"] in ("DETERMINISTIC_OK", "SHADOW_ONLY") else [r["reason"]])
         else:
-            last = _last_task(inst, r["train"]) if r.get("train") else None
+            step = r.get("runner_step")                   # 1.46: a runner.STEPS key or None (trained outside the runner: owner_train)
+            last = _last_task(inst, step) if step else None
             row["last_training"] = last
             blockers = []
             if r["status"] in ("NOT_TRAINED", "DATA_MISSING"):
-                blockers.append("brak przetrenowanego modelu – uruchom zadanie " + str(r.get("train")))
+                owner = r.get("owner_train") or r.get("train") or "model przetrenowany – bez treningu w bocie"
+                blockers.append("brak przetrenowanego modelu – " + (f"uruchom zadanie {step}" if step else f"trening poza runnerem: {owner}"))
             if r["status"] == "NOT_CONNECTED":
                 blockers.append(r["reason"])
             if r["status"] == "INCOMPATIBLE":

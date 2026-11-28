@@ -7,7 +7,8 @@ import json
 import sys
 from pathlib import Path
 
-from .common import RunLog, activatable, current_contract, forecast_dir, read_registry, relocated, sha256_file, use_instrument, write_json_atomic
+from .common import (RunLog, activatable, admissible, current_contract, forecast_dir, read_registry, relocated, sha256_file, use_instrument,
+                     write_json_atomic)
 
 
 def main(argv=None) -> int:
@@ -38,15 +39,20 @@ def main(argv=None) -> int:
     log = RunLog(out / "validate_log.jsonl")
     cur = current_contract(e)
     ok, why = activatable(e, cur)
+    # D20: "activatable" is the gate of activate / rollback - the worker's gate AND the validation verdict (it said True for a REJECTED run
+    # that activate refuses); the verdict alone is in "admissible" / "not_admissible_reason"
+    adm, adm_why = admissible(e)
     res = {"run_id": rid, "checksum_ok": model_p.exists() and sha256_file(model_p) == e["artifact_sha256"], "contract_hash_matches_current_code": e["contract_hash"] == cur,
-           "activatable": ok, "not_activatable_reason": why, "overall_status": e.get("overall_status"), "horizon_status": e.get("horizon_status")}
+           "activatable": ok and adm, "not_activatable_reason": why if not ok else adm_why, "admissible": adm, "not_admissible_reason": adm_why,
+           "overall_status": e.get("overall_status"), "horizon_status": e.get("horizon_status")}
     load_model(model_p)
     if e.get("data_dir") and Path(e["data_dir"]).exists() and len(e.get("horizons_trained") or []) == 3:
         m5, m30, config, *_ = load_dataset(Path(e["data_dir"]), e["data_kind"])
         plan = json.loads((out / "TRAINING_PLAN.json").read_text(encoding="utf-8"))
         res["runtime_check"] = runtime_check(model_p, m5, m30, config, plan, log)
     val = json.loads(val_p.read_text(encoding="utf-8"))
-    print(f"Run {rid}: {e.get('overall_status')} · kontrakt {'zgodny' if res['contract_hash_matches_current_code'] else 'NIEZGODNY'} · checksum {'OK' if res['checksum_ok'] else 'BŁĄD'}")
+    print(f"Run {rid}: {e.get('overall_status')} · kontrakt {'zgodny' if res['contract_hash_matches_current_code'] else 'NIEZGODNY'} · checksum {'OK' if res['checksum_ok'] else 'BŁĄD'}"
+          f" · aktywacja {'możliwa' if res['activatable'] else 'NIE: ' + str(res['not_activatable_reason'])}")
     print(f"{'h':>4} {'status':<20} {'Brier':>8} {'base':>8} {'bez form.':>9} {'logloss':>8} {'base':>8} {'maxECE':>7} {'q10-q90':>8} {'dni':>4}")
     for hm, r in (val.get("horizons") or {}).items():
         if "calibrated" not in r:

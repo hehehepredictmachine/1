@@ -179,6 +179,7 @@ class TestRiskLoot(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             g = GameService(Path(d))
             g.create_profile({"username": "Kuba", "class_id": "THE_ROOKIE", "difficulty": "EASY"})
+            R.set_grant_enabled(g, True)                                                           # 1.46: RiskLoot Default OFF (I0759)
             a = R.grant(g, self.EV)
             b = R.grant(g, {**self.EV, "event_id": "e1-partial-2"})                               # same position -> no second award
             self.assertTrue(a["granted"])

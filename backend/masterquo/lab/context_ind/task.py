@@ -1,9 +1,12 @@
 """FS_VS_CONTEXT_v1 (VS08) - optional learning variant on the new context readings, task CONTEXT_MOVE_M5_V1: for every closed M5 bar the
 raw-market move after h = 3/6/12 M5 bars, r_h = (C[i+h]-C[i])/ATR14_i, classes +-0.15 sqrt(h) (gap inside the window -> excluded). Features
 are built AS OF each bar from the incremental engines (VAMD state, FD state, SMC state/events PUBLISHED by that close - never today's final
-geometry). Families CLASS_FREQ / LOGREG / XGB through structure_task.Tabular + the shared frozen protocol (holdout 20 %, purged walk-forward,
-holdout once). Ablation: core -> +VAMD -> +FD -> +SMC -> full. Deterministic modules are CALIBRATED (<= 24 pre-declared configs, dev only),
-never 'trained'. No model -> no_model; nothing activates execution."""
+geometry). Families CLASS_FREQ / LOGREG / XGB through structure_task.Tabular + the shared split (holdout 20 % reserved, purged
+walk-forward on dev). Ablation: core -> +VAMD -> +FD -> +SMC -> full. Deterministic modules are CALIBRATED (<= 24 pre-declared configs, dev
+only), never 'trained'. No model -> no_model; nothing activates execution.
+1.46 (as implemented, research model F-17 / NOT_CONNECTED): the holdout is NEVER opened here (no evaluate_holdout for this task), no
+temperature calibration is fitted, a candidate is saved only for LOGREG (XGB is compared on the folds only, no candidate) - the report says so
+(holdout_status / calibration / xgb). There is no SHADOW or live path for CONTEXT_MOVE_M5_V1."""
 from __future__ import annotations
 
 import hashlib
@@ -246,6 +249,8 @@ def _load(d: Path) -> dict:
 
 
 def train(inst: str, d: Path, families=("LOGREG", "XGB"), profile_name: str = "standard", db=None, log=print) -> dict:
+    """Dev folds + ablation + LOGREG candidate (research). `db` is accepted for the common trainer signature and is not used: no holdout
+    ledger, because the holdout is not opened by this task (1.46: stated in the report instead of the 'holdout once' claim)."""
     data = _load(d)
     man = data["ctx_manifest"]
     if man["profile"]["hash"] != profile(inst)["hash"]:
@@ -260,7 +265,9 @@ def train(inst: str, d: Path, families=("LOGREG", "XGB"), profile_name: str = "s
     rd.mkdir(parents=True)
     rep = {"run_id": rid, "task_id": TASK, "schema": SCHEMA, "dataset_id": man["dataset_id"], "role": "TEST_ONLY" if syn else "RESEARCH",
            "split_hash": sp["hash"], "holdout_from": sp["cut"], "folds": [], "ablations": {}, "families": list(families),
-           "horizons_m5": list(HORIZONS), "created_at": datetime.now(timezone.utc).isoformat(), "edge_status": "NO_VALIDATED_EDGE"}
+           "horizons_m5": list(HORIZONS), "created_at": datetime.now(timezone.utc).isoformat(), "edge_status": "NO_VALIDATED_EDGE",
+           # 1.46: what this research task (F-17, NOT_CONNECTED) really does - no holdout evaluation, no calibration, XGB only in the folds
+           "holdout_status": "NOT_OPENED_F17", "calibration": "NONE", "xgb": "FOLDS_ONLY_NO_CANDIDATE"}
     fams = ["CLASS_FREQ"] + [f for f in families if f in ("LOGREG", "XGB")]
     for f in sp["folds"][-int(prof.get("max_folds") or 4):]:
         bl = f["blocks"]

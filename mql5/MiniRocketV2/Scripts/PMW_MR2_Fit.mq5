@@ -7,6 +7,10 @@
 //| and NO model file is written (no activation). Data are never     |
 //| silently truncated to 2048. Output: MQL5\Files\PMW\native_fit.txt |
 //| with status, iterations and residuals. No trading.               |
+//| 1.46 arch: META is range-checked before allocation - hit counts   |
+//| are kept in uchar, so L must be <= 255 (I0485); the layout is     |
+//| taken from DILS/CNTS/QUAN of the file (SetLayout), Configure only |
+//| for an old file without them (I0483).                             |
 //+------------------------------------------------------------------+
 #property script_show_inputs
 #property strict
@@ -24,10 +28,17 @@ void OnStart()
    int sm = MR2Find(secs, "META"), sx = MR2Find(secs, "XWIN"), sy = MR2Find(secs, "YCLS"), sr = MR2Find(secs, "RVAL");
    if(sm < 0 || sx < 0 || sy < 0 || sr < 0) { Print("PMW_MR2_FIT FAIL missing section"); return; }
    int L = MR2RdI4(buf, secs[sm].offset), n = MR2RdI4(buf, secs[sm].offset + 8), H = MR2RdI4(buf, secs[sm].offset + 12);
+   // 1.46 arch (I0485): a hit count reaches L and is stored as uchar below - L > 255 would wrap; checked before any allocation
+   if(L < 9 || L > 255 || n < 1 || H < 1 || H > 16) { Print("PMW_MR2_FIT FAIL META_OUT_OF_RANGE L=", L, " n=", n, " H=", H, " (uchar hits: L <= 255)"); return; }
+   if((long)secs[sx].count != (long)n * L || (long)secs[sy].count != (long)n * H || (long)secs[sr].count != (long)n * H)
+     { Print("PMW_MR2_FIT FAIL SHAPE_MISMATCH XWIN/YCLS/RVAL vs META"); return; }
    float X[]; ArrayResize(X, n * L);
    for(int i = 0; i < n * L; i++) X[i] = MR2RdF4(buf, secs[sx].offset + 4 * i);
    CMiniRocketV2 mr;
-   mr.Configure(L, 10000, 32);
+   int ldil[], lcnt[]; float lq[];
+   if(MR2ReadLayout(buf, secs, ldil, lcnt, lq))                      // 1.46 arch (I0483): the Python layout of the train file
+     { if(mr.SetLayout(L, ldil, lcnt, lq) != MR2_OK) { Print("PMW_MR2_FIT FAIL LAYOUT_MISMATCH"); return; } }
+   else mr.Configure(L, 10000, 32);                                   // old train file without DILS/CNTS/QUAN: recomputed layout
    int frozen[];
    int e = mr.Fit(X, n, 1, frozen);
    if(e != MR2_OK) { Print("PMW_MR2_FIT FAIL transform fit ", MR2ErrorText(e)); return; }

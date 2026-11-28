@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import os
-import sys
 import tempfile
 import time
 import unittest
@@ -12,7 +11,6 @@ import uuid
 from pathlib import Path
 
 import _env  # noqa: F401 - ścieżki backendu
-from _env import TempData
 
 from masterquo.licensing import hwid as H
 from masterquo.licensing import license_key as LK

@@ -2,7 +2,7 @@
 
 * For every instrument and every ACTIVE package: after a new CLOSED base-TF candle, the bars are read through the bridge, the features
   are built by the SAME code as in training (features.last_row), the package is loaded only after its compatibility check and the
-  output is published in the unified prediction contract (modelhub.contract).
+  output is published in the unified prediction contract (contracts/prediction.py, alias modelhub.contract).
 * Any problem gives a non-READY state with the reason and NO value: INCOMPATIBLE (schema / library / checksum), ERROR (data missing,
   stale, warm-up incomplete, exception), DISABLED (no active version). The fallback is "no vote" - never a default probability.
 * Predictions are information for the panel and the evidence board; they do not open positions and do not change any setting.
@@ -14,7 +14,7 @@ import time
 
 import numpy as np
 
-from ..modelhub import contract as C
+from ..contracts import prediction as C
 from . import features as F
 from . import registry as R
 from .dataset import positive as _pos
@@ -144,6 +144,17 @@ class TrainhubInference:
                               data_quality="DEGRADED", data_time=_iso(close_t))
         if dq != "OK":
             return self._stale(inst, key, version, conf, close_t, age)
+        # arch146 D10: the dataset drops rows whose higher-TF block is FROZEN (features.htf_stale: the M15/M30 history ends / has a hole
+        # while the base TF traded on) - c8277f4 inference gave READY on such finite but stale values (train/serve skew). Same rule here.
+        if F.htf_stale(cols, tf)[-1]:
+            frozen = [h for h in F.HTF_OF[tf] if F.htf_stale({tf: cols[tf], h: cols[h]}, tf)[-1]]
+            used = {h: np.asarray(cols[h]["time"], dtype=np.int64) + F.TF_S[h] for h in frozen}      # close times; joined = last <= base close
+            last = ", ".join(f"{h} {_iso(int(a[max(0, np.searchsorted(a, close_t, side='right') - 1)]))}" for h, a in used.items())
+            # not cached until the next base candle: the higher-TF candle closing with the base one can arrive a moment later
+            self.last_bar.pop((inst, key), None)
+            return self._pred(inst, key, version, conf, "ERROR", f"nieaktualny wyższy interwał (htf_stale, jak w treningu): użyta świeca "
+                              f"zamknięta {last} przy świeżym {tf} – cechy wyższego interwału zamrożone", data_quality="DEGRADED",
+                              data_time=_iso(close_t), freshness_s=round(age, 1))
         p = R.predict_loaded(obj, x.reshape(1, -1))[0]
         res = {"DOWN": round(float(p[0]), 6), "FLAT": round(float(p[1]), 6), "UP": round(1.0 - round(float(p[0]), 6) - round(float(p[1]), 6), 6)}
         return self._pred(inst, key, version, conf, "READY", result=res, data_time=_iso(close_t), freshness_s=round(age, 1),

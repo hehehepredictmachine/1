@@ -16,13 +16,13 @@ import time
 import unittest
 from pathlib import Path
 
-import _env
+import _env  # noqa: F401 - side effect: sys.path / offline flags
 from _env import TempData
 
 sys.path.insert(0, str(Path(__file__).resolve().parent / "analytics"))
 
 import fixtures as F  # noqa: E402
-from masterquo.analytics import contract, double_bottom as DB, signal as SG, ta  # noqa: E402
+from masterquo.analytics import double_bottom as DB, signal as SG, ta  # noqa: E402
 
 
 def sine_bars(n, periods=((32, 3.0),), trend=0.0, tf_min=5, base=2000.0):

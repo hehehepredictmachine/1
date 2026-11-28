@@ -29,6 +29,14 @@ STABLE_QUOTES = {"USDT", "USDC", "BUSD", "FDUSD", "TUSD"}
 FINGERPRINT_KEYS = ("currency_base", "currency_profit", "trade_contract_size", "digits", "point")
 CALC_MODE = {0: "FOREX", 1: "FUTURES", 2: "CFD", 3: "CFD_INDEX", 4: "CFD_LEVERAGE", 5: "FOREX_NO_LEVERAGE",
              32: "EXCH_STOCKS", 33: "EXCH_FUTURES", 34: "EXCH_FUTURES_FORTS", 35: "EXCH_BONDS"}
+# 1.46 arch (I0760): a share / bond CFD (#GOLDMANSACHS, GOLD.NYSE) is never gold or bitcoin by its name
+NON_COMMODITY_TYPES = ("EXCH_STOCKS", "EXCH_BONDS")
+EXCHANGE_SUFFIXES = (".NYSE", ".NAS", ".NASDAQ", ".US")
+
+
+def _name_fits(name: str, hints) -> bool:
+    """1.46 arch (I0760): the symbol NAME itself is the asset - it starts with a hint and carries no stock-exchange suffix."""
+    return any(name.startswith(h) for h in hints) and not any(x in name for x in EXCHANGE_SUFFIXES)
 
 
 class SymbolNotAllowed(PermissionError):
@@ -43,14 +51,19 @@ def _up(v) -> str:
     return str(v or "").strip().upper()
 
 
-def classify(meta: dict | None) -> dict:
-    """Which canonical asset (if any) a terminal symbol is, from its metadata only. Returns matches + conflicts."""
+def classify(meta: dict | None, *, legacy: bool = False) -> dict:
+    """Which canonical asset (if any) a terminal symbol is, from its metadata only. Returns matches + conflicts.
+    1.46 arch (I0760): the CFD exception (base == profit == USD) needs the NAME to start with the asset's hint (no stock-exchange
+    suffix) and a calc mode that is not shares / bonds - '#GOLDMANSACHS' (EXCH_STOCKS) was XAUUSD. legacy=True = the 1.46 rule, used
+    ONLY to rank find_on_account candidates exactly as before (the result can then only be today's symbol or none)."""
     if not meta:
         return {"asset": None, "conflicts": ["NO_METADATA"], "notes": []}
     base, profit = _up(meta.get("currency_base")), _up(meta.get("currency_profit"))
     out: dict = {"asset": None, "conflicts": [], "notes": [], "base": base, "profit": profit}
     hits = []
     name = _up(meta.get("name"))
+    cm = meta.get("trade_calc_mode")
+    itype = CALC_MODE.get(cm) if cm is not None else None
     for asset, sp in SPECS.items():
         if base in sp["forbidden_base"] or any(f in name for f in sp["forbidden_base"]):
             out["conflicts"].append(f"{asset}_LOOKALIKE_BASE:{base if base in sp['forbidden_base'] else name}")
@@ -58,6 +71,9 @@ def classify(meta: dict | None) -> dict:
         # CFD brokers often report currency_base = quote currency (gold "XAUUSD-": base=USD/profit=USD). Accepted only when base == profit
         # and the symbol NAME itself carries the asset; recorded as a note so it stays visible.
         if base not in sp["base"] and base and base == profit and profit in sp["profit"] and any(h in name for h in sp["name_hints"]):
+            if not legacy and (itype in NON_COMMODITY_TYPES or not _name_fits(name, sp["name_hints"])):
+                out["notes"].append(f"{asset}_NAME_AMBIGUOUS")     # the hint is only a part of another instrument's name
+                continue
             hits.append(asset)
             out["notes"].append(f"{asset}_CFD_BASE_REPORTED_AS_{base}")
             continue
@@ -68,8 +84,6 @@ def classify(meta: dict | None) -> dict:
                 out["conflicts"].append(f"{asset}_QUOTED_IN_{profit}_NOT_USD")
             else:
                 out["conflicts"].append(f"{asset}_PROFIT_CURRENCY_{profit or 'UNKNOWN'}")
-    cm = meta.get("trade_calc_mode")
-    itype = CALC_MODE.get(cm) if cm is not None else None
     if itype in ("FUTURES", "EXCH_FUTURES", "EXCH_FUTURES_FORTS"):
         out["notes"].append("FUTURES_CONTRACT_EXPIRY_AND_BASIS_APPLY")
     if len(hits) == 1 and not out["conflicts"]:
@@ -178,7 +192,11 @@ class AssetRegistry:
 
     def find_on_account(self, asset: str) -> str | None:
         """Symbol of `asset` enabled on the account: Market Watch first, then all symbols; metadata match first, then name.
-        Look-alikes (XAUT, PAXG, WBTC, ...) are skipped."""
+        Look-alikes (XAUT, PAXG, WBTC, ...) are skipped.
+        1.46 arch (I0717 / I0760, only tightening): the candidates are ranked exactly as before; the WINNER is then vetoed when its
+        metadata contradict the asset (currency conflict: ETHBTC, BTCEUR, BTCUSDT, XAUEUR) or its name only contains the hint (share /
+        bond CFD, stock-exchange suffix: #GOLDMANSACHS, GOLD.NYSE). A vetoed winner gives None (listed in rejections) - the next
+        candidate is NEVER promoted (another symbol only through the user's confirmation in Ustawienia)."""
         b = self.bridge
         if b is None:
             return None
@@ -196,7 +214,7 @@ class AssetRegistry:
             name = str(d.get("name") or "").upper()
             if any(x in name for x in bad) or _up(d.get("currency_base")) in bad:
                 return None
-            c = classify(d)
+            c = classify(d, legacy=True)                         # the 1.46 ranking, unchanged
             s = 0
             if c["asset"] == asset:
                 s += 10
@@ -209,8 +227,41 @@ class AssetRegistry:
             if d.get("trade_mode", 4) != 0:
                 s += 1
             return s
-        best = sorted(((score(d), str(d.get("name"))) for d in rows if score(d) is not None), key=lambda x: (-x[0], len(x[1]), x[1]))
-        return best[0][1] if best else None
+        scored = [(sc, str(d.get("name")), d) for d in rows for sc in (score(d),) if sc is not None]
+        best = sorted(scored, key=lambda x: (-x[0], len(x[1]), x[1]))
+        if not best:
+            return None
+        why = self._adoption_veto(asset, best[0][2])
+        if why:
+            self._reject(asset, best[0][1], why)
+            return None
+        return best[0][1]
+
+    def _adoption_veto(self, asset: str, d: dict) -> str | None:
+        """1.46 arch (I0717 / I0760): reason why the ranked winner must not be adopted automatically, None when it may."""
+        c = classify(d)
+        if c["asset"] == asset:
+            return None
+        sp = SPECS[asset]
+        name = _up(d.get("name"))
+        base, profit = _up(d.get("currency_base")), _up(d.get("currency_profit"))
+        if any(x.startswith(f"{asset}_") and not x.endswith("_NAME_AMBIGUOUS") for x in c["conflicts"]) or (profit and profit not in sp["profit"]) \
+                or (base and base not in sp["base"] and base != profit):
+            return "CURRENCY_CONFLICT"
+        itype = CALC_MODE.get(d.get("trade_calc_mode")) if d.get("trade_calc_mode") is not None else None
+        if itype in NON_COMMODITY_TYPES or not _name_fits(name, self.NAME_HINTS[asset]):
+            return f"{asset}_NAME_AMBIGUOUS"
+        return None
+
+    def _reject(self, asset: str, sym: str, reason: str) -> None:
+        note = {"asset": asset, "broker_symbol": sym, "reason": reason, "at": _now_iso()}
+        with self._lock:
+            last = self.rejections[-1] if self.rejections else None
+            if last and (last["asset"], last["broker_symbol"], last["reason"]) == (asset, sym, reason):
+                last["at"] = note["at"]                          # the same refusal again (every verify_main) - one entry
+            else:
+                self.rejections.append(note)
+                del self.rejections[:-50]
 
     def autodetect(self, asset: str) -> str | None:
         sym = self.find_on_account(asset)
@@ -335,5 +386,9 @@ class AssetRegistry:
             items[a] = {"canonical_asset": a, "mapping_status": m.status, "broker_symbol": m.broker_symbol,
                         "confirmed_at": m.confirmed_at, "metadata_check": self._check.get(a) or {"status": "UNVERIFIED", "reasons": []},
                         "usable": ok, "blocked_reason": why, "instrument": self.instrument(a)}
+        # 1.46 arch (I0108): max_joint_exposure_pct is shown only - nothing compares it with the exposure; the joint open risk of the
+        # whole account (XAUUSD + BTC) is limited by risk.max_total_open_risk_pct
         return {"allowed": list(ALLOWED), "active": cfg.assets.active, "assets": items,
-                "max_joint_exposure_pct": cfg.assets.max_joint_exposure_pct, "rejections": self.rejections[-10:]}
+                "max_joint_exposure_pct": cfg.assets.max_joint_exposure_pct, "max_joint_exposure_enforced": False,
+                "max_joint_exposure_note": "INFORMACYJNE – nie egzekwowane; wspólny limit otwartego ryzyka rachunku = risk.max_total_open_risk_pct",
+                "rejections": self.rejections[-10:]}

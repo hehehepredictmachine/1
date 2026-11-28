@@ -24,6 +24,7 @@ from pathlib import Path
 
 import numpy as np
 
+from ..quant import numeric as N
 from . import engine as E
 
 DEFAULT_EVENTS = [{"side": s, "tp": tp, "sl": 3.0} for s in ("BUY", "SELL") for tp in (2.5, 5.0)]
@@ -33,6 +34,23 @@ EVENTS_BY_INSTRUMENT = {"XAUUSD": DEFAULT_EVENTS}
 
 
 # ------------------------------------------------------------------ data
+POINT_UNKNOWN_REASON = "brak point / tick_size w metadanych eksportu (spec.point, spec.trade_tick_size, tick_size) – nie zgaduję"
+
+
+def _point(meta: dict) -> float | None:
+    """1.46 w2 (I0687): the price unit of the export - spec.point, then spec.trade_tick_size, then the top-level tick_size; None when none
+    is a positive finite number (was: 0.01 guessed - spread_points x 0.01 for any instrument / broker)."""
+    spec = meta.get("spec") or {}
+    for v in (spec.get("point"), spec.get("trade_tick_size"), meta.get("tick_size")):
+        try:
+            f = float(v)
+        except (TypeError, ValueError):
+            continue
+        if math.isfinite(f) and f > 0:
+            return f
+    return None
+
+
 def load_dataset(ds: Path, tf: str = "M1") -> tuple[list[dict], dict]:
     from ..forecast.export import dataset_state
     ds = Path(ds)
@@ -40,7 +58,9 @@ def load_dataset(ds: Path, tf: str = "M1") -> tuple[list[dict], dict]:
     if not st["usable"]:
         raise ValueError(f"DATASET_NOT_COMPLETE:{st['state']}")
     meta = json.loads((ds / "source_metadata.json").read_text(encoding="utf-8"))
-    point = float((meta.get("spec") or {}).get("point") or meta.get("tick_size") or 0.01)
+    point = _point(meta)
+    if point is None:
+        raise ValueError(f"DATASET_POINT_UNKNOWN: {POINT_UNKNOWN_REASON}")
     rows = []
     with (ds / f"{meta.get('file_prefix') or 'XAUUSD'}_{tf}.csv").open(encoding="utf-8") as fh:
         for r in csv.DictReader(fh):
@@ -155,9 +175,7 @@ def brier(p, y) -> float:
 
 
 def logloss(p, y) -> float:
-    p = np.clip(np.asarray(p, float), 1e-4, 1 - 1e-4)
-    y = np.asarray(y, float)
-    return float(-np.mean(y * np.log(p) + (1 - y) * np.log(1 - p)))
+    return N.log_loss_clipped(p, y, 1e-4)              # 1.46 arch (I0054): the shared implementation (clip 1e-4), bit-for-bit
 
 
 def reliability(p, y, bins: int = 10) -> list[dict]:
@@ -194,9 +212,20 @@ def apply_calibrator(cal: dict, p: float) -> float:
 def validate(ds: Path, *, events=None, horizon: int = 60, window: int = 3000, stride: int = 30, n_paths: int = 500, max_points: int = 600,
              variants=E.VARIANTS, seed: int = 7, log=print) -> dict:
     t_start = time.time()
-    bars, meta = load_dataset(ds)
+    try:
+        bars, meta = load_dataset(ds)
+    except ValueError as exc:
+        if not str(exc).startswith("DATASET_POINT_UNKNOWN"):
+            raise
+        # 1.46 w2 (I0687): explicit block instead of a spread computed with a guessed point 0.01 (never an active calibrator)
+        try:
+            meta = json.loads((Path(ds) / "source_metadata.json").read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            meta = {}
+        return {"version": E.VERSION, "dataset": str(Path(ds).resolve()), "dataset_id": meta.get("dataset_id"), "data_kind": meta.get("data_kind"),
+                "instrument": meta.get("instrument"), "symbol": meta.get("symbol"), "status": "BLOCKED_DATA", "reason": POINT_UNKNOWN_REASON}
     synthetic = meta.get("data_kind") != "REAL_USER_DATA"
-    point = float((meta.get("spec") or {}).get("point") or meta.get("tick_size") or 0.01)
+    point = _point(meta)
     inst = meta.get("instrument") or "XAUUSD"                                     # exports without the key: gold only (file prefix XAUUSD)
     if not events and inst not in EVENTS_BY_INSTRUMENT:
         return {"version": E.VERSION, "dataset": str(Path(ds).resolve()), "dataset_id": meta.get("dataset_id"), "data_kind": meta.get("data_kind"),
@@ -303,9 +332,10 @@ def _write(p: Path, obj) -> None:
     os.replace(tmp, p)
 
 
-def save(inst: str, rep: dict) -> dict:
+def save(inst: str, rep: dict, activate: bool = True) -> dict:
     """Run folder + registry. Only REAL_USER_DATA with an edge over the baseline becomes the ACTIVE calibrator; the previous one stays
-    in history (rollback). Synthetic / no edge -> saved for research."""
+    in history (rollback). Synthetic / no edge -> saved for research. activate=False (1.46 D7: `montecarlo validate --no-activate`,
+    profile TEST_INSTALACJI): the run is recorded, the active calibrator stays (an eligible run is marked NOT_ACTIVATED_BY_PLAN)."""
     rid = "MC-" + datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ") + "-" + hashlib.sha256(json.dumps(rep, default=str).encode()).hexdigest()[:6]
     d = root(inst) / "runs" / rid
     _write(d / "report.json", rep)
@@ -314,23 +344,26 @@ def save(inst: str, rep: dict) -> dict:
     with RIO.file_lock(RIO.lock_for(reg_p)):
         # 1.46 arch: strict - an unreadable registry.json was replaced by an empty one (active calibrator + every run lost)
         reg = RIO.read_json(reg_p, lambda: {"active": None, "history": [], "runs": {}}, strict=True)
-        return _save_locked(rep, rid, d, reg_p, reg)
+        return _save_locked(rep, rid, d, reg_p, reg, activate)
 
 
-def _save_locked(rep: dict, rid: str, d: Path, reg_p: Path, reg: dict) -> dict:
+def _save_locked(rep: dict, rid: str, d: Path, reg_p: Path, reg: dict, allow_activation: bool = True) -> dict:
     reg.setdefault("runs", {})
     reg.setdefault("history", [])
-    activate = rep.get("status") == "DONE" and rep.get("data_kind") == "REAL_USER_DATA" and rep.get("verdict") == "PRZEWAGA_NAD_BAZOWYM"
+    eligible = rep.get("status") == "DONE" and rep.get("data_kind") == "REAL_USER_DATA" and rep.get("verdict") == "PRZEWAGA_NAD_BAZOWYM"
+    activate = eligible and allow_activation
     reg["runs"][rid] = {"created_at": datetime.now(timezone.utc).isoformat(), "status": rep.get("status"), "verdict": rep.get("verdict"),
                         "variant": rep.get("chosen_variant"), "data_kind": rep.get("data_kind"), "dataset_id": rep.get("dataset_id"),
                         "report": str(d / "report.json"), "report_sha256": hashlib.sha256((d / "report.json").read_bytes()).hexdigest()}
+    if eligible and not allow_activation:
+        reg["runs"][rid]["activation"] = "NOT_ACTIVATED_BY_PLAN"
     if activate:
         _write(d / "calibrator.json", dict(rep["calibrator"], run_id=rid, status="ACTIVE"))
         if reg.get("active"):
             reg["history"].append(reg["active"])
         reg["active"] = rid
     _write(reg_p, reg)
-    return {"run_id": rid, "activated": activate, "dir": str(d)}
+    return {"run_id": rid, "activated": activate, "eligible": eligible, "dir": str(d)}
 
 
 def active_calibrator(inst: str) -> dict | None:

@@ -26,6 +26,8 @@ import time
 
 import numpy as np
 
+from ..quant import numeric as N
+
 MODELS = {
     "TH_BASELINE": {"name": "Bazowy – częstości klas", "grid": [{}]},
     "TH_LOGREG": {"name": "Regresja logistyczna (wieloklasowa)", "grid": [{"C": c} for c in (0.05, 0.3, 1.0, 3.0)]},
@@ -156,7 +158,7 @@ def proba3(m, X) -> np.ndarray:
 
 # ------------------------------------------------------------------------------------------------ metrics
 def logloss(p, y) -> float:
-    return float(-np.mean(np.log(np.clip(p[np.arange(len(y)), y], 1e-12, 1.0))))
+    return N.log_loss_multiclass(p, y, 1e-12)          # 1.46 arch (I0054): the shared implementation, bit-for-bit the same formula
 
 
 def brier(p, y) -> float:
@@ -165,19 +167,8 @@ def brier(p, y) -> float:
 
 
 def ece(p, y, bins: int = 10) -> dict:
-    conf = p.max(axis=1)
-    pred = p.argmax(axis=1)
-    hit = (pred == y).astype(float)
-    edges = np.linspace(1 / 3, 1.0, bins + 1)
-    tot, rows = 0.0, []
-    for a, b in zip(edges[:-1], edges[1:]):
-        m = (conf >= a) & (conf < b if b < 1 else conf <= b)
-        if m.sum():
-            gap = abs(hit[m].mean() - conf[m].mean())
-            tot += m.sum() / len(y) * gap
-            rows.append({"from": round(float(a), 3), "to": round(float(b), 3), "n": int(m.sum()), "confidence": round(float(conf[m].mean()), 4),
-                         "accuracy": round(float(hit[m].mean()), 4)})
-    return {"ece": round(float(tot), 5), "bins": rows}
+    """Top-label ECE on the confidence max p in [1/3, 1] - quant/numeric.ece_confidence (1.46 arch, I0054: one implementation)."""
+    return N.ece_confidence(p, y, bins, 1 / 3)
 
 
 def metrics(p, y) -> dict:

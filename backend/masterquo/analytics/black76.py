@@ -8,14 +8,14 @@ Degenerate v = 0: discounted intrinsic value; delta 0/D (and the documented ATM 
 NONDIFFERENTIABLE at the money, vega 0 at T = 0 and the right limit D F phi(0) sqrt(T) at the money for sigma = 0, T > 0.
 Point mass at F when v = 0: p_above_strict = 1{F>K}, p_below_strict = 1{F<K}, p_at_strike = 1{F=K}.
 N(d2) is the risk-neutral probability of finishing above K IN THE MODEL - not a trade probability; p_touch is NOT estimated (null).
-Time convention: ACT/365F (seconds / (365 * 86400)); LEGACY_DAILY_PROXY (1/trading_days) only via the legacy adapter.
+Time convention: ACT/365F - callers pass T in years = seconds / (365 * 86400); LEGACY_DAILY_PROXY (1/trading_days) only via the
+legacy adapter.
 """
 from __future__ import annotations
 
 import math
 
 VERSION = "PMW-BLACK76-2.0.0"
-YEAR_S = 365.0 * 86400.0
 
 
 class Black76Error(ValueError):
@@ -41,10 +41,6 @@ def ninv(p: float) -> float:
         else:
             hi = mid
     return 0.5 * (lo + hi)
-
-
-def year_fraction(seconds: float) -> float:
-    return max(0.0, seconds) / YEAR_S
 
 
 def discount(rate: float | None = None, t: float = 0.0, d: float | None = None) -> float:

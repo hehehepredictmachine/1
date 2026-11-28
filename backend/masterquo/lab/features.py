@@ -135,11 +135,23 @@ def triple_barrier(bars: list[dict], tf: str, *, side: str, horizon: int, k_tp: 
                      "timeout": "klasa 0 (TP nieosiągnięty); wynik R z zamknięcia"}}
 
 
-def sequences(X: np.ndarray, idx: np.ndarray, length: int) -> np.ndarray:
-    """(n, channels, length) windows ending at each idx (inclusive) over SEQ_CHANNELS - for MiniRocket / ResNet / SNN."""
+def sequences(X: np.ndarray, idx: np.ndarray, length: int, fill: float | None = 0.0) -> np.ndarray:
+    """(n, channels, length) windows ending at each idx (inclusive) over SEQ_CHANNELS - for MiniRocket / ResNet / SNN.
+    Missing values become `fill` (0.0 = the inputs every existing artefact was trained and is served with; None keeps NaN).
+    1.46: training samples of the protocol policy NO_WARMUP_IN_WINDOW_V1 never contain such zeros (window_clean)."""
     cols = [FEATURES.index(c) for c in SEQ_CHANNELS]
     out = np.stack([X[i - length + 1:i + 1, cols].T for i in idx])
-    return np.nan_to_num(out, nan=0.0)
+    return out if fill is None else np.nan_to_num(out, nan=fill)
+
+
+def window_clean(warm: np.ndarray, idx: np.ndarray, length: int) -> np.ndarray:
+    """True where the whole window [i - length + 1, i] exists and has no warm-up / incomplete row (any NaN feature)."""
+    idx = np.asarray(idx, dtype=int)
+    cs = np.concatenate([[0], np.cumsum(np.asarray(warm, dtype=int))])
+    lo = idx - length + 1
+    ok = lo >= 0
+    lo_c = np.clip(lo, 0, None)
+    return ok & ((cs[idx + 1] - cs[lo_c]) == 0)
 
 
 def dataset_hash(bars: list[dict]) -> str:

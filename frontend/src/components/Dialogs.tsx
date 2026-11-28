@@ -187,7 +187,12 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
       </div>}
       {tab === "vol" && cfg.volatility && <div className="form">
         <div className="note">Poziomy dzienne: Daily Open, Daily High/Low (±1σ – etykieta podaje źródło: HV-proxy albo IV ręczna), PDH/PDL, straddle ATM i walls ±kσ. MT5 nie udostępnia opcji na złoto –
-          domyślnie IV = zmienność historyczna z zamkniętych świec D1. Możesz wpisać IV z innego źródła (np. indeks GVZ). To informacja na wykresie – nie zmienia strategii ani zleceń.</div>
+          domyślnie IV = zmienność historyczna z zamkniętych świec D1. Możesz wpisać IV z innego źródła (np. indeks GVZ). To informacja na wykresie i wycena modelowa – nie zmienia strategii ani zleceń.
+          Strategia S12 używa osobnych ścian (ustawienia walls, snapshot /api/v1/walls) – mogą się różnić od tych pasm σ panelu.
+          Sekcja poniżej to wycena modelowa – tylko wykres.</div>
+        {cfg.walls && <div className="note">Ściany strategii S12 (tylko do odczytu – ich zmiana zmieniłaby strategię): źródło {String(cfg.walls.source)},
+          okno HV {String(cfg.walls.hv_window)} świec D1, k = {(cfg.walls.ks || []).join(", ")} σ, połowa pasma {String(cfg.walls.band_sigma)} σ.
+          Na wykresie rysowane z tego samego snapshotu co S12 (podpis: snapshot_id).</div>}
         {field("Pokazuj i licz poziomy", "volatility.enabled", "bool")}
         {field("Estymator HV", "volatility.estimator", "text", "close_to_close = zwroty zamknięć · parkinson = zakres high/low", ["close_to_close", "parkinson"])}
         {field("Okno HV [świece D1]", "volatility.window", "num", "5–250, domyślnie 20")}
@@ -245,10 +250,11 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
         <div className="note">Reguła „spread do 40%”: w źródłach brak mianownika (M01 v4.2.1 §12) – status WYMAGA USTALENIA, nie jest używana jako filtr.</div>
       </div>}
       {tab === "strategy" && <div className="form">
+        <div className="note">Ta zakładka dotyczy ścieżki ORIGINAL / M07 (MVP / SMC / SCALPING). Profil ACTIVE (S01–S12) ma własne pola w zakładce AUTO / ACTIVE.</div>
         {field("Tryb strategii", "strategy.mode", "text", "AUTO = SMC > MVP > SCALPING (stała kolejność, nie ranking)", ["AUTO", "MVP", "SMC", "SCALPING"])}
         {field("Kierunek struktury", "strategy.structure_policy", "text", "H1_LEAD = decyduje H1 (najwięcej setupów) · H1_H4_NOT_OPPOSING = H1, o ile H4 nie jest przeciwny · STRICT_H4_H1 = oryginał MasterQUO (H4 i H1 zgodne)", ["H1_LEAD", "H1_H4_NOT_OPPOSING", "STRICT_H4_H1"])}
         {field("TTL setupu [świece TF setupu]", "strategy.setup_ttl_bars", "num")}
-        {field("Okno wejścia po potwierdzeniu [świece]", "strategy.confirmed_window_bars", "num", "potem setup = MISSED_ENTRY")}
+        {field("Okno wejścia po potwierdzeniu – ścieżka ORIGINAL / M07 [świece]", "strategy.confirmed_window_bars", "num", "potem setup = MISSED_ENTRY; profil ACTIVE (S01–S12) używa pola w zakładce AUTO / ACTIVE")}
         {field("Konflikt D1 blokuje wejście", "strategy.d1_conflict_blocks_entry", "bool")}
         {field("Waga TP1", "strategy.tp1_weight", "num")}
         {field("Min. odległość celu [ATR]", "strategy.min_target_distance_atr", "num")}
@@ -270,7 +276,7 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
         {field("Margines konfliktu LONG/SHORT", "active.conflict_margin", "num")}
         {field("Obniżenie etapu po [aktualizacjach]", "active.downgrade_confirm_updates", "num")}
         {field("Anulowanie po [aktualizacjach bez struktury]", "active.cancel_after_misses", "num")}
-        {field("Okno wejścia po CONFIRMED [świece]", "active.confirmed_window_bars", "num")}
+        {field("Okno wejścia po CONFIRMED – profil ACTIVE, S01–S12 [świece]", "active.confirmed_window_bars", "num", "ścieżka ORIGINAL / M07 używa pola w zakładce Strategia M07")}
         <div className="note">Skanowanie i dopuszczenie do handlu każdej strategii ustawiasz w panelu „Strategie (10)”. Powrót do poprzedniej konfiguracji: profil ORIGINAL (instrukcja w ROLLBACK.md).</div>
       </div>}
       {tab === "kronos" && <KronosTfs />}

@@ -78,13 +78,32 @@ własnymi regułami (wymóg „downstream modules must not recalculate”).
 ### 3.2 Mapa (`ZE.compute_map`, wersja `PMW-ZONES-MAP-1`)
 
 `map_id` (`ZM-` + hash instrumentu, as_of, wersji silników i stanu stref), `schema_version`, `instrument`, `symbol`, `as_of`,
-`versions` {map, hlze, dsvie, uzice, schema}, `data` {state OK / DEGRADED / STALE / INSUFFICIENT_HISTORY, reasons, bars},
+`versions` {map, hlze, dsvie, uzice, schema, semantics (od 1.46)}, `data` {state OK / DEGRADED / STALE / INSUFFICIENT_HISTORY, reasons, bars},
 `zones`, `m5`, `m15`, `levels`, `demand_supply`, `profiles` {developing, completed (12 ostatnich), profile_set}, `context`,
 `volume_source`, `expired` (30 ostatnich), `htf_sr`, `price`, `atr_m5`, `session_boxes`, `summary` {nearest_support,
 nearest_resistance, zones, provisional}, `mode` = `ANALYTICAL_ONLY`.
 
 Stan danych: `INSUFFICIENT_HISTORY` (< 60 zamkniętych M5) → brak stref; `STALE` (ostatnia zamknięta M5 starsza niż 3 świece);
 `DEGRADED` (rozwijający się profil sesji jest STALE). Konsumenci nie traktują mapy innej niż OK jako potwierdzonej.
+
+### 3.2a Semantyka mapy (1.46: `PMW-ZONES-SEM-2`, `zones/engine.py: SEMANTICS`)
+
+Mapa na żywo (ZoneService, API, wykres, ocena SHADOW, wskaźniki) liczona jest w semantyce SEM-2 – poprawki audytu 1.46:
+
+| Pozycja | SEM-1 (do 1.46) | SEM-2 |
+|---|---|---|
+| I0837 `poc_migration_bins` | 0 przy < 4 punktach ścieżki POC | `null` (nieznane) → cecha `zone_poc_migration` NaN |
+| I0838 kontekst popytu/podaży z PREVIOUS_DAY / PREVIOUS_SESSION | poziomy znane w `as_of` (także późniejszy dzień/sesja) | tylko poziom znany (`confirmed_at`) w chwili potwierdzenia pivotu |
+| I0839 cykl życia popytu/podaży | od świecy displacement | od max(displacement, potwierdzenie pivotu) |
+| I0840 cechy `zone_opp_age_bars` / `zone_opp_retests` / `zone_session` | brak = 0 / 0 / −1 | brak = NaN; −1 tylko poza każdym oknem sesji (`context.session_window` = null) |
+| I0841 równe szczyty/dołki | tolerancja z ATR ostatniej świecy, granice wszystkich członków od 2. potwierdzenia | tolerancja z ATR przy potwierdzeniu późniejszego z pary; granice odcinkami (`segments`) – rosną od potwierdzenia kolejnego członka |
+| I0842 punkty wolumenu | „3 zakończone + rozwijający się” wybierane spośród profili przy strefie | wybierane raz spośród wszystkich profili mapy |
+| I0843 / I0865 świeżość | wiek nieznany = 0 (maks. 10 pkt); limit = największe `max_age_bars` (576 M5 także dla M15) | wiek z `age_bars` członka wobec `max_age_bars` jego TF (najświeższy członek), bez `age_bars` – z `created_at` / `confirmed_at`; nieznany → 0 pkt i flaga `AGE_UNKNOWN` |
+
+Poprzednia semantyka `PMW-ZONES-SEM-1` (`LEGACY_SEMANTICS`) jest odtwarzana bit w bit (ta sama mapa i `map_id`, sprawdzone na 40 mapach
+syntetycznych): legacy ML liczy w `ml/features.py: zone_block` oba bloki stref – modele wytrenowane na MQ-FEAT ≤ 1.2.0 dostają
+dokładnie swoje dotychczasowe wejścia (`Bundle.adapt`), nowe modele (MQ-FEAT-1.3.0) – blok SEM-2. Starych artefaktów nie unieważniono
+(niezgodny czempion w ASSIST oznaczałby przejście bramki ML = poluzowanie filtra).
 
 ### 3.3 API (tylko odczyt)
 
@@ -113,6 +132,7 @@ Stan danych: `INSUFFICIENT_HISTORY` (< 60 zamkniętych M5) → brak stref; `STAL
   kosztach zmienia decyzję oceny na REDUCE – tylko przy mapie w stanie OK. Ocena SHADOW nie steruje zleceniami (decyzja O2:
   SHADOW do 200 ocen). Ścieżki wykonania S01–S12 i SCALPING/HEDGING są bez zmian.
 * Modele produkcyjne: brak automatycznego retreningu i podmiany czempiona; czempion 1.0.0 ładuje się dalej (sprawdzone testem).
+  Od 1.46 (MQ-FEAT-1.3.0) czempion ≤ 1.2.0 dostaje blok stref SEM-1 identyczny z dotychczasowym (§3.2a).
 * Żadnych danych fikcyjnych w bocie: brak wolumenu = `NONE` i profile INVALID; brak sesji = brak poziomów sesji.
 
 ## 6. Plan i raport faz

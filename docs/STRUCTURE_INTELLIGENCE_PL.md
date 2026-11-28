@@ -61,7 +61,9 @@ Zadanie zamraża manifest (id + sha próbki, konfiguracja, wersja reguł). Statu
 po restarcie RUNNING → INTERRUPTED, `POST /api/v1/patterns/jobs/{id}/resume` bez duplikatów. Wynik ma `result_id`, `sample_sha`, `usable_at`
 (flaga `DECISIVE_EVENT_PRECEDED_RECOGNITION`). Eksport oddzielny (`/export`, bez walidacji), CSV maszynowy + bezpieczny arkusz `_sheet.csv`.
 SHOW ON CHART czyta zapisany wynik (`GET /api/v1/patterns/samples/{id}/result`, `/patterns/results/{result_id}`); REVALIDATE to jawna akcja.
-Nowa wersja `DB-1.2.0-BUF` (bufory breakout/failure × ATR, wybór pary); stare wersje bez zmian.
+Nowa wersja `DB-1.2.0-BUF` (bufory breakout/failure × ATR, wybór pary); stare wersje bez zmian. Od 1.46 wszystkie tryby mają regułę
+„brak podcięcia między dołkami” (`DB-1.0.1`, `DB-1.1.1-EXT`, `DB-1.2.1-BUF`); zadanie biblioteki ze starszą wersją reguł nie jest wznawiane
+(`RULES_VERSION_CHANGED` – uruchom nowe zadanie).
 
 ## 8. Strefy Supply/Demand (Part V+, `lab/zones.py` MQ-LAB-ZONES-2.0.0)
 SQLite = źródło prawdy; detektor tylko odkrywa strefy (nie nadpisuje cyklu życia). Cykl życia przyrostowo od checkpointu strefy: jedno wejście = jeden test,
@@ -80,7 +82,7 @@ BE = PRICE_BREAK_EVEN, nigdy nie pogarsza SL. Realne tryby przechodzą przez wsp
   (przed wynikiem) i `si_outcomes` (dojrzewanie).
 - API: `GET /api/v1/structure-intelligence`, `/snapshots/{id}`, `/forecasts`, `/models`, `/quality`; `POST /jobs`, `GET /jobs/{id}`, `POST /jobs/{id}/cancel`,
   `POST /models/select|rollback`; Manual Pad `/api/v1/manual/*`.
-- Agent: wiedza K01–K18, K36 (`analysis/structure_knowledge.py`, PMW-SI-KNOWLEDGE-1.0.0), narzędzie `get_structure_intelligence`, prompt 1.6.0.
+- Agent: wiedza K01–K18, K36 (`agent/structure_knowledge.py`, w 1.46 przeniesione z `analysis/` – stary import działa przez shim; PMW-SI-KNOWLEDGE-1.0.0), narzędzie `get_structure_intelligence`, prompt 1.6.0.
   To instrukcja w promptcie – nie fine-tuning modelu językowego.
 
 ## 11. Komendy

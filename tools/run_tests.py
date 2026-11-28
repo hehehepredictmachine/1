@@ -20,6 +20,33 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 LEGACY = [("legacy_core", "RUN_ALL_OPERATIONAL_PROFILE_TESTS.py"), ("legacy_core", "RUN_MACRO_GUARD_ALL_TESTS.py"),
           ("legacy_core", "RUN_ALL_OFFLINE_TESTS.py"), ("m04n", "M04N_TESTS.py")]
+# 1.46 arch (I0128): pyflakes subset (unused imports / variables, undefined names) also for tests/ and backend/gold_candles. The four
+# gold_candles files hashed BYTE FOR BYTE into the forecast-model contract (data.Config.contract_hash) are excluded - a lint edit there
+# would make every trained forecast model CONTRACT_MISMATCH (see test_audit_146.TestGoldCandlesContractHashStable).
+LINT_RULES = "F401,F811,F841,F821,F823"
+LINT_PATHS = ("backend/masterquo", "backend/gold_candles", "tests", "tools")
+LINT_EXCLUDE = tuple(f"backend/gold_candles/{n}" for n in ("data.py", "patterns.py", "features.py", "model.py"))
+
+
+def lint_command() -> list[str]:
+    cmd = [sys.executable, "-m", "ruff", "check", "--select", LINT_RULES, "--output-format", "concise", *LINT_PATHS]
+    for x in LINT_EXCLUDE:
+        cmd += ["--extend-exclude", x]
+    return cmd
+
+
+def run_lint() -> dict:
+    """ruff (when installed in this interpreter) on LINT_PATHS; without ruff the step is SKIPPED - never reported as passed."""
+    import importlib.util
+    if importlib.util.find_spec("ruff") is None:
+        return {"status": "SKIPPED_NO_RUFF", "ok": True, "note": "pip install ruff - krok lint pominięty"}
+    try:
+        p = subprocess.run(lint_command(), cwd=str(ROOT), capture_output=True, text=True, timeout=600, check=False)
+    except subprocess.TimeoutExpired:
+        return {"status": "TIMEOUT", "ok": False}
+    findings = [ln for ln in p.stdout.splitlines() if ln.count(":") >= 3]
+    print("[lint]", "OK" if p.returncode == 0 else f"{len(findings)} uwag", "\n".join(findings[:40]))
+    return {"status": "PASS" if p.returncode == 0 else "FAIL", "ok": p.returncode == 0, "rules": LINT_RULES, "findings": findings[:200]}
 
 
 def run_suite() -> dict:
@@ -93,14 +120,15 @@ def run_legacy() -> list:
 def main() -> int:
     os.environ.setdefault("PYTHONDONTWRITEBYTECODE", "1")
     summary = {"generated_at": datetime.now(timezone.utc).isoformat(), "python": sys.version.split()[0], "platform": sys.platform,
-               "masterquo_ai": run_suite(), "gold_candles": run_candles()}
+               "masterquo_ai": run_suite(), "gold_candles": run_candles(), "lint": run_lint()}
     if "--legacy" in sys.argv:
         summary["legacy"] = run_legacy()
     logs = ROOT / "data" / "logs"
     logs.mkdir(parents=True, exist_ok=True)
     p = logs / f"testy_offline_{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}.json"
     p.write_text(json.dumps(summary, indent=2, ensure_ascii=False), encoding="utf-8")
-    ok = summary["masterquo_ai"]["ok"] and summary["gold_candles"]["ok"] and all(x["returncode"] == 0 for x in summary.get("legacy", []))
+    ok = summary["masterquo_ai"]["ok"] and summary["gold_candles"]["ok"] and summary["lint"]["ok"] \
+        and all(x["returncode"] == 0 for x in summary.get("legacy", []))
     print("\nRaport:", p)
     print("WYNIK:", "WSZYSTKIE TESTY OFFLINE ZALICZONE" if ok else "SA BLEDY - patrz raport")
     return 0 if ok else 1

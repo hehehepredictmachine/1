@@ -182,6 +182,11 @@ class PatternLibrary:
             return {"ok": False, "error": f"NOT_RESUMABLE: {j['status']}"}
         if not j["manifest"]:
             return {"ok": False, "error": "LEGACY_JOB_WITHOUT_MANIFEST"}
+        man = json.loads(j["manifest"])
+        cfg = man.get("config") or {}
+        cur = DB.VERSION_BUF if cfg.get("mode") == "BUFFERED" else DB.VERSION_EXT if cfg.get("mode") == "EXTENDED" else DB.VERSION
+        if man.get("rules_version") != cur:          # 1.46: the rest of the job would be validated with other rules than its manifest
+            return {"ok": False, "error": f"RULES_VERSION_CHANGED: {man.get('rules_version')} -> {cur} (uruchom nowe zadanie)"}
         # 1.46: read-then-update was not atomic - two quick resumes started two threads on one manifest (two reports, and the first
         # thread's exit removed the second one's cancel handle); only the call that moves the status out of a resumable one spawns
         with self.db.tx() as c:

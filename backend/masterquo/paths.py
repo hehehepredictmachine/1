@@ -17,7 +17,9 @@ VENDOR_DIR = BACKEND_DIR / "vendor"
 LEGACY_CORE_DIR = VENDOR_DIR / "legacy_core"
 M04N_DIR = VENDOR_DIR / "m04n"
 FRONTEND_DIST = ROOT_DIR / "frontend" / "dist"
-DEFAULTS_FILE = ROOT_DIR / "config" / "masterquo.defaults.json"
+# 1.46 arch (I0125): the ONE default loopback port of the bot (config.ServerConfig.port, CLI fallbacks, Studio's bot port). The Go launcher
+# (desktop/engine.go) and the .bat texts keep their own copy of this number - they cannot import Python.
+DEFAULT_PORT = 8765
 
 
 def _same_file(a: str, b: str) -> bool:

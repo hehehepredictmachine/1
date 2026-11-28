@@ -479,7 +479,7 @@ class TestForecastAdapter(unittest.TestCase):
         ps = AD.forecast_predictions(self.rt({"status": "SHADOW", "instrument": "XAUUSD", "report": rep, "model": {"run_id": "R1"}}), "XAUUSD")
         self.assertEqual([p["state"] for p in ps], ["READY", "READY"])
         self.assertEqual(sorted(p["horizon"]["bars"] for p in ps), [1, 3])
-        self.assertEqual(ps[0]["calibration"]["status"], "UNCALIBRATED")
+        self.assertEqual(ps[0]["calibration"]["status"], "CALIBRATED_DEV")            # D21: gold_candles always applies its calibrator
         th = C.make(instrument="XAUUSD", symbol="X", timeframe="M5", model_name="TH_LOGREG", model_version="v", task_type="CLASS_PROBABILITIES",
                     task="DIRECTION_H3_M5", horizon_bars=3, unit="probability", state="READY", result={"DOWN": 0.2, "FLAT": 0.3, "UP": 0.5},
                     data_time="2026-11-02T10:00:00Z", calibration={"method": "t", "status": "CALIBRATED_DEV"}, extra={"model_key": "TH_LOGREG_M5_H3"})

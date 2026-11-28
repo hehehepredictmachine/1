@@ -25,6 +25,8 @@ from dataclasses import dataclass, field
 from datetime import date, datetime, timezone
 from pathlib import Path
 
+from ..secrets_store import ALLOWED as _SECRET_STORE_NAMES
+
 SCHEMA_VERSION = "PMW-EXPORT-1.0.0"
 FORMATS = ("csv", "jsonl")
 DATA_KINDS = ("REAL", "DEMO", "VIRTUAL", "SIMULATED", "SYNTHETIC", "GAME", "USER_NOTE", "DERIVED", "REFERENCE", "CONFIG", "STATE", "PROVIDER")
@@ -43,7 +45,7 @@ SECRET_PATTERNS = (
     # CLIENT_MARKERS) refuses any backend file containing the owner key header literally (= licence generator code)
     re.compile(r"PMW-OWNER-ED25519-" r"PRIVATE-KEY v1(?:\\r)?(?:\\n|\s)+seed:\s*[0-9a-fA-F]{64}"),
 )
-SECRET_NAMES = ("ANTHROPIC_API_KEY", "TELEGRAM_BOT_TOKEN", "FRED_API_KEY", "MT5_PASSWORD", "COINGLASS_API_KEY")
+SECRET_NAMES = _SECRET_STORE_NAMES      # 1.46 arch (I0118): the SAME tuple as secrets_store.ALLOWED (one source), never a copy
 
 
 class ExportError(RuntimeError):
