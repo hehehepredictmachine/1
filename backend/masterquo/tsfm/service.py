@@ -46,6 +46,8 @@ from .settings import (
     default_weights_root,
     find_python,
     model_config_problems,
+    process_config_problems,
+    target_config_problems,
     tsfm_dir,
 )
 
@@ -90,10 +92,13 @@ class ModelWorker:
         self.state = {"status": status, "code": code, "reason": reason, "updated_at": iso(utcnow())}
 
     def config_state(self, s) -> bool:
-        """1.46 (I0205): settings this model can never answer (Granite TTM: context != 512, profile, lookback, horizon > 96) -> state
-        CONFIG with the exact reason; the process is not started / asked (it could only answer WARMUP / PROFILE_UNSUPPORTED at every bar).
-        Decisions as before: no forecast -> the same unavailable state (ERROR) in the contract, SH and the coordinator."""
-        probs = model_config_problems(s, self.mid)
+        """1.46 (I0205): settings under which this model answers NO target (Granite TTM: context_len < 512, lookback < 512, profile ->
+        settings.process_config_problems) -> state CONFIG with the exact reason; the process is not started / asked (it could only
+        answer WARMUP / PROFILE_UNSUPPORTED at every bar). Decisions as before: no forecast -> the same unavailable state (ERROR) in the
+        contract, SH and the coordinator. Review (S0 fail-open): it switched the WHOLE model off also for settings it partly answers today
+        (a horizon > 96 on one TF, context_len > 512 with lookback 512) - their forecasts and ASSIST holds disappeared; a horizon > 96 is
+        now a CONFIG of that target only (TsfmService.tick) and context_len > 512 is computed as today."""
+        probs = process_config_problems(s, self.mid)
         if not probs:
             return False
         if self.proc:
@@ -425,6 +430,13 @@ class TsfmService:
                 if m not in mids:
                     ws = self.workers[m].state
                     self._ms((m, inst, tf)).update(state="CONFIG" if ws.get("status") == "CONFIG" else "MODEL_UNAVAILABLE", reason=ws.get("reason"))
+            for m in list(mids):
+                tp = target_config_problems(s, m, tf)
+                if tp:
+                    # 1.46 (I0205, review): a target the model can never answer (Granite TTM horizon > 96 on THIS TF - the engine answered
+                    # CONFIG for it at every bar) is not queued; the other timeframes of the model are computed exactly as before
+                    mids.remove(m)
+                    self._ms((m, inst, tf)).update(state="CONFIG", reason="; ".join(tp)[:400])
             if mids:
                 self._check_target(inst, tf, mids, s, conn, now, force=(force == (inst, tf)), force_model=force_model)
 
@@ -595,7 +607,11 @@ class TsfmService:
                 w.fail(r["code"], r.get("error"))
             elif r.get("code") == "EXCEPTION" and w.gpu_sticky(r.get("error")):
                 w.fallback_to_cpu(r.get("error"))                 # 1.46 (I0200): was kept on the broken GPU - the error at every bar
-            ms.update(state="ERROR", reason=f"{r.get('code')}: {r.get('error')}"[:400], last_key=job["bar_key"])
+            hint = ""
+            if r.get("code") in ("WARMUP", "CONFIG", "PROFILE_UNSUPPORTED"):
+                probs = model_config_problems(s, mid)             # 1.46 (I0205): the setting behind it (message only - same ERROR state)
+                hint = f" – ustawienia: {'; '.join(probs)}" if probs else ""
+            ms.update(state="ERROR", reason=f"{r.get('code')}: {r.get('error')}{hint}"[:400], last_key=job["bar_key"])
             return None
         w.timings.append(float(r.get("ms") or 0))
         w.last_ok = w.last_used = time.monotonic()

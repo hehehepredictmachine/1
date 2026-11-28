@@ -5,8 +5,9 @@ I0200 (+I0204)  błąd CUDA w predict: proces zostawał na zepsutym GPU, błąd 
                 nadal czeka, ASSIST SH może wstrzymać); wiersz kontraktu (Quant/prezentacja) i wiersze ACTIVE koordynatora (każda rola,
                 także REQUIRED z config.json decision.required_models - uwaga recenzenta S0) nadal niedostępne jak dziś
 I0201           docstringi tsfm_runtime / service: TiRex-2 aktywny, FinCast tylko jako wycofany
-I0205           Granite TTM: zła konfiguracja (context_len ≠ 512, profil, lookback < 512, horyzont > 96) odrzucana przy zapisie,
-                istniejący plik -> stan CONFIG bez wywołania procesu (zamiast WARMUP co świecę)
+I0205           Granite TTM: zła konfiguracja (context_len ≠ 512, profil, lookback < 512, horyzont > 96) odrzucana przy zapisie;
+                istniejący plik -> stan CONFIG procesu tylko gdy model nie odpowiada na ŻADEN cel (context_len < 512, lookback < 512,
+                profil), horyzont > 96 = CONFIG tylko tego celu (uwaga recenzenta S0: pozostałe TF i ich wstrzymania ASSIST jak dziś)
 I0207           TiRex2Engine: load / predict / _direct / selftest na podstawionych modułach tirex2 + torch (+ wariant z prawdziwym
                 TiRex-2 pod MQ_TIREX2_PYTHON + MQ_TSFM_WEIGHTS_ROOT, bez środowiska SKIP)
 I0213           TabICLv2 z prawdziwym tabicl i checkpointem (proces tabicl_runtime.worker; bez .venv_tabicl / wag SKIP)
@@ -419,6 +420,78 @@ class TestI0205GraniteConfigState(_Svc):
         self.assertTrue(svc.refresh("granite_ttm", "XAUUSD", "M5")["ok"])     # repaired: queued again (state back to IDLE)
         self.assertIn(("granite_ttm", "XAUUSD", "M5"), svc.queue)
         self.assertEqual(w.state["status"], "IDLE")
+
+
+class TestI0205ReviewProcessLevel(unittest.TestCase):
+    def test_process_level_only_where_the_model_never_answers(self):
+        from masterquo.tsfm.settings import (
+            TsfmSettings,
+            process_config_problems,
+            target_config_problems,
+        )
+
+        def S(**kw):
+            return TsfmSettings.model_validate(kw)
+        self.assertEqual(process_config_problems(S(), "granite_ttm"), [])
+        for kw in ({"models": {"granite_ttm": {"context_len": 256}}}, {"lookback": 300},
+                   {"models": {"granite_ttm": {"profile": "CLOSE_OHLCV_PAST_V1"}}}):
+            self.assertTrue(process_config_problems(S(**kw), "granite_ttm"), kw)          # WARMUP / PROFILE_UNSUPPORTED at every bar today
+        for kw in ({"models": {"granite_ttm": {"context_len": 1024}}, "lookback": 512},       # effective context 512: computed today
+                   {"models": {"granite_ttm": {"context_len": 1024}}},                        # 512 bars in the window: computed today
+                   {"horizon_bars": {"M15": 100}}):                                           # only the M15 target fails today
+            self.assertEqual(process_config_problems(S(**kw), "granite_ttm"), [], kw)
+        self.assertIn("96", target_config_problems(S(horizon_bars={"M15": 100}), "granite_ttm", "M15")[0])
+        self.assertEqual(target_config_problems(S(horizon_bars={"M15": 100}), "granite_ttm", "M5"), [])
+        self.assertEqual(process_config_problems(S(models={"chronos2": {"context_len": 256}}), "chronos2"), [])
+        self.assertEqual(target_config_problems(S(horizon_bars={"M15": 100}), "chronos2", "M15"), [])
+
+
+@unittest.skipUnless(POSIX, "stub worker uses a POSIX shell wrapper")
+class TestI0205ReviewPartialConfig(_Svc):
+    """Review (S0): the whole Granite TTM in CONFIG also for settings it partly answers today - its other forecasts and their ASSIST
+    holds disappeared. Now CONFIG of the PROCESS only where it never answers; horizon > 96 is a CONFIG of that target only."""
+
+    def test_horizon_above_96_on_one_timeframe_keeps_the_others(self):
+        from masterquo.tsfm import predictions as TP
+        svc = self.make(tfs=("M5", "M15"), pre={"horizon_bars": {"M15": 100}})       # a file accepted until 1.46 (horizon 1..128)
+        svc.tick()
+        w = svc.workers["granite_ttm"]
+        self.assertNotEqual(w.state["status"], "CONFIG")                              # before the review fix: CONFIG - no forecast at all
+        self.assertIn(("granite_ttm", "XAUUSD", "M5"), svc.queue)
+        self.assertNotIn(("granite_ttm", "XAUUSD", "M15"), svc.queue)                 # the model is never asked for H 100
+        ms = svc.mstate[("granite_ttm", "XAUUSD", "M15")]
+        self.assertEqual(ms["state"], "CONFIG")
+        self.assertIn("96", ms["reason"])
+        self.run_queue()
+        self.assertEqual(svc.latest[("granite_ttm", "XAUUSD", "M5")]["direction"], "UP")
+        rows = {r["timeframe"]: r for r in TP.contract_predictions(svc, "XAUUSD") if r["model_id"] == "tsfm:granite_ttm"}
+        self.assertEqual(rows["M5"]["state"], "READY")
+        self.assertEqual((rows["M15"]["state"], rows["M15"]["result"]), ("ERROR", None))   # as today's CONFIG answer of the model
+        self.assertIn("96", rows["M15"]["unavailable_reason"])
+        self.assertTrue(svc.set_use("granite_ttm", "SCALPING", "ASSIST", timeframe="M5", confirm=True)["ok"])
+        ctx = TP.context(svc, "granite_ttm", "XAUUSD", "SCALPING", side="SELL")
+        self.assertEqual(TP.apply_to_setup({"status": "READY", "side": "SELL"}, ctx)["status"], "WAIT")   # the ASSIST hold as today
+        svc.settings.update({"horizon_bars": {"M15": 8}})                             # repaired: the target is computed again
+        svc.refresh("granite_ttm", "XAUUSD", "M15")
+        self.assertIn(("granite_ttm", "XAUUSD", "M15"), svc.queue)
+
+    def test_context_above_512_with_lookback_512_is_computed(self):
+        svc = self.make(pre={"lookback": 512, "models": {"granite_ttm": {"context_len": 1024}}})
+        svc.tick()
+        self.assertNotEqual(svc.workers["granite_ttm"].state["status"], "CONFIG")   # before the review fix: CONFIG (context_len != 512)
+        self.assertIn(("granite_ttm", "XAUUSD", "M5"), svc.queue)
+        self.run_queue()
+        self.assertEqual(svc.latest[("granite_ttm", "XAUUSD", "M5")]["state"], "READY")
+
+    def test_sh_model_status_shows_the_config_state(self):
+        from masterquo.sh import models as SM
+        svc = self.make(pre={"models": {"granite_ttm": {"context_len": 256}}})
+        svc.tick()
+        it = next(x for x in SM.REGISTRY if x["id"] == "granite_ttm")
+        st = SM.probe(it, types.SimpleNamespace(tsfm=svc), "XAUUSD")
+        self.assertEqual(st["status"], "ERROR")                                       # before: SHADOW_ONLY ('przetrenowany model ...')
+        self.assertIn("512", st["reason"])
+        self.assertEqual(st["detail"]["service"], "CONFIG")
 
 
 # ======================================================================================================== I0207 TiRex2Engine

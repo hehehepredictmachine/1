@@ -142,28 +142,76 @@ class TsfmSettings(BaseModel):
         return v
 
 
-def model_config_problems(s: TsfmSettings, mid: str) -> list[str]:
-    """1.46 (I0205): settings an ENABLED model can never answer - empty when it can. Granite TTM (TTM R2 512-96) needs EXACTLY 512
-    closed bars (context_len, and a quality window - lookback - of at least 512), the close-only profile CLOSE_V1 and a horizon of at most
-    96 bars on every timeframe it computes. Before, context_len 64..2048 / any profile / lookback >= 96 were accepted and the model
-    answered WARMUP / PROFILE_UNSUPPORTED / CONFIG at every closed bar (a 'warm-up' that never ended instead of a configuration error)."""
+def _granite_pin(s: TsfmSettings, mid: str):
+    """(model settings, context, native horizon) of an ENABLED Granite TTM, else None (the other models have no such limits)."""
     c = s.models.get(mid)
     if mid != "granite_ttm" or c is None or not c.enabled:
-        return []
+        return None
     from tsfm_runtime import lock as L
     pin = L.model("granite_ttm")
-    ctx, hz = int(pin["max_context"]), int(pin["native_horizon"])
+    return c, int(pin["max_context"]), int(pin["native_horizon"])
+
+
+def _ctx_problem(c, ctx: int) -> str:
+    return f"granite_ttm: context_len {c.context_len} ≠ {ctx} (Granite TTM liczy dokładnie {ctx} zamkniętych świec)"
+
+
+def _horizon_problem(s: TsfmSettings, tf: str, hz: int) -> str | None:
+    return f"granite_ttm: horyzont {tf} {s.horizon_bars[tf]} > {hz} świec modelu" if int(s.horizon_bars.get(tf, 0)) > hz else None
+
+
+def model_config_problems(s: TsfmSettings, mid: str) -> list[str]:
+    """1.46 (I0205): settings an ENABLED model does not support - empty when it does; used by the SAVE validation (SettingsStore.update:
+    only a NEW problem is refused). Granite TTM (TTM R2 512-96) needs EXACTLY 512 closed bars (context_len, and a quality window - lookback -
+    of at least 512), the close-only profile CLOSE_V1 and a horizon of at most 96 bars on every timeframe it computes. Before, context_len
+    64..2048 / any profile / lookback >= 96 were accepted and the model answered WARMUP / PROFILE_UNSUPPORTED / CONFIG at every closed bar
+    (a 'warm-up' that never ended instead of a configuration error). The running service acts only on process_config_problems (the
+    model answers NO target) and target_config_problems (that target only) - review I0205: never on a setting it partly answers today."""
+    g = _granite_pin(s, mid)
+    if g is None:
+        return []
+    c, ctx, hz = g
     out = []
     if c.context_len != ctx:
-        out.append(f"granite_ttm: context_len {c.context_len} ≠ {ctx} (Granite TTM liczy dokładnie {ctx} zamkniętych świec)")
+        out.append(_ctx_problem(c, ctx))
     if c.profile != "CLOSE_V1":
         out.append(f"granite_ttm: profil {c.profile} nieobsługiwany (Granite TTM: tylko CLOSE_V1 – jeden szereg close)")
     if s.lookback < ctx:
         out.append(f"lookback {s.lookback} < {ctx} (okno jakości krótsze niż kontekst Granite TTM)")
     for tf in c.timeframes:
-        if int(s.horizon_bars.get(tf, 0)) > hz:
-            out.append(f"granite_ttm: horyzont {tf} {s.horizon_bars[tf]} > {hz} świec modelu")
+        p = _horizon_problem(s, tf, hz)
+        if p:
+            out.append(p)
     return out
+
+
+def process_config_problems(s: TsfmSettings, mid: str) -> list[str]:
+    """1.46 (I0205, review): settings under which the model answers NO target - the process is then not started / asked (state CONFIG):
+    profile != CLOSE_V1 (PROFILE_UNSUPPORTED), context_len < 512 or lookback < 512 (the window min(context_len, closed bars <= lookback)
+    is always shorter than 512 -> WARMUP). context_len > 512 is NOT here: with lookback 512 (or a window of exactly 512 closed bars) the
+    model computes today; a horizon > 96 fails only its own target (target_config_problems)."""
+    g = _granite_pin(s, mid)
+    if g is None:
+        return []
+    c, ctx, _hz = g
+    out = []
+    if c.context_len < ctx:
+        out.append(_ctx_problem(c, ctx))
+    if c.profile != "CLOSE_V1":
+        out.append(f"granite_ttm: profil {c.profile} nieobsługiwany (Granite TTM: tylko CLOSE_V1 – jeden szereg close)")
+    if s.lookback < ctx:
+        out.append(f"lookback {s.lookback} < {ctx} (okno jakości krótsze niż kontekst Granite TTM)")
+    return out
+
+
+def target_config_problems(s: TsfmSettings, mid: str, tf: str) -> list[str]:
+    """1.46 (I0205, review): settings under which ONE target (model, TF) can never be answered - Granite TTM: horizon of `tf` > 96 (the
+    engine answers CONFIG for that target only, the other timeframes are computed) -> that target is not queued (state CONFIG)."""
+    g = _granite_pin(s, mid)
+    if g is None:
+        return []
+    p = _horizon_problem(s, tf, g[2])
+    return [p] if p else []
 
 
 def config_problems(s: TsfmSettings) -> list[str]:
