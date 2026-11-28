@@ -182,9 +182,11 @@ class ActiveEngine:
         return r if r and r["status"] == "ACTIVE" and not r["stale"] else None
 
     def decision_inputs(self) -> tuple[dict | None, dict | None, dict]:
-        """(setup, levels, active) for decision.build."""
+        """(setup, levels, active) for decision.build; active["selected_at"] (when the setup became the selection) is for the AI gate
+        only (engine light_cycle -> agent.gate_for), decision.build does not read it."""
         cfg = self.cfg_store.get().active
-        r = self.selected_row()
+        sel = self.selector.selected or {}      # read before the row: the time and the row then belong to the same selection (a reset
+        r = self.selected_row()                 # from the API thread in between leaves no row; only this thread selects a new setup)
         st = self.selector.state
         reg = st.get("regime") or {}
         local_dir = ((reg.get("per_tf") or {}).get(reg.get("local_tf") or "M15") or {}).get("direction")
@@ -204,7 +206,9 @@ class ActiveEngine:
         sus = self.selector.suspended
         hold = sus["code"] if sus and sus.get("setup_id") == r["setup_id"] else None
         return setup, levels, {"regime": reg, "bias": rec["direction"], "trade_allowed": trade_allowed(cfg, rec["strategy_id"]),
-                               "reason_codes": st.get("reason_codes"), "selection_suspended": hold}
+                               "reason_codes": st.get("reason_codes"), "selection_suspended": hold,
+                               # I0749 review: the AI VETO wait also counts from this moment (agent.gate_for)
+                               "selected_at": sel.get("at") if sel.get("setup_id") == r["setup_id"] else None}
 
     def hypothetical_entry(self) -> float | None:
         r = self.selected_row()

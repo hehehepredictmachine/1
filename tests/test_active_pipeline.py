@@ -124,6 +124,59 @@ class TestActivePipeline(unittest.TestCase):
         self.engine.light_cycle()
         self.assertEqual(self.db.query("SELECT strategy_id, sl, tp1, tp2 FROM managed_positions"), mp)
 
+    def test_switch_to_a_long_confirmed_setup_waits_for_the_ai_veto_in_paper(self):
+        """I0749 review (pre-existing gap): the real ClaudeAgent (VETO; requests are recorded, never run) in the real full/light cycle.
+        A setup CONFIRMED 300 s before it becomes the selection is not executed at its first decision: the agent is asked only after that
+        decision, and the VETO wait also counts from the selection. Before: AI NOT_REQUIRED -> ALLOWED -> PAPER order at once."""
+        import os
+        from datetime import timedelta
+        from types import SimpleNamespace as NS
+
+        from masterquo.agent.service import ClaudeAgent
+        from masterquo.secrets_store import SecretStore
+        from masterquo.timeutil import iso, utcnow
+        os.environ["ANTHROPIC_API_KEY"] = "sk-ant-test-not-a-real-key"
+        self.addCleanup(os.environ.pop, "ANTHROPIC_API_KEY", None)
+        self.cfg.update({"agent": {"model": "claude-opus-5-5"}})
+        agent = ClaudeAgent(self.cfg, SecretStore(), self.db, self.engine.bus, self.engine.log, self.engine.context)
+        self.assertEqual(agent.policy(), "VETO")
+        queued = []
+        agent.loop, agent.queue = NS(call_soon_threadsafe=lambda fn, req: queued.append(req)), object()
+        self.engine.agent = agent
+        self.engine.full_cycle()
+        act = self.engine.active
+        q = self.b.quote_status()
+        bid, ask = q["bid"], q["ask"]
+        cand = {"schema_version": "mq-setup-1.0.0", "strategy_id": "S01", "strategy_name": "TREND_PULLBACK", "strategy_version": "1.0.0-EXPERIMENTAL",
+                "config_hash": "t", "setup_id": "MQA-test-switch", "event_id": "EV-test-switch", "symbol": "XAUUSD-", "direction": "LONG",
+                "timeframe": "M15", "horizon": "INTRADAY", "family": "TREND", "regime": "TREND_UP", "stage": "CONFIRMED", "phase": "TRIGGER",
+                "setup_score": 99.0, "score": {"points": {}}, "strategy_fit_score": 100.0, "structure_key": "t-switch", "anchor_time": None,
+                "source_time": None, "forming_bar_used": False,
+                "entry_plan": {"reference_price": ask, "trigger_level": ask, "zone": None, "trigger": "test"},
+                "invalidation_level": bid - 9, "invalidation_rule": "CLOSE_BEYOND", "stop_loss": bid - 8,
+                "targets": [{"price": ask + 12, "weight": 0.5, "basis": "T1"}, {"price": ask + 24, "weight": 0.5, "basis": "T2"}],
+                "exit_rules": {}, "expires_bars": 12, "reason_codes": [], "missing_confirmations": [], "countertrend": False, "facts": {},
+                "validation_status": "FUNCTIONAL_ONLY_OOS_NOT_RUN", "synthetic": True}
+        act.tracker.update([cand], view=act.view, symbol="XAUUSD-", account_key=self.b.account_key, data_ok=True, new_data=True, now=utcnow(),
+                           cfg=self.cfg.get().active, scanned=set())
+        confirmed_at = iso(utcnow() - timedelta(seconds=300))                    # CONFIRMED long before it is selected
+        self.db.execute("UPDATE strategy_setups SET stage_changed_at=? WHERE setup_id=?", (confirmed_at, "MQA-test-switch"))
+        act.selector.reset("TEST_PREVIOUS_SELECTION_ENDED")                       # the previous selection ended
+        self.modes.set_mode("PAPER", confirm="PAPER", account=self.b.account_status(), account_key=self.b.account_key, synthetic=True)
+        queued.clear()
+        self.engine.full_cycle()             # scan -> the selection switches to the setup -> decision -> AUTO -> agent triggers
+        d = self.engine.current_decision()
+        self.assertEqual((d["setup"]["setup_id"], d["setup"]["state_changed_at"]), ("MQA-test-switch", confirmed_at))
+        ai = next(n for n in d["decision_tree"] if n["node"] == "AI")
+        self.assertEqual(ai["status"], "PENDING", d["agent_gate"])
+        self.assertEqual(d["agent_gate"]["reason_codes"], ["AI_ASSESSMENT_MISSING", "AI_VETO_WAIT_60S", "AI_VETO_WAIT_FROM_SELECTION"])
+        self.assertEqual(d["execution_permission"], "BLOCKED")
+        self.assertEqual(self.db.query("SELECT * FROM order_attempts"), [])
+        self.assertIn(("SETUP_CONFIRMED", "MQA-test-switch", "CONFIRMED"), [(r["trigger"], r["setup_id"], r["setup_state"]) for r in queued])
+        self.engine.light_cycle()                                                 # the request is in flight now: still waiting
+        self.assertEqual(self.engine.current_decision()["agent_gate"]["reason_codes"][:1], ["AI_ASSESSMENT_RUNNING"])
+        self.assertEqual(self.db.query("SELECT * FROM order_attempts"), [])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -169,6 +169,35 @@ class TestAgent(unittest.TestCase):
         self.agent.by_setup["MQS-1"] = {"status": "OK", **{k: v for k, v in r.items() if k != "status"}, "record": dict(r["record"], proposed_action="WAIT")}
         self.assertEqual(g()["status"], "NOT_REQUIRED")                        # advisory never blocks
 
+    def test_veto_wait_also_counts_from_the_selection(self):
+        """I0749 review: `selected_at` (when the setup became the selection, profile ACTIVE) can only add PENDING time to the VETO wait."""
+        setup = CTX["setup"]                                                    # confirmed 11:59:00
+        g = lambda t, sel=None: self.agent.gate_for(setup, session_epoch=1, account_key="srv:1", now_iso=t, selected_at=sel)  # noqa: E731
+        self.assertEqual(g("2026-10-08T12:00:30Z")["status"], "NOT_REQUIRED")   # no selection time = today's rule (from the confirmation)
+        sel = "2026-10-08T12:00:30Z"                                            # became the selection 90 s after its confirmation
+        self.assertEqual(g(sel, sel), {"status": "PENDING", "reason_codes": ["AI_ASSESSMENT_MISSING", "AI_VETO_WAIT_60S",
+                                                                             "AI_VETO_WAIT_FROM_SELECTION"]})
+        self.assertEqual(g("2026-10-08T12:01:29Z", sel)["status"], "PENDING")
+        self.assertEqual(g("2026-10-08T12:01:30Z", sel), {"status": "NOT_REQUIRED", "reason_codes": ["AI_NO_VETO_AI_ASSESSMENT_MISSING"],
+                                                          "agent_decision_id": None})  # the wait stays bounded (no permanent block)
+        for t in ("2026-10-08T11:59:30Z", "2026-10-08T12:00:30Z"):
+            self.assertEqual(g(t, "2026-10-08T11:50:00Z"), g(t))                # selected before the confirmation: exactly today's rule
+            self.assertEqual(g(t, "not-a-time"), g(t))                          # an unreadable selection time is ignored, never loosens
+        early = dict(setup, state="EARLY")
+        self.assertEqual(self.agent.gate_for(early, session_epoch=1, account_key="srv:1", now_iso=sel, selected_at=sel),
+                         self.agent.gate_for(early, session_epoch=1, account_key="srv:1", now_iso=sel))
+        r, _ = self.run_with([msg([text(json.dumps(answer(proposed_action="WAIT")))], "end_turn")])
+        self.agent.by_setup["MQS-1"] = r
+        self.assertEqual(g(sel, sel)["status"], "DISAGREE")                     # verdicts untouched
+        r, _ = self.run_with([msg([text(json.dumps(answer()))], "end_turn")])
+        self.agent.by_setup["MQS-1"] = r
+        self.assertEqual(g(sel, sel)["status"], "PASS")
+        self.agent.by_setup.pop("MQS-1")
+        self.cfg.update({"agent": {"gate_policy": "REQUIRED"}})
+        self.assertEqual(g(sel, sel), g(sel))                                   # REQUIRED / ADVISORY never use it
+        self.cfg.update({"agent": {"gate_policy": "ADVISORY"}})
+        self.assertEqual(g(sel, sel), g(sel))
+
     def test_gate_rules(self):
         self.cfg.update({"agent": {"gate_policy": "REQUIRED"}})
         r, _ = self.run_with([msg([text(json.dumps(answer()))], "end_turn")])
@@ -215,6 +244,95 @@ class TestAgent(unittest.TestCase):
         self.cfg.update({"agent": {"model": None}})
         os.environ.pop("ANTHROPIC_MODEL", None)
         self.assertEqual(self.agent._preflight({"trigger": "SETUP_CONFIRMED"}), "MODEL_NOT_CONFIGURED")
+
+
+class TestVetoWaitAfterSelectionSwitch(unittest.TestCase):
+    """I0749 review (pre-existing gap, profile ACTIVE, VETO): the agent is asked only about the SELECTED setup and only after the decision of
+    the cycle in which it became the selection (light_cycle: decision, then _active_agent_triggers). The wait for a veto counted only from
+    the confirmation, so a setup CONFIRMED longer than ai_wait_seconds before it became the selection got AI NOT_REQUIRED at its first
+    decision - AUTO could execute it before the agent had ever seen it. Real selector, ActiveEngine.decision_inputs, ClaudeAgent.gate_for /
+    request / _handle and EngineService._active_agent_triggers, in light_cycle order."""
+
+    T0 = "2026-10-08T11:55:00Z"
+
+    def setUp(self):
+        self.td = TempData()
+        os.environ["ANTHROPIC_API_KEY"] = "sk-ant-test-not-a-real-key"
+
+    def tearDown(self):
+        os.environ.pop("ANTHROPIC_API_KEY", None)
+        self.td.close()
+
+    def test_switch_to_a_long_confirmed_setup_waits_for_the_veto(self):
+        from datetime import timedelta
+
+        from masterquo.agent.service import ClaudeAgent
+        from masterquo.config import ConfigStore
+        from masterquo.db.database import Database
+        from masterquo.engine.active import ActiveEngine
+        from masterquo.engine.service import EngineService
+        from masterquo.events import AppLog, EventBus
+        from masterquo.secrets_store import SecretStore
+        from masterquo.timeutil import parse_iso
+
+        db, store = Database(), ConfigStore()
+        store.update({"agent": {"model": "claude-opus-5-5"}})
+        ctx = {}
+        agent = ClaudeAgent(store, SecretStore(), db, EventBus(), AppLog(db, EventBus()), lambda sid: ctx or None)
+        self.assertEqual(agent.policy(), "VETO")
+        queued = []                              # the agent loop: requests are recorded here, the test plays the worker
+        agent.loop, agent.queue = NS(call_soon_threadsafe=lambda fn, req: queued.append(req)), object()
+        eng = ActiveEngine(db, store, None, None, None)
+        sel = eng.selector
+        byid: dict = {}
+        eng.selected_row = lambda: byid.get((sel.selected or {}).get("setup_id"))     # tracker lookup of selector.selected
+        t0 = parse_iso(self.T0)
+
+        def row(sid, score):
+            return {"setup_id": f"MQA-{sid}-LONG", "status": "ACTIVE", "stale": 0, "stage": "CONFIRMED", "stage_changed_at": self.T0,
+                    "first_seen_at": self.T0, "version": 1,
+                    "record": {"strategy_id": sid, "strategy_name": sid, "strategy_version": "1", "direction": "LONG", "timeframe": "M15",
+                               "horizon": "INTRADAY", "setup_score": score, "strategy_fit_score": 100, "countertrend": False,
+                               "event_id": f"EV-{sid}", "score": {"points": {}}}}
+
+        def scan(sec, rows):
+            byid.update({r["setup_id"]: r for r in rows})
+            prev = (sel.selected or {}).get("setup_id")
+            sel.select(rows, cfg=store.get().active, regime={"state": "TREND_UP"}, data_ok=True, new_data=True,
+                       now=t0 + timedelta(seconds=sec), snapshot_id="SNP-1", account_key="srv:1", per_strategy={})
+            cur = (sel.selected or {}).get("setup_id")
+            return [("SELECTION_CHANGED", byid[cur])] if cur != prev else []
+
+        def gate(t, selected_at):
+            return agent.gate_for(setup, session_epoch=1, account_key="srv:1", now_iso=t, selected_at=selected_at)
+
+        scan(0, [row("S01", 70), row("S02", 60)])                                   # S01 selected, S02 CONFIRMED since T0
+        self.assertEqual(sel.selected["setup_id"], "MQA-S01-LONG")
+        events = scan(300, [row("S02", 60)])                                         # S01 ends -> the selection switches to S02
+        setup, _levels, active = eng.decision_inputs()                               # light_cycle: the decision first ...
+        self.assertEqual((setup["setup_id"], setup["state_changed_at"], active["selected_at"]),
+                         ("MQA-S02-LONG", self.T0, "2026-10-08T12:00:00Z"))
+        now = "2026-10-08T12:00:00Z"
+        self.assertEqual(gate(now, None)["status"], "NOT_REQUIRED")                  # the gap: counted from the confirmation only
+        self.assertEqual(gate(now, active["selected_at"]),
+                         {"status": "PENDING", "reason_codes": ["AI_ASSESSMENT_MISSING", "AI_VETO_WAIT_60S", "AI_VETO_WAIT_FROM_SELECTION"]})
+        self.assertEqual(queued, [])                                                 # ... no request in flight at that decision
+        EngineService._active_agent_triggers(NS(agent=agent, active=eng), events, "SNP-1")    # ... then the triggers
+        self.assertEqual([(q["trigger"], q["setup_id"], q["setup_state"]) for q in queued], [("SETUP_CONFIRMED", "MQA-S02-LONG", "CONFIRMED")])
+        sa = active["selected_at"]
+        self.assertEqual(gate("2026-10-08T12:00:59Z", sa)["reason_codes"],
+                         ["AI_ASSESSMENT_RUNNING", "AI_VETO_WAIT_60S", "AI_VETO_WAIT_FROM_SELECTION"])
+        self.assertEqual(gate("2026-10-08T12:01:00Z", sa)["reason_codes"], ["AI_NO_VETO_AI_ASSESSMENT_RUNNING"])  # bounded as before
+        # the agent answers WAIT for S02 (the worker: _handle, then the pending entry is dropped)
+        ctx.update(dict(CTX, setup=dict(CTX["setup"], setup_id="MQA-S02-LONG", direction="LONG", state_changed_at=self.T0)))
+        client = ScriptedClient([msg([text(json.dumps(answer(setup_id="MQA-S02-LONG", analysis_direction="LONG",
+                                                             proposed_action="WAIT")))], "end_turn")])
+        agent._client_get = lambda: client
+        asyncio.run(agent._handle(queued[0]))
+        agent.pending.pop(queued[0]["key"], None)
+        g = gate("2026-10-08T12:00:30Z", sa)
+        self.assertEqual((g["status"], g["reason_codes"]), ("DISAGREE", ["AI_PROPOSES_WAIT"]))        # the veto blocks
+        self.assertEqual(g["agent_decision_id"], agent.by_setup["MQA-S02-LONG"]["decision_id"])
 
 
 if __name__ == "__main__":

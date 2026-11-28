@@ -241,12 +241,14 @@ class ClaudeAgent:
     def policy(self) -> str:
         return "ADVISORY" if not self.cfg.required_for_entry else self.cfg.gate_policy
 
-    def gate_for(self, setup: dict | None, *, session_epoch: int, account_key: str | None, now_iso: str) -> dict:
+    def gate_for(self, setup: dict | None, *, session_epoch: int, account_key: str | None, now_iso: str,
+                 selected_at: str | None = None) -> dict:
         """AI gate for the decision tree, according to agent.gate_policy.
 
         REQUIRED: only a fresh, matching, agreeing assessment passes.
         VETO:     only an explicit disagreement blocks; while an assessment is awaited the gate waits
-                  up to ai_wait_seconds after confirmation, then passes (AI_NO_VETO_*).
+                  up to ai_wait_seconds after confirmation - or after `selected_at` (when the setup became
+                  the selection, profile ACTIVE) if that is later - then passes (AI_NO_VETO_*).
         ADVISORY: never blocks.
         """
         pol = self.policy()
@@ -269,8 +271,21 @@ class ClaudeAgent:
                 age = (parse_iso(now_iso) - parse_iso(setup["state_changed_at"])).total_seconds()
             except (TypeError, ValueError, KeyError):
                 age = None
+            # I0749 review (pre-existing gap): the agent is asked only about the SELECTED setup, and only after the decision of the cycle in
+            # which it became the selection (engine light_cycle -> _active_agent_triggers). Counted from the confirmation alone, a setup
+            # confirmed more than ai_wait_seconds before it was selected passed at its first decision (AUTO could execute it) before the
+            # agent had ever seen it. The wait also runs from the selection: only a later start (extra PENDING), never an earlier one;
+            # an unreadable selection time is ignored (today's rule).
+            extra: list[str] = []
+            if selected_at:
+                try:
+                    since_sel = (parse_iso(now_iso) - parse_iso(selected_at)).total_seconds()
+                except (TypeError, ValueError, AttributeError):
+                    since_sel = None
+                if since_sel is not None and (age is None or since_sel < age):
+                    age, extra = since_sel, ["AI_VETO_WAIT_FROM_SELECTION"]
             if age is not None and age < self.cfg.ai_wait_seconds:
-                return {**g, "reason_codes": codes + [f"AI_VETO_WAIT_{int(self.cfg.ai_wait_seconds)}S"]}
+                return {**g, "reason_codes": codes + [f"AI_VETO_WAIT_{int(self.cfg.ai_wait_seconds)}S"] + extra}
         return {"status": "NOT_REQUIRED", "reason_codes": ["AI_NO_VETO_" + (codes[0] if codes else g["status"])],
                 "agent_decision_id": g.get("agent_decision_id")}
 

@@ -299,7 +299,10 @@ class EngineService:
                                                tp1_weight=cfg.strategy.tp1_weight, min_target_distance_atr=cfg.strategy.min_target_distance_atr)
                 risk = self._risk(rec["direction"], levels, quote, live, float(rec["plan"]["lifecycle_rules"]["confirmation"]["level"]))
         now_iso = iso(utcnow())
-        agent_gate = self.agent.gate_for(setup, session_epoch=epoch, account_key=account_key, now_iso=now_iso) if self.agent \
+        # I0749 review: a new selection is put to the agent only AFTER this decision (_active_agent_triggers below), so the VETO wait
+        # also counts from the moment the setup became the selection (profile ACTIVE; None = from the confirmation, as before)
+        agent_gate = self.agent.gate_for(setup, session_epoch=epoch, account_key=account_key, now_iso=now_iso,
+                                         selected_at=(active_ctx or {}).get("selected_at")) if self.agent \
             else {"status": "UNAVAILABLE", "reason_codes": ["AGENT_NOT_RUNNING"]}
         mode_gate = self.modes.gate(account_key, path="ACTIVE")
         macro = self.news.macro() if self.news else {"status": "DISABLED"}

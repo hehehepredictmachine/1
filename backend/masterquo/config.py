@@ -155,7 +155,8 @@ class AgentConfig(_Strict):
     required_for_entry: bool = True  # False = ADVISORY regardless of gate_policy
     # REQUIRED: only a fresh agreeing assessment passes (no key/error/timeout blocks).
     # VETO:     Claude blocks only by explicitly disagreeing; no key, errors or no answer within
-    #           ai_wait_seconds do not block.
+    #           ai_wait_seconds do not block (counted from the confirmation, or from the moment the
+    #           setup became the selection if that is later - profile ACTIVE).
     # ADVISORY: Claude never blocks; assessments are informational.
     gate_policy: Literal["REQUIRED", "VETO", "ADVISORY"] = "VETO"
     ai_wait_seconds: float = Field(60.0, ge=0, le=900)
