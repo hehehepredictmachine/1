@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import json
 import os
-import re as _re
+import re as _re  # lab_study; base create_app (7ba7ab0) bound `_re` later, in the market block (import re as _re): same module
 import sys
 
 from fastapi import Body, HTTPException, Query

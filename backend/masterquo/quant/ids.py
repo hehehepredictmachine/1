@@ -108,6 +108,8 @@ EXTRA_PRODUCERS: dict[str, tuple] = {
                         "TOOL", None, "archiwum lab_forecasts i ocena – obserwacja, nie głos"),
     "lab:M31_tick_kinematics": ("Lab M31 kinematyka ticków (legacy obok QuoteEngine)", "RULE_OR_MEASUREMENT", ".venv",
                                 ["backend/masterquo/lab/service.py"], "TOOL", None, "stan panelu lab – obserwacja"),
+    # Etap 4 krok B: handler lab_tradepad jest w api/routes/trading.py; plik zostaje jak w bazie (część widoku porównywanego w
+    # test_arch146_e4_producers.TestViewsIdenticalToBase) – aktualizacja w Etapie 5 razem z migawką widoków.
     "lab:M42_trade_pad": ("Lab M42 trade pad (kalkulator)", "TOOL", ".venv", ["backend/masterquo/api/app.py"], "TOOL", None,
                           "kalkulator API na żądanie – nie model"),
     "lab:M39_M41_edge": ("Lab M39–M41 RepaintInspector / edge drift / bootstrap", "TOOL", ".venv", ["backend/masterquo/lab/service.py"], "TOOL",
