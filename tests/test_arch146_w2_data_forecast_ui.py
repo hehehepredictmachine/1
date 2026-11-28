@@ -70,7 +70,7 @@ class TestLabQuantAdapter(unittest.TestCase):
     def test_instrument_not_computed_is_blocked_data(self):
         from masterquo.quant import adapters as A
         (p,) = A.lab(self.rt({}), "XAUUSD")
-        self.assertEqual((p["canonical_id"], p["state"]), ("lab:models", "BLOCKED_DATA"))
+        self.assertEqual((p["canonical_id"], p["state"]), ("group:lab", "BLOCKED_DATA"))
 
     def test_ready_model_record(self):
         from masterquo.modelhub import contract as C
@@ -96,7 +96,7 @@ class TestLabQuantAdapter(unittest.TestCase):
     def test_no_model_is_not_trained(self):
         from masterquo.quant import adapters as A
         (p,) = A.lab(self.rt({"XAUUSD": {"models": [], "model": {"status": "no_model", "reason": "brak artefaktu"}}}), "XAUUSD")
-        self.assertEqual((p["canonical_id"], p["state"]), ("lab:models", "NOT_TRAINED"))
+        self.assertEqual((p["canonical_id"], p["state"]), ("group:lab", "NOT_TRAINED"))
 
     def test_fixture_data_is_synthetic_and_excluded_from_real_snapshot(self):
         import time as _t

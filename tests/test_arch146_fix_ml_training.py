@@ -311,12 +311,12 @@ class TestMasterModelsNoActivate(unittest.TestCase):
     def test_validated_artifact_does_not_move_pointer(self):
         import numpy as np
         from masterquo.mm import artifacts, jobs
-        aid, st = jobs._save(self._ctx(False), "gpr_logret", {"w": np.zeros(3)}, {"model_type": "T"}, True)
+        aid, st = jobs._save(self._ctx(False), "gpr_logret", {"w": np.zeros(3)}, {"model_type": "T", "gates": {"walk_forward": True}}, True)
         self.assertEqual(st, "VALIDATED_SHADOW")
         self.assertEqual(artifacts.load("XAUUSD", "gpr_logret", aid)[1]["status"], "VALIDATED_SHADOW")   # artifact kept for inspection
         self.assertEqual(artifacts.read_pointer("XAUUSD")["active"], {})       # HEAD: {'gpr_logret': aid}
         ctx = self._ctx(True)
-        aid2, _ = jobs._save(ctx, "gpr_logret", {"w": np.zeros(3)}, {"model_type": "T"}, True)
+        aid2, _ = jobs._save(ctx, "gpr_logret", {"w": np.zeros(3)}, {"model_type": "T", "gates": {"walk_forward": True}}, True)
         self.assertEqual(artifacts.read_pointer("XAUUSD")["active"], {"gpr_logret": aid2})
         self.assertEqual(ctx.promoted, ["gpr_logret"])
 

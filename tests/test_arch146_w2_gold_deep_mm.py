@@ -159,7 +159,7 @@ class TestScalpForecastStaleI0754(unittest.TestCase):
         def ask(req, timeout):
             seen.update(req)
             return {"status": "SHADOW"}
-        fake = SimpleNamespace(registry=lambda: {"active": "R1"}, forecast=SimpleNamespace(proc=object(), _ask=ask),
+        fake = SimpleNamespace(registry=lambda: {"active": "R1"}, _worker_down=lambda: None, forecast=SimpleNamespace(proc=object(), _ask=ask),
                                bridge=SimpleNamespace(bars=lambda tf, n, include_forming=False: _m1(3, time.time() - 120), symbol_info={"point": 0.01}))
         ScalpService.forecasts(fake)
         self.assertIn("as_of", seen)
