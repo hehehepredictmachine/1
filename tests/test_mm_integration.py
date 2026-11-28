@@ -28,6 +28,19 @@ from masterquo.mm.ledger import Ledger
 from masterquo.mm.orchestrator import GRAPH
 
 BACKEND = _env.ROOT / "backend"
+
+
+def _cl_kernel_text(src: str) -> str:
+    """state_stack.cl without // comments and without any whitespace (the compiled text, independent of layout)."""
+    return re.sub(r"\s+", "", re.sub(r"//[^\n]*", "", src))
+
+
+def _mqh_kernel_text(src: str) -> str:
+    """The joined "..." literals of the MQL5 constant PMW_STACK_CL, without any whitespace."""
+    m = re.search(r'const\s+string\s+PMW_STACK_CL\s*=((?:\s*"(?:[^"\\]|\\.)*")+)\s*;', src)
+    if not m:
+        raise AssertionError("PMW_STACK_CL not found in PMW_StateStack.mqh")
+    return re.sub(r"\s+", "", "".join(re.findall(r'"((?:[^"\\]|\\.)*)"', m.group(1))))
 MQL5 = [p for d in ("mql5/MasterModels", "mql5/MathFidelity") for p in (_env.ROOT / d).rglob("*") if p.suffix in (".mq5", ".mqh")]
 
 
@@ -250,6 +263,11 @@ class TestStaticIsolation(unittest.TestCase):
         for k in ("__kernel void stack_push", "__kernel void stack_corr"):
             self.assertIn(k, cl)
             self.assertIn(k, mq)
+        # 1.46 (I0510): the kernel BODIES must be the same text, not only the names (a changed operator in one copy went unnoticed)
+        self.assertEqual(_cl_kernel_text(cl), _mqh_kernel_text(mq))
+        mutated = cl.replace("acc += a * b", "acc += a + b")
+        self.assertNotEqual(mutated, cl)
+        self.assertNotEqual(_cl_kernel_text(mutated), _mqh_kernel_text(mq))
 
     def test_runner_and_registry_wiring(self):
         from masterquo.sh import models as SM

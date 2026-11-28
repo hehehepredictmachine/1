@@ -48,20 +48,22 @@ def _measure_offset(mt5, sym: str, server: str | None) -> tuple[float | None, st
 
 
 def _gaps(times: list[int], step: int) -> dict:
-    """Classify gaps between consecutive bars (UTC): weekend, short daily break (<= 2 h), other (listed)."""
+    """Classify gaps between consecutive bars (UTC): weekend, short daily break (<= 2 h), other (listed). 1.46 (I0051): the shared
+    classifier data/quality.classify_gap_series with the parameters of this report (unchanged): any distance != step is a gap, weekend =
+    >= 40 h covering a Saturday (daily probe), daily break = <= 2 h (no recurrence required)."""
+    from ..data.quality import classify_gap_series
+    r = classify_gap_series(times, step, weekend_min_s=40 * 3600, weekend_probe_s=86400, break_max_s=2 * 3600, gap_if_not_step=True)
     out = {"weekend": 0, "daily_break_le_2h": 0, "other": 0, "other_list": []}
-    for a, b in zip(times, times[1:]):
-        if b - a == step:
-            continue
-        da, db = datetime.fromtimestamp(a, timezone.utc), datetime.fromtimestamp(b, timezone.utc)
-        if db - da >= timedelta(hours=40) and any((da + timedelta(days=k)).weekday() == 5 for k in range((db - da).days + 1)):
+    for a, b, kind, miss in r["gaps"]:
+        if kind == "WEEKEND":
             out["weekend"] += 1
-        elif b - a <= 2 * 3600 + step:
+        elif kind == "BREAK":
             out["daily_break_le_2h"] += 1
         else:
             out["other"] += 1
             if len(out["other_list"]) < 60:
-                out["other_list"].append({"after_utc": iso(da), "next_utc": iso(db), "missing_bars": (b - a) // step - 1})
+                out["other_list"].append({"after_utc": iso(datetime.fromtimestamp(a, timezone.utc)), "next_utc": iso(datetime.fromtimestamp(b, timezone.utc)),
+                                          "missing_bars": miss})
     return out
 
 

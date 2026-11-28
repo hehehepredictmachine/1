@@ -70,7 +70,6 @@ async function post(inst: string, what: string, path: string, body: any) {
 export const computeZones = (inst: string, tfs: string[]) => post(inst, "compute", "/api/v1/market-zones/compute", { instrument: inst, timeframes: tfs });
 export const setZonesLive = (inst: string, enabled: boolean, tfs: string[]) =>
   post(inst, "live", "/api/v1/market-zones/live", { instrument: inst, enabled, timeframes: tfs });
-export const stopZones = (inst: string) => post(inst, "stop", "/api/v1/market-zones/stop", { instrument: inst });
 
 /** Subscribe to the zones of one instrument (null = none). */
 export function useMarketZones(inst: string | null): MzState {

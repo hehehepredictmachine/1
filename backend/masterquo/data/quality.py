@@ -15,8 +15,9 @@ from __future__ import annotations
 import math
 from collections import Counter
 from datetime import datetime, timedelta
+from itertools import pairwise
 
-from ..timeutil import CONTEXT_TIMEFRAMES, CORE_TIMEFRAMES, TF_SECONDS, TIMEFRAMES, from_epoch, iso  # 1.46: unused parse_iso dropped
+from ..timeutil import CONTEXT_TIMEFRAMES, CORE_TIMEFRAMES, TF_SECONDS, TIMEFRAMES, UTC, from_epoch, iso  # 1.46: unused parse_iso dropped
 
 FIX_HISTORY = ("Otwórz w MT5 wykres {sym} {tf}, przewiń go w lewo (Home) aż do pobrania historii; "
                "sprawdź Narzędzia → Opcje → Wykresy → 'Maks. liczba słupków na wykresie' (min. 5000).")
@@ -72,25 +73,98 @@ def _finite(*xs) -> bool:
     return all(isinstance(x, (int, float)) and not isinstance(x, bool) and math.isfinite(x) for x in xs)
 
 
+# ---------------------------------------------------------------------------------------------------------------- shared checks (1.46, I0047)
+# One implementation of each data-quality CHECK for both live gates: ACTIVE (assess_tf / assess below) and SCALPING / HEDGING
+# (sh/context.data_quality). Each track keeps its own POLICY - which checks run, on which window, which block, the thresholds and the
+# messages - exactly as before (no decision changes; tests/test_arch146_w2_data_forecast_ui.py compares both gates with the previous code):
+#   ACTIVE  strict geometry on every bar, duplicates + order, gaps classified by the session model, forming-bar age, quote / clock / session
+#   SH      finite + h >= l on the last 50 bars, order on the last 60, closed-bar age vs max_bar_age_s, quote age, spread
+def ohlc_finite(b: dict, *, coerce: bool = False) -> bool:
+    """o / h / l / c are finite numbers. coerce=False: real int / float only (bool or text is not a price); coerce=True: float() of the
+    value (a value float() rejects raises - the SH behaviour)."""
+    if coerce:
+        return all(math.isfinite(float(b[k])) for k in ("o", "h", "l", "c"))
+    return _finite(b["o"], b["h"], b["l"], b["c"])
+
+
+def geometry_ok(b: dict, *, strict: bool = True) -> bool:
+    """strict (ACTIVE): finite real numbers, l > 0 and l <= min(o, c) <= max(o, c) <= h. loose (SH): finite after float() and h >= l."""
+    if strict:
+        return ohlc_finite(b) and b["l"] > 0 and b["l"] <= min(b["o"], b["c"]) <= max(b["o"], b["c"]) <= b["h"]
+    return ohlc_finite(b, coerce=True) and not b["h"] < b["l"]
+
+
+def order_violations(times: list) -> int:
+    """Consecutive pairs that do not strictly increase (a duplicate or a step back)."""
+    return sum(1 for a, b in pairwise(times) if b <= a)
+
+
+def duplicate_count(times: list) -> int:
+    return len(times) - len(set(times))
+
+
+def find_gaps(times: list, tf_sec: int, classify) -> list[dict]:
+    """Missing intervals between consecutive bars longer than one TF step; kind = classify(prev_open, next_open, tf_sec)."""
+    out = []
+    for a, b in pairwise(times):
+        step = b - a
+        if step > tf_sec:
+            out.append({"from_raw": a + tf_sec, "to_raw": b, "missing_bars": step // tf_sec - 1, "kind": classify(a, b, tf_sec)})
+    return out
+
+
+# ---------------------------------------------------------------------------------------------------------------- offline gap classifier (1.46, I0051)
+def classify_gap_series(times: list, step: int, *, weekend_min_s: float, weekend_probe_s: int, break_max_s: float,
+                        recurring_min_days: int | None = None, recurring_share: float = 0.0, recurring_min_missing: int = 3,
+                        short_max_missing: int | None = None, gap_if_not_step: bool = False) -> dict:
+    """ONE classifier of the gaps between consecutive stored bars (UTC epoch seconds) for the offline quality reports
+    (marketdata/quality.classify_gaps -> quality_report.json, forecast/export._gaps -> DATA_QUALITY_REPORT.json). Every consumer passes
+    its own, unchanged parameters, so the same data sets are accepted / rejected as before. Classes, in this order:
+      WEEKEND - gap >= weekend_min_s and a probe every weekend_probe_s from the gap start (inclusive) falls on a Saturday (UTC);
+      BREAK   - gap <= break_max_s + step and, with recurring_min_days, its UTC start (aligned to the step) recurs among the gaps of the
+                same length class (<= break_max_s + step, > recurring_min_missing missing bars) on >= max(recurring_min_days,
+                recurring_share x UTC days of the data) occasions;
+      SHORT   - at most short_max_missing missing bars (only when given);
+      MISSING - anything else.
+    gap_if_not_step=True: every consecutive pair whose distance differs from the step is a gap (the export rule), else only distance > step.
+    Returns {"gaps": [(prev, next, kind, missing_bars)], "recurring": {start second of day}}. The live gate (SessionModel) is separate:
+    it learns break HOURS of the broker's server time from H1."""
+    gaps = [(a, b) for a, b in pairwise(times) if (b - a != step if gap_if_not_step else b - a > step)]
+
+    def start_key(a):
+        return ((a + step) % 86400) // step * step
+    recurring: set = set()
+    if recurring_min_days is not None:
+        days = {datetime.fromtimestamp(t, UTC).date() for t in times}
+        starts = Counter(start_key(a) for a, b in gaps if b - a <= break_max_s + step and (b - a) // step - 1 > recurring_min_missing)
+        recurring = {k for k, v in starts.items() if days and v >= max(recurring_min_days, recurring_share * len(days))}
+    out = []
+    for a, b in gaps:
+        miss = (b - a) // step - 1
+        if b - a >= weekend_min_s and any(datetime.fromtimestamp(a + k * weekend_probe_s, UTC).weekday() == 5
+                                          for k in range(int((b - a) // weekend_probe_s) + 1)):
+            kind = "WEEKEND"
+        elif b - a <= break_max_s + step and (recurring_min_days is None or start_key(a) in recurring):
+            kind = "BREAK"
+        elif short_max_missing is not None and miss <= short_max_missing:
+            kind = "SHORT"
+        else:
+            kind = "MISSING"
+        out.append((a, b, kind, miss))
+    return {"gaps": out, "recurring": recurring}
+
+
 def assess_tf(tf: str, bars: list[dict], required: int, now: datetime, offset: int | None, session: SessionModel,
               market_open: bool, symbol: str) -> dict:
     sec = TF_SECONDS[tf]
     reasons: list[str] = []
     closed = [b for b in bars if b["closed"]]
-    invalid = [b["t_raw"] for b in bars if not (_finite(b["o"], b["h"], b["l"], b["c"]) and b["l"] > 0
-                                                and b["l"] <= min(b["o"], b["c"]) <= max(b["o"], b["c"]) <= b["h"])]
+    invalid = [b["t_raw"] for b in bars if not geometry_ok(b, strict=True)]
     neg_vol = [b["t_raw"] for b in bars if b["tv"] < 0]
     raws = [b["t_raw"] for b in bars]
-    dups = len(raws) - len(set(raws))
-    nonmono = sum(1 for a, b in zip(raws, raws[1:]) if b <= a)
-    gaps = []
-    for a, b in zip(bars, bars[1:]):
-        if tf == "D1":
-            continue
-        step = b["t_raw"] - a["t_raw"]
-        if step > sec:
-            kind = session.classify_gap(a["t_raw"], b["t_raw"], sec)
-            gaps.append({"from_raw": a["t_raw"] + sec, "to_raw": b["t_raw"], "missing_bars": step // sec - 1, "kind": kind})
+    dups = duplicate_count(raws)
+    nonmono = order_violations(raws)
+    gaps = [] if tf == "D1" else find_gaps(raws, sec, session.classify_gap)
     recent_cut = bars[-30]["t_raw"] if len(bars) >= 30 else (bars[0]["t_raw"] if bars else 0)
     recent_unexplained = [g for g in gaps if g["kind"] == "UNEXPLAINED" and g["to_raw"] >= recent_cut]
     future = []
@@ -214,4 +288,5 @@ def tf_status_message(r: dict) -> str:
     return st
 
 
-__all__ = ["assess", "SessionModel", "tf_status_message", "datetime"]
+__all__ = ["assess", "SessionModel", "tf_status_message", "datetime", "ohlc_finite", "geometry_ok", "order_violations", "duplicate_count",
+           "find_gaps", "classify_gap_series"]

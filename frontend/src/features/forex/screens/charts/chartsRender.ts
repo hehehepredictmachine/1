@@ -16,7 +16,7 @@ const seg=(ms,a,d)=>clamp((ms-a)/d);
 let S={view:{w:1,h:1,dpr:1},reduced:false}, SUB={state:'none',p:0,pi:0};          // podmieniane przez bind() na obiekty silnika
 const announce=t=>{try{env.announce&&env.announce(t);}catch(e){}};
 const VM={status:'loading',probs:null,kronos:null};
-const PROBS0={win:{name:'Legacy ML · P(cel przed SL)',task:'—',v:null,state:'NO_DATA',cal:'NOT_APPLICABLE',src:'brak modelu w API'},tp2:{name:'SH tp_model · P(TP2 przed SL)',task:'—',v:null,state:'NO_DATA',cal:'NOT_APPLICABLE',src:'brak modelu w API'}};
+const PROBS0={win:{name:'Legacy ML · P(cel przed SL)',task:'—',v:null,state:'NOT_SELECTED',cal:'NOT_APPLICABLE',src:'wybierz plan S01–S12'},tp2:{name:'SH tp_model · P(TP2 przed SL)',task:'—',v:null,state:'NOT_SELECTED',cal:'NOT_APPLICABLE',src:'wybierz plan SH'}};
 /* K3: włączniki warstw sygnałów i wybór strategii pamiętane lokalnie (bez zapisu w backendzie); tylko poza trybem testowym */
 const PKEY='pmw.charts.str.v1';let PROD=false;const seenSig=new Set(),bootAt={};let lastAnn=0;
 function loadPref(){try{return JSON.parse(localStorage.getItem(PKEY)||'null');}catch(e){return null;}}
@@ -283,8 +283,9 @@ function drawMain(ctx,cms,dt,red){
  /* odczyt sygnałów strategii pod kursorem */ if(hv&&CH.bsig){const ms=CH.bsig.filter(g=>g.idx===hi_&&sigVisible(g));if(ms.length)$('#mc-read').innerHTML+=`<span>SYGNAŁ<b>${ms.map(m=>`${m.sid} ${m.sd>0?'LONG':'SHORT'} · ${resPL(m.res)}`).join(' | ')}</b></span>`;}
 }
 function placeCard(R,uiA){const el=$('#sig-card');el.hidden=!(L.card&&CH.sig);if(el.hidden)return;const host=$('.cs-win.main').getBoundingClientRect();el.style.left=(R.l-host.left+10)+'px';el.style.top=(R.t-host.top+6)+'px';el.style.opacity=uiA;
- const G=CH.sig,key=CH.asset+CH.tf+G.key+CH.cardMin;if(el.dataset.key===key)return;el.dataset.key=key;const M=SMETA[G.sid]||{},P=CH.probs,pc=v=>v==null?'—':Math.round(v*100)+'%',R_=Math.abs(G.e-G.sl)||1;
- const row=(o,v)=>{const ok=o.state==='READY'&&v!=null;return `<div class="pm ${ok?'':'na'}" title="${o.task} · ${o.src}"><span class="nm">${o.name}</span><span class="v">${ok?pc(v):'—'}</span><span class="bar">${ok?`<i style="width:${v*100}%"></i>`:''}</span><span class="st">${ok?(o.cal==='CALIBRATED_DEV'?'SKALIBROWANY · ':'')+'GOTOWY':({NOT_TRAINED:'NIEWYTRENOWANY',DISABLED:'WYŁĄCZONY',STALE:'NIEAKTUALNY',ERROR:'BŁĄD',NO_DATA:'BRAK DANYCH'}[o.state]||o.state)} · ${o.src}</span></div>`;};
+ /* 1.46 (I0328): szanse modeli liczone per WYBRANY plan (setPlanProbs z warstwy danych po emitPlan), nie z listy predykcji instrumentu */
+ const G=CH.sig,pp=(CH.pp||{})[G.key],key=CH.asset+CH.tf+G.key+CH.cardMin+(pp?'|p':'');if(el.dataset.key===key)return;el.dataset.key=key;if(!pp)emitPlan(G);const M=SMETA[G.sid]||{},P=pp||CH.probs,pc=v=>v==null?'—':Math.round(v*100)+'%',R_=Math.abs(G.e-G.sl)||1;
+ const row=(o,v)=>{const ok=o.state==='READY'&&v!=null;return `<div class="pm ${ok?'':'na'}" title="${o.task} · ${o.src}"><span class="nm">${o.name}</span><span class="v">${ok?pc(v):'—'}</span><span class="bar">${ok?`<i style="width:${v*100}%"></i>`:''}</span><span class="st">${ok?(o.cal==='CALIBRATED_DEV'?'SKALIBROWANY · ':'')+'GOTOWY':({NOT_TRAINED:'NIEWYTRENOWANY',DISABLED:'WYŁĄCZONY',STALE:'NIEAKTUALNY',ERROR:'BŁĄD',NO_DATA:'BRAK DANYCH',NOT_APPLICABLE:'NIE DOTYCZY',NOT_SELECTED:'NIE WYBRANO',NOT_PUBLISHED:'NIEPUBLIKOWANE'}[o.state]||o.state)} · ${o.src}</span></div>`;};
  const tl=fmtT(G.t,true,'M1');   /* 1.46: ten sam czas co oś wykresu (offset z chwili sygnału, zmierzony offset serwera) */
  const tps=[0,1,2].map(j=>G.tp[j]!=null?`<span>TP${j+1}</span><span>${fmtP(G.tp[j])}</span><span>${(Math.abs(G.tp[j]-G.e)/R_).toFixed(2)} R${G.hit.includes('TP'+(j+1))?' · ✓ osiągnięty':''}${G.sh?` · ${Math.round(G.sh[j]*100)}% poz.`:''}</span>`:`<span>TP${j+1}</span><span>—</span><span>brak w kontrakcie strategii</span>`).join('');   /* 1.46: numer brakującego celu (wcześniej zawsze TP3) */
  const why=G.src==='BASKET'?`<div class="sec"><span>REGUŁA KOSZYKA</span><span>${M.fam||''}</span></div><div class="ai"><b>Setup:</b> ${M.setup||'—'}<br><b>Trigger:</b> ${M.trig||'—'}<br><b>Anulowanie:</b> ${M.cancel||'—'}<br><b>Wyjście:</b> ${M.exit||'—'}</div>
@@ -297,7 +298,7 @@ function placeCard(R,uiA){const el=$('#sig-card');el.hidden=!(L.card&&CH.sig);if
  <div class="sb"><div class="lv"><span>SYGNAŁ</span><span>${tl}</span><span>${(BK_INFO[G.bk]||[''])[0]}</span><span>WEJŚCIE</span><span>${fmtP(G.e)}</span><span>close świecy potwierdzającej</span><span>SL</span><span>${fmtP(G.sl)}</span><span>ryzyko ${fmtP(R_)}</span>${tps}${G.inv!=null?`<span>UNIEWAŻN.</span><span>${fmtP(G.inv)}</span><span></span>`:''}</div>
  ${why}
  <div class="sec"><span>SZANSE MODELI</span><span>UNIT = PROBABILITY</span></div>${row(P.win,P.win.v)}${row(P.tp2,P.tp2.v)}
- <div class="note">${CH.testTexts?CH.testTexts.cardNote:`Sygnał i plan z API bota. Wynik „${resPL(G.res)}” według cyklu życia sygnału w bocie. Szanse modeli: ${[P.win,P.tp2].map(o=>o.v!=null?`${o.src} (${o.cal})`:`${o.name.split(' · ')[0]} – ${({NOT_TRAINED:'niewytrenowany',DISABLED:'wyłączony',STALE:'nieaktualny',ERROR:'błąd',NO_DATA:'brak w API'}[o.state]||(o.state==='READY'?'niekalibrowany':o.state))}`).join('; ')}.`}</div></div>`;
+ <div class="note">${CH.testTexts?CH.testTexts.cardNote:`Sygnał i plan z API bota. Wynik „${resPL(G.res)}” według cyklu życia sygnału w bocie. Szanse modeli: ${[P.win,P.tp2].map(o=>o.v!=null?`${o.src} (${o.cal})`:`${o.name.split(' · ')[0]} – ${({NOT_TRAINED:'niewytrenowany',DISABLED:'wyłączony',STALE:'nieaktualny',ERROR:'błąd',NO_DATA:'brak w API',NOT_APPLICABLE:'nie dotyczy tego planu',NOT_SELECTED:'nie wybrano planu',NOT_PUBLISHED:'nie publikowane per plan'}[o.state]||(o.state==='READY'?'niekalibrowany':o.state))}`).join('; ')}.`}</div></div>`;
  if(el._h===html)return;el._h=html;el.innerHTML=html;
  const h=el.querySelector('.sh');const tg=()=>{CH.cardMin=!CH.cardMin;el.dataset.key='';};h.addEventListener('click',tg);h.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();tg();}});}
 /* ----- rysowanie: wykres Kronos ----- */
@@ -409,6 +410,8 @@ function SWK(k,label){const dis=CH.kr.mode==='OFF',v=k==='onChart'?CH.kr.onChart
 buildChartUI();
 const listeners=[];
 function emitSel(what='series'){listeners.forEach(f=>{try{f({what,asset:CH.asset,tf:CH.tf,kr:CH.kr.tf});}catch(e){}});}
+/* 1.46 (I0328): wybrany plan → warstwa danych liczy jego szanse (planProbsVM; SH: GET /api/v1/sh/signals/{ref}) i oddaje je przez setPlanProbs */
+function emitPlan(G){listeners.forEach(f=>{try{f({what:'plan',asset:CH.asset,tf:CH.tf,kr:CH.kr.tf,plan:{key:G.key,src:G.src,ref:G.ref??null,sid:G.sid}});}catch(e){}});}
 function setTfr(items){if(!items||!items.length)return;TFR=items.map(x=>[x.tf,x.seconds,x.role,x.core?1:0]);TFSEC=Object.fromEntries(TFR.map(r=>[r[0],r[1]]));
  $('#ch-tf').innerHTML=TFR.map(([t,,role,core])=>`<button type="button" data-tf="${t}" aria-pressed="${t===CH.tf}" title="${t} · rola ${role}${core?'':' · interwał kontekstowy'} · dane ${(items.find(x=>x.tf===t)||{}).data||'—'}"><i></i>${t}</button>`).join('');
  $$('#ch-tf button').forEach(b=>b.addEventListener('click',()=>selectTf(b)));}
@@ -434,6 +437,7 @@ const api={
   say:()=>'CHARTS. '+(ASSETS[CH.asset]?ASSETS[CH.asset].sym:CH.asset)+' '+CH.tf+'.'},
  onSelect(f){listeners.push(f);return ()=>{const i=listeners.indexOf(f);if(i>=0)listeners.splice(i,1);};},   /* 1.46: wyrejestrowanie (wcześniej słuchacze kumulowali się przy każdym wejściu na CHARTS) */
  setTimeframes:setTfr,
+ setPlanProbs(key,probs){if(!key||!probs)return;CH.pp=CH.pp||{};CH.pp[key]=probs;},   /* 1.46 (I0328): szanse wybranego planu (karta przerysuje się przy następnej klatce) */
  setSymbol(a,sym){if(ASSETS[a]&&sym)ASSETS[a].sym=sym;},
  setQuote(q){if(CH.frozen||!q)return;$('#ch-quote').innerHTML=q.bid!=null?`BID <b>${fmtP(q.bid)}</b> ASK <b>${fmtP(q.ask)}</b> SPREAD <b>${fmtP(q.spread)}</b>`:'BRAK KWOTOWAŃ';},
  setStatus(st){if(!CH.frozen){const s2=CH.data.length||st==='offline'?st:'loading';VM.status=s2;setChartStatus(s2);}},
